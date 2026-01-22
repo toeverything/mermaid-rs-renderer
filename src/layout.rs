@@ -1261,6 +1261,46 @@ fn build_subgraph_layouts(
             style,
         });
     }
+
+    if subgraphs.len() > 1 {
+        let sets: Vec<HashSet<String>> = graph
+            .subgraphs
+            .iter()
+            .map(|sub| sub.nodes.iter().cloned().collect())
+            .collect();
+
+        let mut order: Vec<usize> = (0..subgraphs.len()).collect();
+        order.sort_by_key(|i| sets[*i].len());
+
+        for &i in &order {
+            for &j in &order {
+                if i == j {
+                    continue;
+                }
+                if sets[j].len() >= sets[i].len() {
+                    continue;
+                }
+                if !sets[j].is_subset(&sets[i]) {
+                    continue;
+                }
+                let pad = 12.0;
+                let (child_x, child_y, child_w, child_h) = {
+                    let child = &subgraphs[j];
+                    (child.x, child.y, child.width, child.height)
+                };
+                let parent = &mut subgraphs[i];
+                let min_x = parent.x.min(child_x - pad);
+                let min_y = parent.y.min(child_y - pad);
+                let max_x = (parent.x + parent.width).max(child_x + child_w + pad);
+                let max_y = (parent.y + parent.height).max(child_y + child_h + pad);
+                parent.x = min_x;
+                parent.y = min_y;
+                parent.width = max_x - min_x;
+                parent.height = max_y - min_y;
+            }
+        }
+    }
+
     subgraphs.sort_by(|a, b| {
         let area_a = a.width * a.height;
         let area_b = b.width * b.height;
