@@ -86,7 +86,7 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
     }
 
     let mut main_cursor = 0.0;
-    let mut max_cross: f32 = 0.0;
+    let mut _max_cross: f32 = 0.0;
 
     for (rank_idx, bucket) in rank_nodes.iter().enumerate() {
         let mut cross_cursor = 0.0;
@@ -113,11 +113,15 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         }
 
         main_cursor += max_main + config.rank_spacing;
-        max_cross = max_cross.max(cross_cursor);
+        _max_cross = _max_cross.max(cross_cursor);
 
         if rank_idx == max_rank {
             // Ensure no trailing spacing
         }
+    }
+
+    if !graph.subgraphs.is_empty() {
+        apply_subgraph_bands(graph, &mut nodes, config);
     }
 
     let mut edges = Vec::new();
@@ -168,17 +172,8 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         }
     }
 
-    let width = if graph.direction == Direction::LeftRight {
-        main_cursor + 60.0
-    } else {
-        max_cross + 60.0
-    };
-
-    let height = if graph.direction == Direction::LeftRight {
-        max_cross + 60.0
-    } else {
-        main_cursor + 60.0
-    };
+    normalize_layout(&mut nodes, &mut edges, &mut subgraphs);
+    let (width, height) = bounds_from_layout(&nodes, &subgraphs);
 
     Layout {
         nodes,
@@ -238,6 +233,7 @@ fn compute_ranks(graph: &Graph) -> HashMap<String, usize> {
     let mut ranks: HashMap<String, usize> = HashMap::new();
     for node in &order {
         let rank = *ranks.get(node).unwrap_or(&0);
+        ranks.entry(node.clone()).or_insert(rank);
         if let Some(nexts) = adj.get(node) {
             for next in nexts {
                 let entry = ranks.entry(next.clone()).or_insert(0);
@@ -247,6 +243,146 @@ fn compute_ranks(graph: &Graph) -> HashMap<String, usize> {
     }
 
     ranks
+}
+
+fn apply_subgraph_bands(graph: &Graph, nodes: &mut BTreeMap<String, NodeLayout>, config: &LayoutConfig) {
+    let mut group_nodes: Vec<Vec<String>> = Vec::new();
+    let mut node_group: HashMap<String, usize> = HashMap::new();
+
+    // Group 0: nodes not in any subgraph.
+    group_nodes.push(Vec::new());
+    for node_id in graph.nodes.keys() {
+        node_group.insert(node_id.clone(), 0);
+    }
+
+    for (idx, sub) in graph.subgraphs.iter().enumerate() {
+        let group_idx = idx + 1;
+        group_nodes.push(Vec::new());
+        for node_id in &sub.nodes {
+            if nodes.contains_key(node_id) {
+                node_group.insert(node_id.clone(), group_idx);
+            }
+        }
+    }
+
+    for (node_id, group_idx) in &node_group {
+        if let Some(bucket) = group_nodes.get_mut(*group_idx) {
+            bucket.push(node_id.clone());
+        }
+    }
+
+    let mut groups: Vec<(usize, f32, f32, f32, f32)> = Vec::new();
+    for (idx, bucket) in group_nodes.iter().enumerate() {
+        if bucket.is_empty() {
+            continue;
+        }
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+        for node_id in bucket {
+            if let Some(node) = nodes.get(node_id) {
+                min_x = min_x.min(node.x);
+                min_y = min_y.min(node.y);
+                max_x = max_x.max(node.x + node.width);
+                max_y = max_y.max(node.y + node.height);
+            }
+        }
+        if min_x != f32::MAX {
+            groups.push((idx, min_x, min_y, max_x, max_y));
+        }
+    }
+
+    // Order groups by their current position to minimize crossing shifts.
+    if graph.direction == Direction::LeftRight {
+        groups.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
+    } else {
+        groups.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    }
+
+    let spacing = config.rank_spacing * 0.8;
+    if graph.direction == Direction::LeftRight {
+        let mut cursor = 0.0;
+        for (group_idx, _min_x, min_y, _max_x, max_y) in groups {
+            let height = max_y - min_y;
+            let offset = cursor - min_y;
+            for node_id in group_nodes[group_idx].iter() {
+                if let Some(node) = nodes.get_mut(node_id) {
+                    node.y += offset;
+                }
+            }
+            cursor += height + spacing;
+        }
+    } else {
+        let mut cursor = 0.0;
+        for (group_idx, min_x, _min_y, max_x, _max_y) in groups {
+            let width = max_x - min_x;
+            let offset = cursor - min_x;
+            for node_id in group_nodes[group_idx].iter() {
+                if let Some(node) = nodes.get_mut(node_id) {
+                    node.x += offset;
+                }
+            }
+            cursor += width + spacing;
+        }
+    }
+}
+
+fn bounds_from_layout(
+    nodes: &BTreeMap<String, NodeLayout>,
+    subgraphs: &[SubgraphLayout],
+) -> (f32, f32) {
+    let mut max_x: f32 = 0.0;
+    let mut max_y: f32 = 0.0;
+    for node in nodes.values() {
+        max_x = max_x.max(node.x + node.width);
+        max_y = max_y.max(node.y + node.height);
+    }
+    for sub in subgraphs {
+        max_x = max_x.max(sub.x + sub.width);
+        max_y = max_y.max(sub.y + sub.height);
+    }
+    (max_x + 60.0, max_y + 60.0)
+}
+
+fn normalize_layout(
+    nodes: &mut BTreeMap<String, NodeLayout>,
+    edges: &mut [EdgeLayout],
+    subgraphs: &mut [SubgraphLayout],
+) {
+    let mut min_x = f32::MAX;
+    let mut min_y = f32::MAX;
+    for node in nodes.values() {
+        min_x = min_x.min(node.x);
+        min_y = min_y.min(node.y);
+    }
+    for sub in subgraphs.iter() {
+        min_x = min_x.min(sub.x);
+        min_y = min_y.min(sub.y);
+    }
+
+    let padding = 24.0;
+    let shift_x = if min_x < padding { padding - min_x } else { 0.0 };
+    let shift_y = if min_y < padding { padding - min_y } else { 0.0 };
+
+    if shift_x == 0.0 && shift_y == 0.0 {
+        return;
+    }
+
+    for node in nodes.values_mut() {
+        node.x += shift_x;
+        node.y += shift_y;
+    }
+    for edge in edges.iter_mut() {
+        for point in edge.points.iter_mut() {
+            point.0 += shift_x;
+            point.1 += shift_y;
+        }
+    }
+    for sub in subgraphs.iter_mut() {
+        sub.x += shift_x;
+        sub.y += shift_y;
+    }
 }
 
 fn route_edge(from: &NodeLayout, to: &NodeLayout, direction: Direction) -> Vec<(f32, f32)> {

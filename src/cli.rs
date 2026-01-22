@@ -63,7 +63,7 @@ pub fn run() -> Result<()> {
         }
         OutputFormat::Png => {
             let output = ensure_output(&args.output, "png")?;
-            write_output_png(&svg, &output, &config.render)?;
+            write_output_png(&svg, &output, &config.render, &config.theme)?;
         }
     }
 

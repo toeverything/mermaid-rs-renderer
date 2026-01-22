@@ -215,11 +215,18 @@ pub fn write_output_svg(svg: &str, output: Option<&Path>) -> Result<()> {
     Ok(())
 }
 
-pub fn write_output_png(svg: &str, output: &Path, render_cfg: &RenderConfig) -> Result<()> {
+pub fn write_output_png(
+    svg: &str,
+    output: &Path,
+    render_cfg: &RenderConfig,
+    theme: &Theme,
+) -> Result<()> {
     let mut opt = usvg::Options::default();
-    opt.font_family = "Inter".to_string();
+    opt.font_family = primary_font(&theme.font_family);
     opt.default_size = usvg::Size::from_wh(render_cfg.width, render_cfg.height)
         .unwrap_or(usvg::Size::from_wh(800.0, 600.0).unwrap());
+
+    opt.fontdb_mut().load_system_fonts();
 
     let tree = usvg::Tree::from_str(svg, &opt)?;
     let size = tree.size().to_int_size();
@@ -239,6 +246,15 @@ fn escape_xml(input: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&apos;")
+}
+
+fn primary_font(fonts: &str) -> String {
+    fonts
+        .split(',')
+        .map(|s| s.trim().trim_matches('"'))
+        .find(|s| !s.is_empty())
+        .unwrap_or("Inter")
+        .to_string()
 }
 
 #[cfg(test)]
