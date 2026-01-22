@@ -10,7 +10,7 @@ pub struct ParseOutput {
 
 pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
     let mut graph = Graph::new();
-    let mut current_subgraph: Option<usize> = None;
+    let mut subgraph_stack: Vec<usize> = Vec::new();
     let mut init_config: Option<serde_json::Value> = None;
 
     let header_re = Regex::new(r"^(flowchart|graph)\s+(\w+)")?;
@@ -55,28 +55,28 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
             }
 
             if line == "end" {
-                current_subgraph = None;
+                subgraph_stack.pop();
                 continue;
             }
 
-        if let Some(caps) = subgraph_re.captures(&line) {
-            let rest = caps.get(1).map(|m| m.as_str()).unwrap_or("");
-            let (id, label, classes) = parse_subgraph_header(rest);
-            graph.subgraphs.push(Subgraph {
-                id: id.clone(),
-                label,
-                nodes: Vec::new(),
-                direction: None,
-            });
-            current_subgraph = Some(graph.subgraphs.len() - 1);
-            if let Some(id) = id {
-                apply_subgraph_classes(&mut graph, &id, &classes);
+            if let Some(caps) = subgraph_re.captures(&line) {
+                let rest = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+                let (id, label, classes) = parse_subgraph_header(rest);
+                graph.subgraphs.push(Subgraph {
+                    id: id.clone(),
+                    label,
+                    nodes: Vec::new(),
+                    direction: None,
+                });
+                subgraph_stack.push(graph.subgraphs.len() - 1);
+                if let Some(id) = id {
+                    apply_subgraph_classes(&mut graph, &id, &classes);
+                }
+                continue;
             }
-            continue;
-        }
 
             if let Some(direction) = parse_direction_line(&line) {
-                if let Some(idx) = current_subgraph {
+                if let Some(idx) = subgraph_stack.last().copied() {
                     if let Some(sub) = graph.subgraphs.get_mut(idx) {
                         sub.direction = Some(direction);
                     }
@@ -132,9 +132,7 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
                 let (left_id, left_label, left_shape, left_classes) = parse_node_token(source);
                 graph.ensure_node(&left_id, left_label, left_shape);
                 apply_node_classes(&mut graph, &left_id, &left_classes);
-                if let Some(idx) = current_subgraph {
-                    add_node_to_subgraph(&mut graph, idx, &left_id);
-                }
+                add_node_to_subgraphs(&mut graph, &subgraph_stack, &left_id);
                 source_ids.push(left_id);
             }
 
@@ -144,9 +142,7 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
                     parse_node_token(target);
                 graph.ensure_node(&right_id, right_label, right_shape);
                 apply_node_classes(&mut graph, &right_id, &right_classes);
-                if let Some(idx) = current_subgraph {
-                    add_node_to_subgraph(&mut graph, idx, &right_id);
-                }
+                add_node_to_subgraphs(&mut graph, &subgraph_stack, &right_id);
                 target_ids.push(right_id);
             }
 
@@ -171,9 +167,7 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
             if let Some((node_id, node_label, node_shape, node_classes)) = parse_node_only(&line) {
                 graph.ensure_node(&node_id, node_label, node_shape);
                 apply_node_classes(&mut graph, &node_id, &node_classes);
-                if let Some(idx) = current_subgraph {
-                    add_node_to_subgraph(&mut graph, idx, &node_id);
-                }
+                add_node_to_subgraphs(&mut graph, &subgraph_stack, &node_id);
             }
         }
     }
@@ -186,6 +180,12 @@ fn add_node_to_subgraph(graph: &mut Graph, idx: usize, node_id: &str) {
         if !subgraph.nodes.contains(&node_id.to_string()) {
             subgraph.nodes.push(node_id.to_string());
         }
+    }
+}
+
+fn add_node_to_subgraphs(graph: &mut Graph, subgraph_stack: &[usize], node_id: &str) {
+    for idx in subgraph_stack {
+        add_node_to_subgraph(graph, *idx, node_id);
     }
 }
 
@@ -825,6 +825,19 @@ mod tests {
         let sg = &parsed.graph.subgraphs[0];
         assert_eq!(sg.label, "My Group");
         assert_eq!(sg.nodes.len(), 2);
+    }
+
+    #[test]
+    fn parse_nested_subgraphs() {
+        let input = "flowchart LR\nsubgraph Outer\n  subgraph Inner\n    A --> B\n  end\nend";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.subgraphs.len(), 2);
+        let outer = &parsed.graph.subgraphs[0];
+        let inner = &parsed.graph.subgraphs[1];
+        assert!(outer.nodes.contains(&"A".to_string()));
+        assert!(outer.nodes.contains(&"B".to_string()));
+        assert!(inner.nodes.contains(&"A".to_string()));
+        assert!(inner.nodes.contains(&"B".to_string()));
     }
 
     #[test]
