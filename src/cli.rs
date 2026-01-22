@@ -112,7 +112,10 @@ fn read_input(path: Option<&Path>) -> Result<(String, bool)> {
         let is_md = path
             .extension()
             .and_then(|e| e.to_str())
-            .map(|ext| matches!(ext, "md" | "markdown"))
+            .map(|ext| {
+                let ext = ext.to_ascii_lowercase();
+                matches!(ext.as_str(), "md" | "markdown")
+            })
             .unwrap_or(false);
         return Ok((content, is_md));
     }
