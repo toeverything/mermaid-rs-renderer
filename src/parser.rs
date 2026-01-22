@@ -310,6 +310,28 @@ fn parse_node_only(
 }
 
 fn parse_edge_line(line: &str) -> Option<(String, Option<String>, String, EdgeMeta)> {
+    let pipe_label_re = Regex::new(
+        r"^(?P<left>.+?)\s*(?P<arrow1><?[-.=]*[-=]+[-.=]*)\|(?P<label>.+?)\|(?P<arrow2>[-.=]*[-=]+[-.=]*>?)\s*(?P<right>.+)$",
+    )
+    .ok()?;
+    if let Some(caps) = pipe_label_re.captures(line) {
+        let left = caps.name("left")?.as_str().trim();
+        let right = caps.name("right")?.as_str().trim();
+        let label_clean = caps.name("label")?.as_str().trim();
+        if !label_clean.is_empty() && !left.is_empty() && !right.is_empty() {
+            let arrow1 = caps.name("arrow1")?.as_str();
+            let arrow2 = caps.name("arrow2")?.as_str();
+            let arrow = format!("{}{}", arrow1, arrow2);
+            let edge_meta = parse_edge_meta(&arrow);
+            return Some((
+                left.to_string(),
+                Some(label_clean.to_string()),
+                right.to_string(),
+                edge_meta,
+            ));
+        }
+    }
+
     let label_arrow_re = Regex::new(
         r"^(?P<left>.+?)\s*(?P<start><)?(?P<dash1>[-.=]*[-=]+[-.=]*)\s+(?P<label>[^<>=]+?)\s+(?P<dash2>[-.=]*[-=]+[-.=]*)(?P<end>>)?\s*(?P<right>.+)$",
     )
@@ -774,13 +796,14 @@ mod tests {
 
     #[test]
     fn parse_edge_label_in_arrow() {
-        let input = "flowchart LR\nA -- needs review --> B";
+        let input = "flowchart LR\nA -- needs review --> B\nC --|ship it|--> D";
         let parsed = parse_mermaid(input).unwrap();
-        assert_eq!(parsed.graph.edges.len(), 1);
+        assert_eq!(parsed.graph.edges.len(), 2);
         assert_eq!(
             parsed.graph.edges[0].label.as_deref(),
             Some("needs review")
         );
+        assert_eq!(parsed.graph.edges[1].label.as_deref(), Some("ship it"));
     }
 
     #[test]
