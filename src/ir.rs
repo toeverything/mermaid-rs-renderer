@@ -4,13 +4,17 @@ use std::collections::{BTreeMap, HashMap};
 pub enum Direction {
     TopDown,
     LeftRight,
+    BottomTop,
+    RightLeft,
 }
 
 impl Direction {
     pub fn from_token(token: &str) -> Option<Self> {
         match token {
             "TD" | "TB" => Some(Self::TopDown),
+            "BT" => Some(Self::BottomTop),
             "LR" => Some(Self::LeftRight),
+            "RL" => Some(Self::RightLeft),
             _ => None,
         }
     }

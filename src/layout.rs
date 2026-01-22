@@ -54,6 +54,10 @@ pub struct Layout {
     pub height: f32,
 }
 
+fn is_horizontal(direction: Direction) -> bool {
+    matches!(direction, Direction::LeftRight | Direction::RightLeft)
+}
+
 pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
     let mut nodes = BTreeMap::new();
 
@@ -104,7 +108,7 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
 
         for node_id in bucket {
             if let Some(node_layout) = nodes.get_mut(node_id) {
-                if graph.direction == Direction::LeftRight {
+                if is_horizontal(graph.direction) {
                     node_layout.x = main_cursor;
                     node_layout.y = cross_cursor;
                     cross_cursor += node_layout.height + config.node_spacing;
@@ -191,6 +195,10 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
                 height: (max_y - min_y) + padding * 2.0,
             });
         }
+    }
+
+    if matches!(graph.direction, Direction::RightLeft | Direction::BottomTop) {
+        apply_direction_mirror(graph.direction, &mut nodes, &mut edges, &mut subgraphs);
     }
 
     normalize_layout(&mut nodes, &mut edges, &mut subgraphs);
@@ -410,14 +418,14 @@ fn apply_subgraph_bands(graph: &Graph, nodes: &mut BTreeMap<String, NodeLayout>,
     }
 
     // Order groups by their current position to minimize crossing shifts.
-    if graph.direction == Direction::LeftRight {
-        groups.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
-    } else {
-        groups.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-    }
+        if is_horizontal(graph.direction) {
+            groups.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
+        } else {
+            groups.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        }
 
     let spacing = config.rank_spacing * 0.8;
-    if graph.direction == Direction::LeftRight {
+    if is_horizontal(graph.direction) {
         let mut cursor = 0.0;
         for (group_idx, _min_x, min_y, _max_x, max_y) in groups {
             let height = max_y - min_y;
@@ -576,7 +584,7 @@ fn assign_positions(
         let mut max_main: f32 = 0.0;
         for node_id in bucket {
             if let Some(node) = nodes.get_mut(&node_id) {
-                if direction == Direction::LeftRight {
+                if is_horizontal(direction) {
                     node.x = origin_x + main_cursor;
                     node.y = origin_y + cross_cursor;
                     cross_cursor += node.height + config.node_spacing;
@@ -597,6 +605,14 @@ fn bounds_from_layout(
     nodes: &BTreeMap<String, NodeLayout>,
     subgraphs: &[SubgraphLayout],
 ) -> (f32, f32) {
+    let (max_x, max_y) = bounds_without_padding(nodes, subgraphs);
+    (max_x + 60.0, max_y + 60.0)
+}
+
+fn bounds_without_padding(
+    nodes: &BTreeMap<String, NodeLayout>,
+    subgraphs: &[SubgraphLayout],
+) -> (f32, f32) {
     let mut max_x: f32 = 0.0;
     let mut max_y: f32 = 0.0;
     for node in nodes.values() {
@@ -607,7 +623,42 @@ fn bounds_from_layout(
         max_x = max_x.max(sub.x + sub.width);
         max_y = max_y.max(sub.y + sub.height);
     }
-    (max_x + 60.0, max_y + 60.0)
+    (max_x, max_y)
+}
+
+fn apply_direction_mirror(
+    direction: Direction,
+    nodes: &mut BTreeMap<String, NodeLayout>,
+    edges: &mut [EdgeLayout],
+    subgraphs: &mut [SubgraphLayout],
+) {
+    let (max_x, max_y) = bounds_without_padding(nodes, subgraphs);
+    if matches!(direction, Direction::RightLeft) {
+        for node in nodes.values_mut() {
+            node.x = max_x - node.x - node.width;
+        }
+        for edge in edges.iter_mut() {
+            for point in edge.points.iter_mut() {
+                point.0 = max_x - point.0;
+            }
+        }
+        for sub in subgraphs.iter_mut() {
+            sub.x = max_x - sub.x - sub.width;
+        }
+    }
+    if matches!(direction, Direction::BottomTop) {
+        for node in nodes.values_mut() {
+            node.y = max_y - node.y - node.height;
+        }
+        for edge in edges.iter_mut() {
+            for point in edge.points.iter_mut() {
+                point.1 = max_y - point.1;
+            }
+        }
+        for sub in subgraphs.iter_mut() {
+            sub.y = max_y - sub.y - sub.height;
+        }
+    }
 }
 
 fn normalize_layout(
@@ -651,7 +702,7 @@ fn normalize_layout(
 }
 
 fn route_edge(from: &NodeLayout, to: &NodeLayout, direction: Direction) -> Vec<(f32, f32)> {
-    if direction == Direction::LeftRight {
+    if is_horizontal(direction) {
         let start = (from.x + from.width, from.y + from.height / 2.0);
         let end = (to.x, to.y + to.height / 2.0);
         let mid_x = (start.0 + end.0) / 2.0;
