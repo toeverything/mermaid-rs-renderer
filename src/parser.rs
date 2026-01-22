@@ -295,6 +295,11 @@ fn parse_class_line(line: &str, graph: &mut Graph) {
             .entry(id.to_string())
             .or_default()
             .push(class_name.clone());
+        graph
+            .subgraph_classes
+            .entry(id.to_string())
+            .or_default()
+            .push(class_name.clone());
     }
 }
 
@@ -612,10 +617,12 @@ mod tests {
 
     #[test]
     fn parse_subgraph_style() {
-        let input = "flowchart LR\nsubgraph SG[Group]\nA --> B\nend\nstyle SG fill:#faf,stroke:#111";
+        let input = "flowchart LR\nclassDef hot fill:#f00,stroke:#0f0\nsubgraph SG[Group]\nA --> B\nend\nclass SG hot\nstyle SG fill:#faf,stroke:#111";
         let parsed = parse_mermaid(input).unwrap();
         let style = parsed.graph.subgraph_styles.get("SG").unwrap();
         assert_eq!(style.fill.as_deref(), Some("#faf"));
         assert_eq!(style.stroke.as_deref(), Some("#111"));
+        let classes = parsed.graph.subgraph_classes.get("SG").unwrap();
+        assert!(classes.iter().any(|c| c == "hot"));
     }
 }

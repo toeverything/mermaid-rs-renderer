@@ -186,12 +186,7 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         }
 
         if min_x != f32::MAX {
-            let style = sub
-                .id
-                .as_ref()
-                .and_then(|id| graph.subgraph_styles.get(id))
-                .cloned()
-                .unwrap_or_default();
+            let style = resolve_subgraph_style(sub, graph);
             let padding = 24.0;
             subgraphs.push(SubgraphLayout {
                 label: sub.label.clone(),
@@ -838,6 +833,27 @@ fn resolve_node_style(node_id: &str, graph: &Graph) -> crate::ir::NodeStyle {
 
     if let Some(node_style) = graph.node_styles.get(node_id) {
         merge_node_style(&mut style, node_style);
+    }
+
+    style
+}
+
+fn resolve_subgraph_style(sub: &crate::ir::Subgraph, graph: &Graph) -> crate::ir::NodeStyle {
+    let mut style = crate::ir::NodeStyle::default();
+    let Some(id) = sub.id.as_ref() else {
+        return style;
+    };
+
+    if let Some(classes) = graph.subgraph_classes.get(id) {
+        for class_name in classes {
+            if let Some(class_style) = graph.class_defs.get(class_name) {
+                merge_node_style(&mut style, class_style);
+            }
+        }
+    }
+
+    if let Some(sub_style) = graph.subgraph_styles.get(id) {
+        merge_node_style(&mut style, sub_style);
     }
 
     style
