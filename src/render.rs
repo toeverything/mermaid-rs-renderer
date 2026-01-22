@@ -19,15 +19,32 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         theme.background
     ));
 
+    let mut colors = Vec::new();
+    colors.push(theme.line_color.clone());
+    for edge in &layout.edges {
+        if let Some(color) = &edge.override_style.stroke {
+            if !colors.contains(color) {
+                colors.push(color.clone());
+            }
+        }
+    }
+    let mut color_ids: HashMap<String, usize> = HashMap::new();
+    for (idx, color) in colors.iter().enumerate() {
+        color_ids.insert(color.clone(), idx);
+    }
+
     svg.push_str("<defs>");
-    svg.push_str(&format!(
-        "<marker id=\"arrow\" viewBox=\"0 0 10 10\" refX=\"10\" refY=\"5\" markerWidth=\"6\" markerHeight=\"6\" orient=\"auto-start-reverse\"><path d=\"M 0 0 L 10 5 L 0 10 z\" fill=\"{}\"/></marker>",
-        theme.line_color
-    ));
-    svg.push_str(&format!(
-        "<marker id=\"arrow-start\" viewBox=\"0 0 10 10\" refX=\"0\" refY=\"5\" markerWidth=\"6\" markerHeight=\"6\" orient=\"auto\"><path d=\"M 10 0 L 0 5 L 10 10 z\" fill=\"{}\"/></marker>",
-        theme.line_color
-    ));
+    for color in &colors {
+        let idx = color_ids.get(color).copied().unwrap_or(0);
+        svg.push_str(&format!(
+            "<marker id=\"arrow-{idx}\" viewBox=\"0 0 10 10\" refX=\"10\" refY=\"5\" markerWidth=\"6\" markerHeight=\"6\" orient=\"auto-start-reverse\"><path d=\"M 0 0 L 10 5 L 0 10 z\" fill=\"{}\"/></marker>",
+            color
+        ));
+        svg.push_str(&format!(
+            "<marker id=\"arrow-start-{idx}\" viewBox=\"0 0 10 10\" refX=\"0\" refY=\"5\" markerWidth=\"6\" markerHeight=\"6\" orient=\"auto\"><path d=\"M 10 0 L 0 5 L 10 10 z\" fill=\"{}\"/></marker>",
+            color
+        ));
+    }
     svg.push_str("</defs>");
 
     for subgraph in &layout.subgraphs {
@@ -55,8 +72,6 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
 
     for (idx, edge) in layout.edges.iter().enumerate() {
         let d = points_to_path(&edge.points);
-        let marker_end = if edge.arrow_end { "marker-end=\"url(#arrow)\"" } else { "" };
-        let marker_start = if edge.arrow_start { "marker-start=\"url(#arrow-start)\"" } else { "" };
         let mut stroke = theme.line_color.clone();
         let (mut dash, mut stroke_width) = match edge.style {
             crate::ir::EdgeStyle::Solid => (String::new(), 1.4),
@@ -67,6 +82,17 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         if let Some(color) = &edge.override_style.stroke {
             stroke = color.clone();
         }
+        let marker_id = color_ids.get(&stroke).copied().unwrap_or(0);
+        let marker_end = if edge.arrow_end {
+            format!("marker-end=\"url(#arrow-{marker_id})\"")
+        } else {
+            String::new()
+        };
+        let marker_start = if edge.arrow_start {
+            format!("marker-start=\"url(#arrow-start-{marker_id})\"")
+        } else {
+            String::new()
+        };
         if let Some(width) = edge.override_style.stroke_width {
             stroke_width = width;
         }
