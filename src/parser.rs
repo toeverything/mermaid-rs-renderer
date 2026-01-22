@@ -18,81 +18,86 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
     let init_re = Regex::new(r"^%%\{\s*init\s*:\s*(\{.*\})\s*\}%%")?;
 
     for raw_line in input.lines() {
-        let line = raw_line.trim();
-        if line.is_empty() {
+        let trimmed_line = raw_line.trim();
+        if trimmed_line.is_empty() {
             continue;
         }
 
-        if let Some(caps) = init_re.captures(line) {
-            if let Some(json_str) = caps.get(1).map(|m| m.as_str()) {
-                if let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str) {
-                    init_config = Some(value);
+        for line in split_statements(trimmed_line) {
+            if line.is_empty() {
+                continue;
+            }
+
+            if let Some(caps) = init_re.captures(&line) {
+                if let Some(json_str) = caps.get(1).map(|m| m.as_str()) {
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str) {
+                        init_config = Some(value);
+                    }
                 }
+                continue;
             }
-            continue;
-        }
 
-        if line.starts_with("%%") {
-            continue;
-        }
-
-        if let Some(caps) = header_re.captures(line) {
-            if let Some(dir) = caps.get(2).and_then(|m| Direction::from_token(m.as_str())) {
-                graph.direction = dir;
+            if line.starts_with("%%") {
+                continue;
             }
-            continue;
-        }
 
-        if line == "end" {
-            current_subgraph = None;
-            continue;
-        }
-
-        if let Some(caps) = subgraph_re.captures(line) {
-            let rest = caps.get(1).map(|m| m.as_str()).unwrap_or("");
-            let (id, label) = parse_subgraph_header(rest);
-            graph.subgraphs.push(Subgraph {
-                id,
-                label,
-                nodes: Vec::new(),
-                direction: None,
-            });
-            current_subgraph = Some(graph.subgraphs.len() - 1);
-            continue;
-        }
-
-        if let Some(direction) = parse_direction_line(line) {
-            if let Some(idx) = current_subgraph {
-                if let Some(sub) = graph.subgraphs.get_mut(idx) {
-                    sub.direction = Some(direction);
+            if let Some(caps) = header_re.captures(&line) {
+                if let Some(dir) = caps.get(2).and_then(|m| Direction::from_token(m.as_str())) {
+                    graph.direction = dir;
                 }
-            } else {
-                graph.direction = direction;
+                continue;
             }
-            continue;
-        }
 
-        if line.starts_with("classDef ") {
-            parse_class_def(line, &mut graph);
-            continue;
-        }
+            if line == "end" {
+                current_subgraph = None;
+                continue;
+            }
 
-        if line.starts_with("class ") {
-            parse_class_line(line, &mut graph);
-            continue;
-        }
+            if let Some(caps) = subgraph_re.captures(&line) {
+                let rest = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+                let (id, label) = parse_subgraph_header(rest);
+                graph.subgraphs.push(Subgraph {
+                    id,
+                    label,
+                    nodes: Vec::new(),
+                    direction: None,
+                });
+                current_subgraph = Some(graph.subgraphs.len() - 1);
+                continue;
+            }
 
-        if line.starts_with("style ") {
-            parse_style_line(line, &mut graph);
-            continue;
-        }
+            if let Some(direction) = parse_direction_line(&line) {
+                if let Some(idx) = current_subgraph {
+                    if let Some(sub) = graph.subgraphs.get_mut(idx) {
+                        sub.direction = Some(direction);
+                    }
+                } else {
+                    graph.direction = direction;
+                }
+                continue;
+            }
 
-        if line.starts_with("linkStyle ") {
-            parse_link_style_line(line, &mut graph);
-            continue;
-        }
+            if line.starts_with("classDef ") {
+                parse_class_def(&line, &mut graph);
+                continue;
+            }
 
-        if let Some((left, label, right, edge_meta)) = parse_edge_line(line) {
+            if line.starts_with("class ") {
+                parse_class_line(&line, &mut graph);
+                continue;
+            }
+
+            if line.starts_with("style ") {
+                parse_style_line(&line, &mut graph);
+                continue;
+            }
+
+            if line.starts_with("linkStyle ") {
+                parse_link_style_line(&line, &mut graph);
+                continue;
+            }
+
+            if let Some((left, label, right, edge_meta)) = parse_edge_line(&line) {
             let (left_id, left_label, left_shape, left_classes) = parse_node_token(&left);
             graph.ensure_node(&left_id, left_label, left_shape);
             apply_node_classes(&mut graph, &left_id, &left_classes);
@@ -121,13 +126,14 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
                 }
             }
             continue;
-        }
+            }
 
-        if let Some((node_id, node_label, node_shape, node_classes)) = parse_node_only(line) {
-            graph.ensure_node(&node_id, node_label, node_shape);
-            apply_node_classes(&mut graph, &node_id, &node_classes);
-            if let Some(idx) = current_subgraph {
-                add_node_to_subgraph(&mut graph, idx, &node_id);
+            if let Some((node_id, node_label, node_shape, node_classes)) = parse_node_only(&line) {
+                graph.ensure_node(&node_id, node_label, node_shape);
+                apply_node_classes(&mut graph, &node_id, &node_classes);
+                if let Some(idx) = current_subgraph {
+                    add_node_to_subgraph(&mut graph, idx, &node_id);
+                }
             }
         }
     }
@@ -141,6 +147,69 @@ fn add_node_to_subgraph(graph: &mut Graph, idx: usize, node_id: &str) {
             subgraph.nodes.push(node_id.to_string());
         }
     }
+}
+
+fn split_statements(line: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut depth = 0i32;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+
+    for ch in line.chars() {
+        if escaped {
+            current.push(ch);
+            escaped = false;
+            continue;
+        }
+
+        if ch == '\\' {
+            current.push(ch);
+            escaped = true;
+            continue;
+        }
+
+        if let Some(q) = quote {
+            if ch == q {
+                quote = None;
+            }
+            current.push(ch);
+            continue;
+        }
+
+        if ch == '"' || ch == '\'' {
+            quote = Some(ch);
+            current.push(ch);
+            continue;
+        }
+
+        match ch {
+            '[' | '(' | '{' => {
+                depth += 1;
+                current.push(ch);
+            }
+            ']' | ')' | '}' => {
+                if depth > 0 {
+                    depth -= 1;
+                }
+                current.push(ch);
+            }
+            ';' if depth == 0 => {
+                let trimmed = current.trim();
+                if !trimmed.is_empty() {
+                    parts.push(trimmed.to_string());
+                }
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+
+    let trimmed = current.trim();
+    if !trimmed.is_empty() {
+        parts.push(trimmed.to_string());
+    }
+    parts
 }
 
 fn parse_subgraph_header(input: &str) -> (Option<String>, String) {
@@ -624,5 +693,12 @@ mod tests {
         assert_eq!(style.stroke.as_deref(), Some("#111"));
         let classes = parsed.graph.subgraph_classes.get("SG").unwrap();
         assert!(classes.iter().any(|c| c == "hot"));
+    }
+
+    #[test]
+    fn parse_semicolon_statements() {
+        let input = "flowchart LR; A --> B; B --> C";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.edges.len(), 2);
     }
 }
