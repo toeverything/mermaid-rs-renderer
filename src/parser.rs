@@ -222,6 +222,14 @@ fn parse_subgraph_header(input: &str) -> (Option<String>, String) {
         return (Some(id.to_string()), label);
     }
 
+    if !trimmed.contains(|c: char| c == '"' || c == '\'') {
+        let parts: Vec<&str> = trimmed.split_whitespace().collect();
+        if parts.len() == 1 {
+            let token = parts[0];
+            return (Some(token.to_string()), token.to_string());
+        }
+    }
+
     (None, strip_quotes(trimmed))
 }
 
@@ -702,5 +710,14 @@ mod tests {
         let input = "flowchart LR; A --> B; B --> C";
         let parsed = parse_mermaid(input).unwrap();
         assert_eq!(parsed.graph.edges.len(), 2);
+    }
+
+    #[test]
+    fn parse_subgraph_single_token_id() {
+        let input = "flowchart LR\nsubgraph Alpha\nA --> B\nend\nstyle Alpha fill:#fff";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.subgraphs.len(), 1);
+        assert_eq!(parsed.graph.subgraphs[0].id.as_deref(), Some("Alpha"));
+        assert!(parsed.graph.subgraph_styles.contains_key("Alpha"));
     }
 }
