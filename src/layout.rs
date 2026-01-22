@@ -63,6 +63,7 @@ struct Obstacle {
     y: f32,
     width: f32,
     height: f32,
+    members: Option<HashSet<String>>,
 }
 
 fn is_horizontal(direction: Direction) -> bool {
@@ -150,7 +151,8 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         apply_subgraph_bands(graph, &mut nodes, config);
     }
 
-    let obstacles = build_obstacles(&nodes);
+    let mut subgraphs = build_subgraph_layouts(graph, &nodes, theme, config);
+    let obstacles = build_obstacles(&nodes, &subgraphs);
     let pair_counts = build_edge_pair_counts(&graph.edges);
     let mut pair_seen: HashMap<(String, String), usize> = HashMap::new();
     let mut edges = Vec::new();
@@ -199,41 +201,6 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
             style: edge.style,
             override_style,
         });
-    }
-
-    let mut subgraphs = Vec::new();
-    for sub in &graph.subgraphs {
-        let mut min_x = f32::MAX;
-        let mut min_y = f32::MAX;
-        let mut max_x = f32::MIN;
-        let mut max_y = f32::MIN;
-
-        for node_id in &sub.nodes {
-            if let Some(node) = nodes.get(node_id) {
-                min_x = min_x.min(node.x);
-                min_y = min_y.min(node.y);
-                max_x = max_x.max(node.x + node.width);
-                max_y = max_y.max(node.y + node.height);
-            }
-        }
-
-        if min_x != f32::MAX {
-            let style = resolve_subgraph_style(sub, graph);
-            let label_block = measure_label(&sub.label, theme, config);
-            let padding = 24.0;
-            let label_height = label_block.height;
-            let top_padding = padding + label_height + 8.0;
-            subgraphs.push(SubgraphLayout {
-                label: sub.label.clone(),
-                label_block,
-                nodes: sub.nodes.clone(),
-                x: min_x - padding,
-                y: min_y - top_padding,
-                width: (max_x - min_x) + padding * 2.0,
-                height: (max_y - min_y) + padding + top_padding,
-                style,
-            });
-        }
     }
 
     if matches!(graph.direction, Direction::RightLeft | Direction::BottomTop) {
@@ -863,7 +830,10 @@ fn route_self_loop(
     }
 }
 
-fn build_obstacles(nodes: &BTreeMap<String, NodeLayout>) -> Vec<Obstacle> {
+fn build_obstacles(
+    nodes: &BTreeMap<String, NodeLayout>,
+    subgraphs: &[SubgraphLayout],
+) -> Vec<Obstacle> {
     let mut obstacles = Vec::new();
     for node in nodes.values() {
         obstacles.push(Obstacle {
@@ -872,6 +842,19 @@ fn build_obstacles(nodes: &BTreeMap<String, NodeLayout>) -> Vec<Obstacle> {
             y: node.y - 6.0,
             width: node.width + 12.0,
             height: node.height + 12.0,
+            members: None,
+        });
+    }
+
+    for sub in subgraphs {
+        let members: HashSet<String> = sub.nodes.iter().cloned().collect();
+        obstacles.push(Obstacle {
+            id: format!("subgraph:{}", sub.label),
+            x: sub.x,
+            y: sub.y,
+            width: sub.width,
+            height: sub.height,
+            members: Some(members),
         });
     }
     obstacles
@@ -909,6 +892,11 @@ fn path_intersects_obstacles(
         for obstacle in obstacles {
             if obstacle.id == from_id || obstacle.id == to_id {
                 continue;
+            }
+            if let Some(members) = &obstacle.members {
+                if members.contains(from_id) || members.contains(to_id) {
+                    continue;
+                }
             }
             if segment_intersects_rect(a, b, obstacle) {
                 return true;
@@ -1039,6 +1027,52 @@ fn resolve_subgraph_style(sub: &crate::ir::Subgraph, graph: &Graph) -> crate::ir
     }
 
     style
+}
+
+fn build_subgraph_layouts(
+    graph: &Graph,
+    nodes: &BTreeMap<String, NodeLayout>,
+    theme: &Theme,
+    config: &LayoutConfig,
+) -> Vec<SubgraphLayout> {
+    let mut subgraphs = Vec::new();
+    for sub in &graph.subgraphs {
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+
+        for node_id in &sub.nodes {
+            if let Some(node) = nodes.get(node_id) {
+                min_x = min_x.min(node.x);
+                min_y = min_y.min(node.y);
+                max_x = max_x.max(node.x + node.width);
+                max_y = max_y.max(node.y + node.height);
+            }
+        }
+
+        if min_x == f32::MAX {
+            continue;
+        }
+
+        let style = resolve_subgraph_style(sub, graph);
+        let label_block = measure_label(&sub.label, theme, config);
+        let padding = 24.0;
+        let label_height = label_block.height;
+        let top_padding = padding + label_height + 8.0;
+
+        subgraphs.push(SubgraphLayout {
+            label: sub.label.clone(),
+            label_block,
+            nodes: sub.nodes.clone(),
+            x: min_x - padding,
+            y: min_y - top_padding,
+            width: (max_x - min_x) + padding * 2.0,
+            height: (max_y - min_y) + padding + top_padding,
+            style,
+        });
+    }
+    subgraphs
 }
 
 fn merge_node_style(target: &mut crate::ir::NodeStyle, source: &crate::ir::NodeStyle) {
