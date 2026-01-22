@@ -188,11 +188,43 @@ fn split_id_label(token: &str) -> Option<(&str, String, crate::ir::NodeShape)> {
         return Some((id, label, shape));
     }
 
+    let brace_re = Regex::new(r"^([A-Za-z0-9_\-]+)\s*(\{.*\})$").ok()?;
+    if let Some(caps) = brace_re.captures(token) {
+        let id = caps.get(1)?.as_str();
+        let raw = caps.get(2)?.as_str();
+        let (label, shape) = parse_shape_from_braces(raw);
+        return Some((id, label, shape));
+    }
+
     None
 }
 
 fn parse_shape_from_brackets(raw: &str) -> (String, crate::ir::NodeShape) {
     let trimmed = raw.trim();
+    if trimmed.starts_with("[/") && trimmed.ends_with("/]") {
+        return (
+            strip_quotes(&trimmed[2..trimmed.len() - 2]),
+            crate::ir::NodeShape::Parallelogram,
+        );
+    }
+    if trimmed.starts_with("[\\") && trimmed.ends_with("\\]") {
+        return (
+            strip_quotes(&trimmed[2..trimmed.len() - 2]),
+            crate::ir::NodeShape::ParallelogramAlt,
+        );
+    }
+    if trimmed.starts_with("[/") && trimmed.ends_with("\\]") {
+        return (
+            strip_quotes(&trimmed[2..trimmed.len() - 2]),
+            crate::ir::NodeShape::Trapezoid,
+        );
+    }
+    if trimmed.starts_with("[\\") && trimmed.ends_with("/]") {
+        return (
+            strip_quotes(&trimmed[2..trimmed.len() - 2]),
+            crate::ir::NodeShape::TrapezoidAlt,
+        );
+    }
     if trimmed.starts_with("[[") && trimmed.ends_with("]]") {
         return (strip_quotes(&trimmed[2..trimmed.len() - 2]), crate::ir::NodeShape::Subroutine);
     }
@@ -215,9 +247,24 @@ fn parse_shape_from_parens(raw: &str) -> (String, crate::ir::NodeShape) {
         return (strip_quotes(&trimmed[2..trimmed.len() - 2]), crate::ir::NodeShape::DoubleCircle);
     }
     if trimmed.starts_with('(') && trimmed.ends_with(')') {
-        return (strip_quotes(&trimmed[1..trimmed.len() - 1]), crate::ir::NodeShape::RoundRect);
+        let inner = &trimmed[1..trimmed.len() - 1];
+        if inner.starts_with('[') && inner.ends_with(']') {
+            return (strip_quotes(&inner[1..inner.len() - 1]), crate::ir::NodeShape::Stadium);
+        }
+        return (strip_quotes(inner), crate::ir::NodeShape::RoundRect);
     }
     (strip_quotes(trimmed), crate::ir::NodeShape::RoundRect)
+}
+
+fn parse_shape_from_braces(raw: &str) -> (String, crate::ir::NodeShape) {
+    let trimmed = raw.trim();
+    if trimmed.starts_with("{{") && trimmed.ends_with("}}") {
+        return (strip_quotes(&trimmed[2..trimmed.len() - 2]), crate::ir::NodeShape::Hexagon);
+    }
+    if trimmed.starts_with('{') && trimmed.ends_with('}') {
+        return (strip_quotes(&trimmed[1..trimmed.len() - 1]), crate::ir::NodeShape::Diamond);
+    }
+    (strip_quotes(trimmed), crate::ir::NodeShape::Diamond)
 }
 
 fn strip_quotes(input: &str) -> String {

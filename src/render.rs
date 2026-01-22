@@ -314,6 +314,82 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
             "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"12\" ry=\"12\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1.4\"/>",
             x, y, w, h, fill, stroke
         ),
+        crate::ir::NodeShape::Hexagon => {
+            let x1 = x + w * 0.25;
+            let x2 = x + w * 0.75;
+            let y_mid = y + h / 2.0;
+            let points = format!(
+                "{:.2},{:.2} {:.2},{:.2} {:.2},{:.2} {:.2},{:.2} {:.2},{:.2} {:.2},{:.2}",
+                x1,
+                y,
+                x2,
+                y,
+                x + w,
+                y_mid,
+                x2,
+                y + h,
+                x1,
+                y + h,
+                x,
+                y_mid
+            );
+            format!(
+                "<polygon points=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1.4\"/>",
+                points, fill, stroke
+            )
+        }
+        crate::ir::NodeShape::Parallelogram | crate::ir::NodeShape::ParallelogramAlt => {
+            let offset = w * 0.18;
+            let (p1, p2, p3, p4) = if node.shape == crate::ir::NodeShape::Parallelogram {
+                (
+                    (x + offset, y),
+                    (x + w, y),
+                    (x + w - offset, y + h),
+                    (x, y + h),
+                )
+            } else {
+                (
+                    (x, y),
+                    (x + w - offset, y),
+                    (x + w, y + h),
+                    (x + offset, y + h),
+                )
+            };
+            let points = format!(
+                "{:.2},{:.2} {:.2},{:.2} {:.2},{:.2} {:.2},{:.2}",
+                p1.0, p1.1, p2.0, p2.1, p3.0, p3.1, p4.0, p4.1
+            );
+            format!(
+                "<polygon points=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1.4\"/>",
+                points, fill, stroke
+            )
+        }
+        crate::ir::NodeShape::Trapezoid | crate::ir::NodeShape::TrapezoidAlt => {
+            let offset = w * 0.18;
+            let (p1, p2, p3, p4) = if node.shape == crate::ir::NodeShape::Trapezoid {
+                (
+                    (x + offset, y),
+                    (x + w - offset, y),
+                    (x + w, y + h),
+                    (x, y + h),
+                )
+            } else {
+                (
+                    (x, y),
+                    (x + w, y),
+                    (x + w - offset, y + h),
+                    (x + offset, y + h),
+                )
+            };
+            let points = format!(
+                "{:.2},{:.2} {:.2},{:.2} {:.2},{:.2} {:.2},{:.2}",
+                p1.0, p1.1, p2.0, p2.1, p3.0, p3.1, p4.0, p4.1
+            );
+            format!(
+                "<polygon points=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1.4\"/>",
+                points, fill, stroke
+            )
+        }
         _ => format!(
             "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"6\" ry=\"6\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1.4\"/>",
             x, y, w, h, fill, stroke

@@ -485,6 +485,16 @@ fn shape_size(
             width *= 1.1;
             height *= 1.1;
         }
+        crate::ir::NodeShape::Hexagon => {
+            width *= 1.2;
+            height *= 1.1;
+        }
+        crate::ir::NodeShape::Parallelogram
+        | crate::ir::NodeShape::ParallelogramAlt
+        | crate::ir::NodeShape::Trapezoid
+        | crate::ir::NodeShape::TrapezoidAlt => {
+            width *= 1.2;
+        }
         _ => {}
     }
 
