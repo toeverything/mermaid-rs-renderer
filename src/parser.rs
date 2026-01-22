@@ -77,25 +77,25 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
                 continue;
             }
 
-            if line.starts_with("classDef ") {
-                parse_class_def(&line, &mut graph);
-                continue;
-            }
+        if line.starts_with("classDef") {
+            parse_class_def(&line, &mut graph);
+            continue;
+        }
 
-            if line.starts_with("class ") {
-                parse_class_line(&line, &mut graph);
-                continue;
-            }
+        if line.starts_with("class ") {
+            parse_class_line(&line, &mut graph);
+            continue;
+        }
 
-            if line.starts_with("style ") {
-                parse_style_line(&line, &mut graph);
-                continue;
-            }
+        if line.starts_with("style ") {
+            parse_style_line(&line, &mut graph);
+            continue;
+        }
 
-            if line.starts_with("linkStyle ") {
-                parse_link_style_line(&line, &mut graph);
-                continue;
-            }
+        if line.starts_with("linkStyle") {
+            parse_link_style_line(&line, &mut graph);
+            continue;
+        }
 
             if let Some((left, label, right, edge_meta)) = parse_edge_line(&line) {
             let (left_id, left_label, left_shape, left_classes) = parse_node_token(&left);
@@ -336,7 +336,8 @@ fn parse_direction_line(line: &str) -> Option<Direction> {
 }
 
 fn parse_class_def(line: &str, graph: &mut Graph) {
-    let mut parts = line.splitn(3, ' ');
+    let trimmed = line.trim();
+    let mut parts = trimmed.splitn(3, char::is_whitespace);
     let _ = parts.next();
     let class_name = parts.next().unwrap_or("").trim();
     let rest = parts.next().unwrap_or("").trim();
@@ -401,7 +402,8 @@ fn parse_style_line(line: &str, graph: &mut Graph) {
 }
 
 fn parse_link_style_line(line: &str, graph: &mut Graph) {
-    let mut parts = line.splitn(3, ' ');
+    let trimmed = line.trim();
+    let mut parts = trimmed.splitn(3, char::is_whitespace);
     let _ = parts.next();
     let index_str = parts.next().unwrap_or("").trim();
     let rest = parts.next().unwrap_or("").trim();
