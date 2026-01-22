@@ -173,12 +173,7 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
             .label
             .as_ref()
             .map(|l| measure_label(l, theme, config));
-        let override_style = graph
-            .edge_styles
-            .get(&idx)
-            .cloned()
-            .or_else(|| graph.edge_style_default.clone())
-            .unwrap_or_default();
+        let override_style = resolve_edge_style(idx, graph);
 
         let points = route_edge_with_avoidance(
             &edge.from,
@@ -216,6 +211,32 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         subgraphs,
         width,
         height,
+    }
+}
+
+fn resolve_edge_style(idx: usize, graph: &Graph) -> crate::ir::EdgeStyleOverride {
+    let mut style = graph.edge_style_default.clone().unwrap_or_default();
+    if let Some(edge_style) = graph.edge_styles.get(&idx) {
+        merge_edge_style(&mut style, edge_style);
+    }
+    style
+}
+
+fn merge_edge_style(
+    target: &mut crate::ir::EdgeStyleOverride,
+    source: &crate::ir::EdgeStyleOverride,
+) {
+    if source.stroke.is_some() {
+        target.stroke = source.stroke.clone();
+    }
+    if source.stroke_width.is_some() {
+        target.stroke_width = source.stroke_width;
+    }
+    if source.dasharray.is_some() {
+        target.dasharray = source.dasharray.clone();
+    }
+    if source.label_color.is_some() {
+        target.label_color = source.label_color.clone();
     }
 }
 
@@ -1168,5 +1189,43 @@ mod tests {
         let a = layout.nodes.get("A").unwrap();
         let b = layout.nodes.get("B").unwrap();
         assert!(b.x >= a.x);
+    }
+
+    #[test]
+    fn edge_style_merges_default_and_override() {
+        let mut graph = Graph::new();
+        graph.ensure_node("A", Some("Alpha".to_string()), Some(NodeShape::Rectangle));
+        graph.ensure_node("B", Some("Beta".to_string()), Some(NodeShape::Rectangle));
+        graph.edges.push(crate::ir::Edge {
+            from: "A".to_string(),
+            to: "B".to_string(),
+            label: None,
+            directed: true,
+            arrow_start: false,
+            arrow_end: true,
+            style: crate::ir::EdgeStyle::Solid,
+        });
+
+        graph.edge_style_default = Some(crate::ir::EdgeStyleOverride {
+            stroke: Some("#111111".to_string()),
+            stroke_width: None,
+            dasharray: None,
+            label_color: Some("#222222".to_string()),
+        });
+        graph.edge_styles.insert(
+            0,
+            crate::ir::EdgeStyleOverride {
+                stroke: None,
+                stroke_width: Some(4.0),
+                dasharray: None,
+                label_color: None,
+            },
+        );
+
+        let layout = compute_layout(&graph, &Theme::modern(), &LayoutConfig::default());
+        let edge = &layout.edges[0];
+        assert_eq!(edge.override_style.stroke.as_deref(), Some("#111111"));
+        assert_eq!(edge.override_style.stroke_width, Some(4.0));
+        assert_eq!(edge.override_style.label_color.as_deref(), Some("#222222"));
     }
 }
