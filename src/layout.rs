@@ -55,6 +55,15 @@ pub struct Layout {
     pub height: f32,
 }
 
+#[derive(Debug, Clone)]
+struct Obstacle {
+    id: String,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+}
+
 fn is_horizontal(direction: Direction) -> bool {
     matches!(direction, Direction::LeftRight | Direction::RightLeft)
 }
@@ -140,6 +149,7 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         apply_subgraph_bands(graph, &mut nodes, config);
     }
 
+    let obstacles = build_obstacles(&nodes);
     let mut edges = Vec::new();
     for (idx, edge) in graph.edges.iter().enumerate() {
         let from = nodes.get(&edge.from).expect("from node missing");
@@ -155,7 +165,16 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
             .or_else(|| graph.edge_style_default.clone())
             .unwrap_or_default();
 
-        let points = route_edge(from, to, graph.direction);
+        let points = route_edge_with_avoidance(
+            &edge.from,
+            &edge.to,
+            from,
+            to,
+            graph.direction,
+            config,
+            &obstacles,
+            idx,
+        );
         edges.push(EdgeLayout {
             from: edge.from.clone(),
             to: edge.to.clone(),
@@ -747,18 +766,149 @@ fn normalize_layout(
     }
 }
 
-fn route_edge(from: &NodeLayout, to: &NodeLayout, direction: Direction) -> Vec<(f32, f32)> {
+fn route_edge_with_avoidance(
+    from_id: &str,
+    to_id: &str,
+    from: &NodeLayout,
+    to: &NodeLayout,
+    direction: Direction,
+    config: &LayoutConfig,
+    obstacles: &[Obstacle],
+    edge_index: usize,
+) -> Vec<(f32, f32)> {
+    if from_id == to_id {
+        return route_self_loop(from, direction, config);
+    }
+
+    let (start, end) = if is_horizontal(direction) {
+        (
+            (from.x + from.width, from.y + from.height / 2.0),
+            (to.x, to.y + to.height / 2.0),
+        )
+    } else {
+        (
+            (from.x + from.width / 2.0, from.y + from.height),
+            (to.x + to.width / 2.0, to.y),
+        )
+    };
+
+    let base_offset = (edge_index % 3) as f32 * (config.node_spacing * 0.2)
+        - (config.node_spacing * 0.2);
+    let step = config.node_spacing.max(16.0) * 0.6;
+    let mut offsets = vec![base_offset];
+    for i in 1..=4 {
+        let delta = step * i as f32;
+        offsets.push(base_offset + delta);
+        offsets.push(base_offset - delta);
+    }
+
+    for offset in offsets {
+        let points = if is_horizontal(direction) {
+            let mid_x = (start.0 + end.0) / 2.0 + offset;
+            vec![start, (mid_x, start.1), (mid_x, end.1), end]
+        } else {
+            let mid_y = (start.1 + end.1) / 2.0 + offset;
+            vec![start, (start.0, mid_y), (end.0, mid_y), end]
+        };
+
+        if !path_intersects_obstacles(&points, obstacles, from_id, to_id) {
+            return points;
+        }
+    }
+
     if is_horizontal(direction) {
-        let start = (from.x + from.width, from.y + from.height / 2.0);
-        let end = (to.x, to.y + to.height / 2.0);
         let mid_x = (start.0 + end.0) / 2.0;
         vec![start, (mid_x, start.1), (mid_x, end.1), end]
     } else {
-        let start = (from.x + from.width / 2.0, from.y + from.height);
-        let end = (to.x + to.width / 2.0, to.y);
         let mid_y = (start.1 + end.1) / 2.0;
         vec![start, (start.0, mid_y), (end.0, mid_y), end]
     }
+}
+
+fn route_self_loop(
+    node: &NodeLayout,
+    direction: Direction,
+    config: &LayoutConfig,
+) -> Vec<(f32, f32)> {
+    let pad = config.node_spacing.max(20.0) * 0.6;
+    if is_horizontal(direction) {
+        let start = (node.x + node.width, node.y + node.height / 2.0);
+        let p1 = (node.x + node.width + pad, node.y + node.height / 2.0);
+        let p2 = (node.x + node.width + pad, node.y - pad);
+        let p3 = (node.x + node.width / 2.0, node.y - pad);
+        let end = (node.x + node.width / 2.0, node.y);
+        vec![start, p1, p2, p3, end]
+    } else {
+        let start = (node.x + node.width / 2.0, node.y + node.height);
+        let p1 = (node.x + node.width / 2.0, node.y + node.height + pad);
+        let p2 = (node.x + node.width + pad, node.y + node.height + pad);
+        let p3 = (node.x + node.width + pad, node.y + node.height / 2.0);
+        let end = (node.x + node.width, node.y + node.height / 2.0);
+        vec![start, p1, p2, p3, end]
+    }
+}
+
+fn build_obstacles(nodes: &BTreeMap<String, NodeLayout>) -> Vec<Obstacle> {
+    let mut obstacles = Vec::new();
+    for node in nodes.values() {
+        obstacles.push(Obstacle {
+            id: node.id.clone(),
+            x: node.x - 6.0,
+            y: node.y - 6.0,
+            width: node.width + 12.0,
+            height: node.height + 12.0,
+        });
+    }
+    obstacles
+}
+
+fn path_intersects_obstacles(
+    points: &[(f32, f32)],
+    obstacles: &[Obstacle],
+    from_id: &str,
+    to_id: &str,
+) -> bool {
+    if points.len() < 2 {
+        return false;
+    }
+
+    for segment in points.windows(2) {
+        let (a, b) = (segment[0], segment[1]);
+        for obstacle in obstacles {
+            if obstacle.id == from_id || obstacle.id == to_id {
+                continue;
+            }
+            if segment_intersects_rect(a, b, obstacle) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn segment_intersects_rect(
+    a: (f32, f32),
+    b: (f32, f32),
+    rect: &Obstacle,
+) -> bool {
+    let (x1, y1) = a;
+    let (x2, y2) = b;
+    if (x1 - x2).abs() < f32::EPSILON {
+        let x = x1;
+        if x >= rect.x && x <= rect.x + rect.width {
+            let min_y = y1.min(y2);
+            let max_y = y1.max(y2);
+            return max_y >= rect.y && min_y <= rect.y + rect.height;
+        }
+    } else if (y1 - y2).abs() < f32::EPSILON {
+        let y = y1;
+        if y >= rect.y && y <= rect.y + rect.height {
+            let min_x = x1.min(x2);
+            let max_x = x1.max(x2);
+            return max_x >= rect.x && min_x <= rect.x + rect.width;
+        }
+    }
+    false
 }
 
 fn measure_label(text: &str, theme: &Theme, config: &LayoutConfig) -> TextBlock {
