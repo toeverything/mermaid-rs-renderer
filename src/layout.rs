@@ -38,6 +38,7 @@ pub struct EdgeLayout {
 #[derive(Debug, Clone)]
 pub struct SubgraphLayout {
     pub label: String,
+    pub label_block: TextBlock,
     pub nodes: Vec<String>,
     pub x: f32,
     pub y: f32,
@@ -218,11 +219,13 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
 
         if min_x != f32::MAX {
             let style = resolve_subgraph_style(sub, graph);
+            let label_block = measure_label(&sub.label, theme, config);
             let padding = 24.0;
-            let label_height = theme.font_size * config.label_line_height;
+            let label_height = label_block.height;
             let top_padding = padding + label_height + 8.0;
             subgraphs.push(SubgraphLayout {
                 label: sub.label.clone(),
+                label_block,
                 nodes: sub.nodes.clone(),
                 x: min_x - padding,
                 y: min_y - top_padding,

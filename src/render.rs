@@ -77,22 +77,23 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             sub_dash
         ));
         let label_x = subgraph.x + 12.0;
-        let label_y = subgraph.y + theme.font_size + 8.0;
+        let label_y = subgraph.y + 6.0;
         let label_color = subgraph
             .style
             .text_color
             .as_ref()
             .unwrap_or(&theme.primary_text_color);
-        svg.push_str(&format!(
-            "<text x=\"{label_x:.2}\" y=\"{label_y:.2}\" font-family=\"{}\" font-size=\"{}\" fill=\"{}\">{}</text>",
-            theme.font_family,
-            theme.font_size,
+        svg.push_str(&text_block_svg_left(
+            label_x,
+            label_y,
+            &subgraph.label_block,
+            theme,
+            config,
             label_color,
-            escape_xml(&subgraph.label)
         ));
     }
 
-    let label_positions = compute_edge_label_positions(&layout.edges, &layout.nodes, &layout.subgraphs, theme, config);
+    let label_positions = compute_edge_label_positions(&layout.edges, &layout.nodes, &layout.subgraphs);
 
     for (idx, edge) in layout.edges.iter().enumerate() {
         let d = points_to_path(&edge.points);
@@ -211,12 +212,41 @@ fn text_block_svg(
     text
 }
 
+fn text_block_svg_left(
+    x: f32,
+    y: f32,
+    label: &TextBlock,
+    theme: &Theme,
+    config: &LayoutConfig,
+    fill: &str,
+) -> String {
+    let start_y = y + theme.font_size;
+    let mut text = String::new();
+    text.push_str(&format!(
+        "<text x=\"{x:.2}\" y=\"{start_y:.2}\" text-anchor=\"start\" font-family=\"{}\" font-size=\"{}\" fill=\"{}\">",
+        theme.font_family,
+        theme.font_size,
+        fill
+    ));
+
+    for (idx, line) in label.lines.iter().enumerate() {
+        if idx == 0 {
+            text.push_str(&format!("<tspan x=\"{x:.2}\" dy=\"0\">{}", escape_xml(line)));
+        } else {
+            let dy = theme.font_size * config.label_line_height;
+            text.push_str(&format!("<tspan x=\"{x:.2}\" dy=\"{dy:.2}\">{}", escape_xml(line)));
+        }
+        text.push_str("</tspan>");
+    }
+
+    text.push_str("</text>");
+    text
+}
+
 fn compute_edge_label_positions(
     edges: &[EdgeLayout],
     nodes: &std::collections::BTreeMap<String, crate::layout::NodeLayout>,
     subgraphs: &[crate::layout::SubgraphLayout],
-    theme: &Theme,
-    config: &LayoutConfig,
 ) -> HashMap<usize, Option<(f32, f32, TextBlock)>> {
     let mut occupied: Vec<(f32, f32, f32, f32)> = Vec::new();
     let edge_obstacles = build_edge_obstacles(edges, 6.0);
@@ -234,11 +264,11 @@ fn compute_edge_label_positions(
         if sub.label.trim().is_empty() {
             continue;
         }
-        let width = sub.label.chars().count() as f32 * theme.font_size * 0.6;
-        let height = theme.font_size * config.label_line_height;
+        let width = sub.label_block.width;
+        let height = sub.label_block.height;
         let x = sub.x + 12.0;
-        let y = sub.y + 20.0 - height;
-        occupied.push((x - 4.0, y - 2.0, width + 8.0, height + 4.0));
+        let y = sub.y + 6.0;
+        occupied.push((x - 4.0, y, width + 8.0, height + 4.0));
     }
     let mut positions = HashMap::new();
 
