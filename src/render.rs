@@ -93,6 +93,17 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         ));
     }
 
+    for lifeline in &layout.lifelines {
+        svg.push_str(&format!(
+            "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" stroke-width=\"1.1\" stroke-dasharray=\"4 6\" opacity=\"0.6\"/>",
+            lifeline.x,
+            lifeline.y1,
+            lifeline.x,
+            lifeline.y2,
+            theme.line_color
+        ));
+    }
+
     let label_positions = compute_edge_label_positions(&layout.edges, &layout.nodes, &layout.subgraphs);
 
     for (idx, edge) in layout.edges.iter().enumerate() {
@@ -483,6 +494,26 @@ fn edge_decoration_svg(
                 y + size,
                 x + size,
                 y - size,
+                stroke,
+                stroke_width
+            )
+        }
+        crate::ir::EdgeDecoration::Diamond => {
+            let size = 5.0;
+            let points = format!(
+                "{:.2},{:.2} {:.2},{:.2} {:.2},{:.2} {:.2},{:.2}",
+                x,
+                y - size,
+                x + size,
+                y,
+                x,
+                y + size,
+                x - size,
+                y
+            );
+            format!(
+                "<polygon points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"/>",
+                points,
                 stroke,
                 stroke_width
             )

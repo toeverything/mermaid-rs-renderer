@@ -8,6 +8,14 @@ pub enum Direction {
     RightLeft,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiagramKind {
+    Flowchart,
+    Class,
+    State,
+    Sequence,
+}
+
 impl Direction {
     pub fn from_token(token: &str) -> Option<Self> {
         let upper = token.to_ascii_uppercase();
@@ -52,6 +60,7 @@ pub enum EdgeStyle {
 pub enum EdgeDecoration {
     Circle,
     Cross,
+    Diamond,
 }
 
 #[derive(Debug, Clone)]
@@ -64,10 +73,12 @@ pub struct Subgraph {
 
 #[derive(Debug, Clone)]
 pub struct Graph {
+    pub kind: DiagramKind,
     pub direction: Direction,
     pub nodes: BTreeMap<String, Node>,
     pub edges: Vec<Edge>,
     pub subgraphs: Vec<Subgraph>,
+    pub sequence_participants: Vec<String>,
     pub class_defs: HashMap<String, NodeStyle>,
     pub node_classes: HashMap<String, Vec<String>>,
     pub node_styles: HashMap<String, NodeStyle>,
@@ -99,10 +110,12 @@ pub enum NodeShape {
 impl Graph {
     pub fn new() -> Self {
         Self {
+            kind: DiagramKind::Flowchart,
             direction: Direction::TopDown,
             nodes: BTreeMap::new(),
             edges: Vec::new(),
             subgraphs: Vec::new(),
+            sequence_participants: Vec::new(),
             class_defs: HashMap::new(),
             node_classes: HashMap::new(),
             node_styles: HashMap::new(),

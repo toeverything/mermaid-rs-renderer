@@ -2,6 +2,7 @@ use crate::config::LayoutConfig;
 use crate::ir::{Direction, Graph};
 use crate::theme::Theme;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::cmp::Ordering;
 
 #[derive(Debug, Clone)]
 pub struct TextBlock {
@@ -50,10 +51,18 @@ pub struct SubgraphLayout {
 }
 
 #[derive(Debug, Clone)]
+pub struct Lifeline {
+    pub x: f32,
+    pub y1: f32,
+    pub y2: f32,
+}
+
+#[derive(Debug, Clone)]
 pub struct Layout {
     pub nodes: BTreeMap<String, NodeLayout>,
     pub edges: Vec<EdgeLayout>,
     pub subgraphs: Vec<SubgraphLayout>,
+    pub lifelines: Vec<Lifeline>,
     pub width: f32,
     pub height: f32,
 }
@@ -73,6 +82,15 @@ fn is_horizontal(direction: Direction) -> bool {
 }
 
 pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
+    match graph.kind {
+        crate::ir::DiagramKind::Sequence => compute_sequence_layout(graph, theme, config),
+        crate::ir::DiagramKind::Class | crate::ir::DiagramKind::State | crate::ir::DiagramKind::Flowchart => {
+            compute_flowchart_layout(graph, theme, config)
+        }
+    }
+}
+
+fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
     let mut nodes = BTreeMap::new();
 
     for node in graph.nodes.values() {
@@ -213,6 +231,124 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         nodes,
         edges,
         subgraphs,
+        lifelines: Vec::new(),
+        width,
+        height,
+    }
+}
+
+fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
+    let mut nodes = BTreeMap::new();
+    let mut edges = Vec::new();
+    let subgraphs = Vec::new();
+
+    let mut participants = graph.sequence_participants.clone();
+    for id in graph.nodes.keys() {
+        if !participants.contains(id) {
+            participants.push(id.clone());
+        }
+    }
+
+    let mut cursor_x = 0.0;
+    let mut max_node_height: f32 = 0.0;
+    for id in &participants {
+        let node = graph.nodes.get(id).expect("participant missing");
+        let label = measure_label(&node.label, theme, config);
+        let (width, height) = shape_size(node.shape, &label, config);
+        nodes.insert(
+            id.clone(),
+            NodeLayout {
+                id: id.clone(),
+                x: cursor_x,
+                y: 0.0,
+                width,
+                height,
+                label,
+                shape: node.shape,
+                style: resolve_node_style(id.as_str(), graph),
+            },
+        );
+        cursor_x += width + config.rank_spacing;
+        max_node_height = max_node_height.max(height);
+    }
+
+    let mut message_cursor = max_node_height + config.node_spacing * 1.2;
+    let mut message_ys = Vec::new();
+    for edge in &graph.edges {
+        let label_block = edge
+            .label
+            .as_ref()
+            .map(|l| measure_label(l, theme, config));
+        let label_height = label_block
+            .as_ref()
+            .map(|b| b.height)
+            .unwrap_or(theme.font_size);
+        let spacing = (label_height + 24.0).max(24.0);
+        message_ys.push(message_cursor);
+        message_cursor += spacing;
+    }
+
+    for (idx, edge) in graph.edges.iter().enumerate() {
+        let from = nodes.get(&edge.from).expect("from node missing");
+        let to = nodes.get(&edge.to).expect("to node missing");
+        let y = message_ys.get(idx).copied().unwrap_or(message_cursor);
+        let label = edge
+            .label
+            .as_ref()
+            .map(|l| measure_label(l, theme, config));
+
+        let points = if edge.from == edge.to {
+            let pad = config.node_spacing.max(20.0) * 0.6;
+            let x = from.x + from.width / 2.0;
+            vec![
+                (x, y),
+                (x + pad, y),
+                (x + pad, y + pad),
+                (x, y + pad),
+            ]
+        } else {
+            let from_x = from.x + from.width / 2.0;
+            let to_x = to.x + to.width / 2.0;
+            vec![(from_x, y), (to_x, y)]
+        };
+
+        let override_style = resolve_edge_style(idx, graph);
+        edges.push(EdgeLayout {
+            from: edge.from.clone(),
+            to: edge.to.clone(),
+            label,
+            points,
+            directed: edge.directed,
+            arrow_start: edge.arrow_start,
+            arrow_end: edge.arrow_end,
+            start_decoration: edge.start_decoration,
+            end_decoration: edge.end_decoration,
+            style: edge.style,
+            override_style,
+        });
+    }
+
+    let lifeline_start = max_node_height + config.node_spacing * 0.4;
+    let lifeline_end = message_cursor + config.node_spacing * 0.4;
+    let lifelines = participants
+        .iter()
+        .filter_map(|id| nodes.get(id))
+        .map(|node| Lifeline {
+            x: node.x + node.width / 2.0,
+            y1: lifeline_start,
+            y2: lifeline_end,
+        })
+        .collect::<Vec<_>>();
+
+    let (mut width, mut height) = bounds_from_layout(&nodes, &subgraphs);
+    width = width.max(cursor_x + 40.0);
+    height = height.max(lifeline_end + 40.0);
+
+    Layout {
+        nodes,
+        edges,
+        subgraphs,
+        lifelines,
         width,
         height,
     }
@@ -410,8 +546,10 @@ fn apply_subgraph_bands(graph: &Graph, nodes: &mut BTreeMap<String, NodeLayout>,
         node_group.insert(node_id.clone(), 0);
     }
 
-    for (idx, sub) in graph.subgraphs.iter().enumerate() {
-        let group_idx = idx + 1;
+    let top_level = top_level_subgraph_indices(graph);
+    for (pos, idx) in top_level.iter().enumerate() {
+        let group_idx = pos + 1;
+        let sub = &graph.subgraphs[*idx];
         group_nodes.push(Vec::new());
         for node_id in &sub.nodes {
             if nodes.contains_key(node_id) {
@@ -481,6 +619,31 @@ fn apply_subgraph_bands(graph: &Graph, nodes: &mut BTreeMap<String, NodeLayout>,
             cursor += width + spacing;
         }
     }
+}
+
+fn top_level_subgraph_indices(graph: &Graph) -> Vec<usize> {
+    let mut sets: Vec<HashSet<String>> = Vec::new();
+    for sub in &graph.subgraphs {
+        sets.push(sub.nodes.iter().cloned().collect());
+    }
+
+    let mut top_level = Vec::new();
+    for i in 0..graph.subgraphs.len() {
+        let mut nested = false;
+        for j in 0..graph.subgraphs.len() {
+            if i == j {
+                continue;
+            }
+            if sets[j].len() > sets[i].len() && sets[i].is_subset(&sets[j]) {
+                nested = true;
+                break;
+            }
+        }
+        if !nested {
+            top_level.push(i);
+        }
+    }
+    top_level
 }
 
 fn apply_subgraph_direction_overrides(
@@ -873,12 +1036,13 @@ fn build_obstacles(
 
     for sub in subgraphs {
         let members: HashSet<String> = sub.nodes.iter().cloned().collect();
+        let pad = 6.0;
         obstacles.push(Obstacle {
             id: format!("subgraph:{}", sub.label),
-            x: sub.x,
-            y: sub.y,
-            width: sub.width,
-            height: sub.height,
+            x: sub.x - pad,
+            y: sub.y - pad,
+            width: sub.width + pad * 2.0,
+            height: sub.height + pad * 2.0,
             members: Some(members),
         });
     }
@@ -1097,6 +1261,13 @@ fn build_subgraph_layouts(
             style,
         });
     }
+    subgraphs.sort_by(|a, b| {
+        let area_a = a.width * a.height;
+        let area_b = b.width * b.height;
+        area_b
+            .partial_cmp(&area_a)
+            .unwrap_or(Ordering::Equal)
+    });
     subgraphs
 }
 

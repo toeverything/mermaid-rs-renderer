@@ -1,6 +1,7 @@
-use crate::ir::{Direction, Graph, Subgraph};
+use crate::ir::{DiagramKind, Direction, Graph, Subgraph};
 use anyhow::Result;
 use regex::Regex;
+use std::collections::HashMap;
 
 #[derive(Debug, Default)]
 pub struct ParseOutput {
@@ -9,13 +10,51 @@ pub struct ParseOutput {
 }
 
 pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
-    let mut graph = Graph::new();
-    let mut subgraph_stack: Vec<usize> = Vec::new();
-    let mut init_config: Option<serde_json::Value> = None;
+    match detect_diagram_kind(input) {
+        DiagramKind::Class => parse_class_diagram(input),
+        DiagramKind::State => parse_state_diagram(input),
+        DiagramKind::Sequence => parse_sequence_diagram(input),
+        DiagramKind::Flowchart => parse_flowchart(input),
+    }
+}
 
-    let header_re = Regex::new(r"^(flowchart|graph)\s+(\w+)")?;
-    let subgraph_re = Regex::new(r"^subgraph\s+(.*)$")?;
+fn detect_diagram_kind(input: &str) -> DiagramKind {
+    for raw_line in input.lines() {
+        let trimmed_line = raw_line.trim();
+        if trimmed_line.is_empty() {
+            continue;
+        }
+        if trimmed_line.starts_with("%%") {
+            continue;
+        }
+        if trimmed_line.starts_with("%%{") {
+            continue;
+        }
+        let without_comment = strip_trailing_comment(trimmed_line);
+        if without_comment.is_empty() {
+            continue;
+        }
+        let lower = without_comment.to_ascii_lowercase();
+        if lower.starts_with("sequencediagram") {
+            return DiagramKind::Sequence;
+        }
+        if lower.starts_with("classdiagram") {
+            return DiagramKind::Class;
+        }
+        if lower.starts_with("statediagram") {
+            return DiagramKind::State;
+        }
+        if lower.starts_with("flowchart") || lower.starts_with("graph") {
+            return DiagramKind::Flowchart;
+        }
+    }
+    DiagramKind::Flowchart
+}
+
+fn preprocess_input(input: &str) -> Result<(Vec<String>, Option<serde_json::Value>)> {
     let init_re = Regex::new(r"^%%\{\s*init\s*:\s*(\{.*\})\s*\}%%")?;
+    let mut init_config: Option<serde_json::Value> = None;
+    let mut lines = Vec::new();
 
     for raw_line in input.lines() {
         let trimmed_line = raw_line.trim();
@@ -32,17 +71,30 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
             }
             continue;
         }
-
         if trimmed_line.starts_with("%%") {
             continue;
         }
-
         let without_comment = strip_trailing_comment(trimmed_line);
         if without_comment.is_empty() {
             continue;
         }
+        lines.push(without_comment.to_string());
+    }
 
-        for line in split_statements(&without_comment) {
+    Ok((lines, init_config))
+}
+
+fn parse_flowchart(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::Flowchart;
+    let mut subgraph_stack: Vec<usize> = Vec::new();
+
+    let header_re = Regex::new(r"^(flowchart|graph)\s+(\w+)")?;
+    let subgraph_re = Regex::new(r"^subgraph\s+(.*)$")?;
+    let (lines, init_config) = preprocess_input(input)?;
+
+    for raw_line in lines {
+        for line in split_statements(&raw_line) {
             if line.is_empty() {
                 continue;
             }
@@ -86,20 +138,20 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
                 continue;
             }
 
-        if line.starts_with("classDef") {
-            parse_class_def(&line, &mut graph);
-            continue;
-        }
+            if line.starts_with("classDef") {
+                parse_class_def(&line, &mut graph);
+                continue;
+            }
 
-        if line.starts_with("class ") {
-            parse_class_line(&line, &mut graph);
-            continue;
-        }
+            if line.starts_with("class ") {
+                parse_class_line(&line, &mut graph);
+                continue;
+            }
 
-        if line.starts_with("style ") {
-            parse_style_line(&line, &mut graph);
-            continue;
-        }
+            if line.starts_with("style ") {
+                parse_style_line(&line, &mut graph);
+                continue;
+            }
 
             if line.starts_with("linkStyle") {
                 parse_link_style_line(&line, &mut graph);
@@ -116,53 +168,53 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
             }
 
             if let Some((left, label, right, edge_meta)) = parse_edge_line(&line) {
-            let sources: Vec<&str> = left
-                .split('&')
-                .map(|part| part.trim())
-                .filter(|part| !part.is_empty())
-                .collect();
-            let targets: Vec<&str> = right
-                .split('&')
-                .map(|part| part.trim())
-                .filter(|part| !part.is_empty())
-                .collect();
+                let sources: Vec<&str> = left
+                    .split('&')
+                    .map(|part| part.trim())
+                    .filter(|part| !part.is_empty())
+                    .collect();
+                let targets: Vec<&str> = right
+                    .split('&')
+                    .map(|part| part.trim())
+                    .filter(|part| !part.is_empty())
+                    .collect();
 
-            let mut source_ids = Vec::new();
-            for source in sources {
-                let (left_id, left_label, left_shape, left_classes) = parse_node_token(source);
-                graph.ensure_node(&left_id, left_label, left_shape);
-                apply_node_classes(&mut graph, &left_id, &left_classes);
-                add_node_to_subgraphs(&mut graph, &subgraph_stack, &left_id);
-                source_ids.push(left_id);
-            }
-
-            let mut target_ids = Vec::new();
-            for target in targets {
-                let (right_id, right_label, right_shape, right_classes) =
-                    parse_node_token(target);
-                graph.ensure_node(&right_id, right_label, right_shape);
-                apply_node_classes(&mut graph, &right_id, &right_classes);
-                add_node_to_subgraphs(&mut graph, &subgraph_stack, &right_id);
-                target_ids.push(right_id);
-            }
-
-            for left_id in &source_ids {
-                for right_id in &target_ids {
-                    graph.edges.push(crate::ir::Edge {
-                        from: left_id.clone(),
-                        to: right_id.clone(),
-                        label: label.clone(),
-                        directed: edge_meta.directed,
-                        arrow_start: edge_meta.arrow_start,
-                        arrow_end: edge_meta.arrow_end,
-                        start_decoration: edge_meta.start_decoration,
-                        end_decoration: edge_meta.end_decoration,
-                        style: edge_meta.style,
-                    });
+                let mut source_ids = Vec::new();
+                for source in sources {
+                    let (left_id, left_label, left_shape, left_classes) = parse_node_token(source);
+                    graph.ensure_node(&left_id, left_label, left_shape);
+                    apply_node_classes(&mut graph, &left_id, &left_classes);
+                    add_node_to_subgraphs(&mut graph, &subgraph_stack, &left_id);
+                    source_ids.push(left_id);
                 }
+
+                let mut target_ids = Vec::new();
+                for target in targets {
+                    let (right_id, right_label, right_shape, right_classes) =
+                        parse_node_token(target);
+                    graph.ensure_node(&right_id, right_label, right_shape);
+                    apply_node_classes(&mut graph, &right_id, &right_classes);
+                    add_node_to_subgraphs(&mut graph, &subgraph_stack, &right_id);
+                    target_ids.push(right_id);
+                }
+
+                for left_id in &source_ids {
+                    for right_id in &target_ids {
+                        graph.edges.push(crate::ir::Edge {
+                            from: left_id.clone(),
+                            to: right_id.clone(),
+                            label: label.clone(),
+                            directed: edge_meta.directed,
+                            arrow_start: edge_meta.arrow_start,
+                            arrow_end: edge_meta.arrow_end,
+                            start_decoration: edge_meta.start_decoration,
+                            end_decoration: edge_meta.end_decoration,
+                            style: edge_meta.style,
+                        });
+                    }
+                }
+                continue;
             }
-            continue;
-        }
 
             if let Some((node_id, node_label, node_shape, node_classes)) = parse_node_only(&line) {
                 graph.ensure_node(&node_id, node_label, node_shape);
@@ -172,6 +224,526 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
         }
     }
 
+    Ok(ParseOutput { graph, init_config })
+}
+
+fn parse_class_relation_line(line: &str) -> Option<(String, String, EdgeMeta, Option<String>)> {
+    let tokens = [
+        "<|..", "..|>", "<|--", "--|>", "*--", "--*", "o--", "--o", "<..", "..>", "<--", "-->",
+        "..", "--",
+    ];
+
+    for token in tokens {
+        if let Some(pos) = line.find(token) {
+            let left = line[..pos].trim();
+            let right_part = line[pos + token.len()..].trim();
+            if left.is_empty() || right_part.is_empty() {
+                continue;
+            }
+            let (right, label) = split_label(right_part);
+            let meta = edge_meta_from_class_token(token);
+            return Some((left.to_string(), right.to_string(), meta, label));
+        }
+    }
+    None
+}
+
+fn edge_meta_from_class_token(token: &str) -> EdgeMeta {
+    let arrow_start = token.contains('<');
+    let arrow_end = token.contains('>');
+    let directed = arrow_start || arrow_end;
+    let style = if token.contains("..") {
+        crate::ir::EdgeStyle::Dotted
+    } else {
+        crate::ir::EdgeStyle::Solid
+    };
+
+    let mut start_decoration = None;
+    let mut end_decoration = None;
+    if token.starts_with('*') {
+        start_decoration = Some(crate::ir::EdgeDecoration::Diamond);
+    }
+    if token.ends_with('*') {
+        end_decoration = Some(crate::ir::EdgeDecoration::Diamond);
+    }
+    if token.starts_with('o') {
+        start_decoration = Some(crate::ir::EdgeDecoration::Circle);
+    }
+    if token.ends_with('o') {
+        end_decoration = Some(crate::ir::EdgeDecoration::Circle);
+    }
+
+    EdgeMeta {
+        directed,
+        arrow_start,
+        arrow_end,
+        start_decoration,
+        end_decoration,
+        style,
+    }
+}
+
+fn parse_class_declaration(input: &str) -> Option<(String, Option<String>, Option<String>, bool)> {
+    let mut rest = input.trim();
+    if rest.is_empty() {
+        return None;
+    }
+
+    let mut body: Option<String> = None;
+    let mut open_body = false;
+    if let Some(open_idx) = rest.find('{') {
+        let header = rest[..open_idx].trim();
+        let tail = rest[open_idx + 1..].trim();
+        if let Some(close_idx) = tail.find('}') {
+            let body_str = tail[..close_idx].trim();
+            if !body_str.is_empty() {
+                body = Some(body_str.to_string());
+            }
+        } else {
+            open_body = true;
+        }
+        rest = header;
+    }
+
+    let lower = rest.to_ascii_lowercase();
+    if let Some(as_idx) = lower.find(" as ") {
+        let label_part = rest[..as_idx].trim();
+        let id_part = rest[as_idx + 4..].trim();
+        if !id_part.is_empty() {
+            let label = strip_quotes(label_part);
+            return Some((id_part.to_string(), Some(label), body, open_body));
+        }
+    }
+
+    if rest.starts_with('"') && rest.ends_with('"') {
+        let label = strip_quotes(rest);
+        return Some((label.clone(), Some(label), body, open_body));
+    }
+
+    let id = strip_quotes(rest);
+    Some((id, None, body, open_body))
+}
+
+fn split_class_body(body: &str) -> Vec<String> {
+    let mut entries = Vec::new();
+    for part in body.split(';') {
+        let trimmed = part.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        for line in trimmed.lines() {
+            let line_trim = line.trim();
+            if !line_trim.is_empty() {
+                entries.push(line_trim.to_string());
+            }
+        }
+    }
+    entries
+}
+
+fn parse_class_member_line(line: &str) -> Option<(String, String)> {
+    let (left, right) = line.split_once(':')?;
+    let id = left.trim();
+    let member = right.trim();
+    if id.is_empty() || member.is_empty() {
+        return None;
+    }
+    if id.contains(' ') {
+        return None;
+    }
+    Some((id.to_string(), member.to_string()))
+}
+
+fn normalize_class_id(token: &str) -> (String, Option<String>) {
+    let trimmed = token.trim();
+    if trimmed.starts_with('"') && trimmed.ends_with('"') {
+        let label = strip_quotes(trimmed);
+        return (label.clone(), Some(label));
+    }
+    (trimmed.to_string(), None)
+}
+
+fn parse_state_alias_line(line: &str) -> Option<(String, String)> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with("state ") {
+        return None;
+    }
+    let rest = trimmed.trim_start_matches("state ").trim();
+    if !rest.starts_with('"') {
+        return None;
+    }
+    let end_quote = rest[1..].find('"')? + 1;
+    let label = rest[1..end_quote].to_string();
+    let remaining = rest[end_quote + 1..].trim();
+    if !remaining.to_ascii_lowercase().starts_with("as ") {
+        return None;
+    }
+    let id = remaining[3..].trim();
+    if id.is_empty() {
+        return None;
+    }
+    Some((id.to_string(), label))
+}
+
+fn parse_state_transition(line: &str) -> Option<(String, EdgeMeta, String, Option<String>)> {
+    let tokens = ["<-->", "<--", "-->", "<->", "->", "<-", "..>", "<.."];
+    for token in tokens {
+        if let Some(pos) = line.find(token) {
+            let left = line[..pos].trim();
+            let right_part = line[pos + token.len()..].trim();
+            if left.is_empty() || right_part.is_empty() {
+                continue;
+            }
+            let (right, label) = split_label(right_part);
+            let meta = edge_meta_from_state_token(token);
+            return Some((left.to_string(), meta, right.to_string(), label));
+        }
+    }
+    None
+}
+
+fn edge_meta_from_state_token(token: &str) -> EdgeMeta {
+    let arrow_start = token.contains('<');
+    let arrow_end = token.contains('>');
+    let directed = arrow_start || arrow_end;
+    let style = if token.contains("..") {
+        crate::ir::EdgeStyle::Dotted
+    } else {
+        crate::ir::EdgeStyle::Solid
+    };
+    EdgeMeta {
+        directed,
+        arrow_start,
+        arrow_end,
+        start_decoration: None,
+        end_decoration: None,
+        style,
+    }
+}
+
+fn normalize_state_token(token: &str, is_start: bool, counter: &mut usize) -> (String, crate::ir::NodeShape) {
+    let trimmed = token.trim();
+    if trimmed == "[*]" || trimmed == "*" {
+        let id = if is_start {
+            format!("__start_{}__", *counter)
+        } else {
+            format!("__end_{}__", *counter)
+        };
+        *counter += 1;
+        return (id, crate::ir::NodeShape::Circle);
+    }
+    (strip_quotes(trimmed), crate::ir::NodeShape::RoundRect)
+}
+
+fn parse_state_simple(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with("state ") {
+        return None;
+    }
+    let mut rest = trimmed.trim_start_matches("state ").trim();
+    if rest.to_ascii_lowercase().contains(" as ") {
+        return None;
+    }
+    if let Some(idx) = rest.find('{') {
+        rest = rest[..idx].trim();
+    }
+    if rest.is_empty() {
+        return None;
+    }
+    Some(strip_quotes(rest))
+}
+
+fn parse_sequence_participant(line: &str) -> Option<(String, Option<String>)> {
+    let lowered = line.to_ascii_lowercase();
+    let keywords = ["participant ", "actor ", "entity "];
+    let mut rest = None;
+    for keyword in keywords {
+        if lowered.starts_with(keyword) {
+            rest = Some(line[keyword.len()..].trim());
+            break;
+        }
+    }
+    let rest = rest?;
+    if rest.is_empty() {
+        return None;
+    }
+
+    let lower_rest = rest.to_ascii_lowercase();
+    if let Some(as_idx) = lower_rest.find(" as ") {
+        let label_part = rest[..as_idx].trim();
+        let id_part = rest[as_idx + 4..].trim();
+        if id_part.is_empty() {
+            return None;
+        }
+        let label = strip_quotes(label_part);
+        return Some((id_part.to_string(), Some(label)));
+    }
+
+    if rest.starts_with('"') && rest.ends_with('"') {
+        let label = strip_quotes(rest);
+        return Some((label.clone(), Some(label)));
+    }
+
+    Some((strip_quotes(rest), None))
+}
+
+fn parse_sequence_message(line: &str) -> Option<(String, String, Option<String>, crate::ir::EdgeStyle)> {
+    let tokens = ["-->>+", "->>+", "-->+", "->+", "-->>", "->>", "-->", "->", "<--", "<-"];
+    for token in tokens {
+        if let Some(pos) = line.find(token) {
+            let left = line[..pos].trim();
+            let right_part = line[pos + token.len()..].trim();
+            if left.is_empty() || right_part.is_empty() {
+                continue;
+            }
+            let (right, label) = split_label(right_part);
+            let mut from = left.to_string();
+            let mut to = right.to_string();
+            if token.starts_with('<') {
+                std::mem::swap(&mut from, &mut to);
+            }
+            let style = if token.starts_with("--") {
+                crate::ir::EdgeStyle::Dotted
+            } else {
+                crate::ir::EdgeStyle::Solid
+            };
+            return Some((from, to, label, style));
+        }
+    }
+    None
+}
+
+fn split_label(input: &str) -> (String, Option<String>) {
+    if let Some((left, right)) = input.split_once(':') {
+        let label = right.trim();
+        let target = left.trim();
+        if !label.is_empty() {
+            return (target.to_string(), Some(label.to_string()));
+        }
+        return (target.to_string(), None);
+    }
+    (input.trim().to_string(), None)
+}
+
+fn parse_class_diagram(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::Class;
+    graph.direction = Direction::LeftRight;
+    let (lines, init_config) = preprocess_input(input)?;
+
+    let mut members: HashMap<String, Vec<String>> = HashMap::new();
+    let mut labels: HashMap<String, String> = HashMap::new();
+    let mut current_class: Option<String> = None;
+
+    for raw_line in lines {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("classdiagram") {
+            continue;
+        }
+
+        if let Some(active) = current_class.clone() {
+            if let Some(end_idx) = line.find('}') {
+                let fragment = line[..end_idx].trim();
+                if !fragment.is_empty() {
+                    members.entry(active.clone()).or_default().push(fragment.to_string());
+                }
+                current_class = None;
+            } else {
+                members.entry(active.clone()).or_default().push(line.to_string());
+            }
+            continue;
+        }
+
+        if let Some((left, right, meta, label)) = parse_class_relation_line(line) {
+            let (left_id, left_label) = normalize_class_id(&left);
+            let (right_id, right_label) = normalize_class_id(&right);
+            if let Some(label) = left_label {
+                labels.insert(left_id.clone(), label);
+            }
+            if let Some(label) = right_label {
+                labels.insert(right_id.clone(), label);
+            }
+            graph.ensure_node(&left_id, labels.get(&left_id).cloned(), Some(crate::ir::NodeShape::Rectangle));
+            graph.ensure_node(&right_id, labels.get(&right_id).cloned(), Some(crate::ir::NodeShape::Rectangle));
+            graph.edges.push(crate::ir::Edge {
+                from: left_id,
+                to: right_id,
+                label,
+                directed: meta.directed,
+                arrow_start: meta.arrow_start,
+                arrow_end: meta.arrow_end,
+                start_decoration: meta.start_decoration,
+                end_decoration: meta.end_decoration,
+                style: meta.style,
+            });
+            continue;
+        }
+
+        if line.starts_with("class ") {
+            let rest = line.trim_start_matches("class ").trim();
+            if let Some((id, label, body, open_body)) = parse_class_declaration(rest) {
+                if let Some(label) = label.clone() {
+                    labels.insert(id.clone(), label);
+                }
+                graph.ensure_node(&id, labels.get(&id).cloned(), Some(crate::ir::NodeShape::Rectangle));
+                if let Some(body) = body {
+                    for entry in split_class_body(&body) {
+                        if !entry.is_empty() {
+                            members.entry(id.clone()).or_default().push(entry);
+                        }
+                    }
+                }
+                if open_body {
+                    current_class = Some(id.clone());
+                }
+                continue;
+            }
+        }
+
+        if let Some((id, member)) = parse_class_member_line(line) {
+            members.entry(id).or_default().push(member);
+            continue;
+        }
+    }
+
+    for (id, node) in graph.nodes.iter_mut() {
+        let class_name = labels.get(id).cloned().unwrap_or_else(|| node.label.clone());
+        let mut lines = Vec::new();
+        lines.push(class_name.clone());
+        if let Some(items) = members.get(id) {
+            if !items.is_empty() {
+                lines.push("---".to_string());
+                for entry in items {
+                    lines.push(entry.trim().to_string());
+                }
+            }
+        }
+        node.label = lines.join("\n");
+    }
+
+    Ok(ParseOutput { graph, init_config })
+}
+
+fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::State;
+    let (lines, init_config) = preprocess_input(input)?;
+
+    let mut labels: HashMap<String, String> = HashMap::new();
+    let mut special_counter: usize = 0;
+
+    for raw_line in lines {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("statediagram") {
+            continue;
+        }
+
+        if let Some((id, label)) = parse_state_alias_line(line) {
+            labels.insert(id.clone(), label);
+            graph.ensure_node(&id, labels.get(&id).cloned(), Some(crate::ir::NodeShape::RoundRect));
+            continue;
+        }
+
+        if let Some((left, meta, right, label)) = parse_state_transition(line) {
+            let (left_id, left_shape) = normalize_state_token(&left, true, &mut special_counter);
+            let (right_id, right_shape) = normalize_state_token(&right, false, &mut special_counter);
+
+            let left_label = labels.get(&left_id).cloned();
+            let right_label = labels.get(&right_id).cloned();
+            graph.ensure_node(&left_id, left_label, Some(left_shape));
+            graph.ensure_node(&right_id, right_label, Some(right_shape));
+            graph.edges.push(crate::ir::Edge {
+                from: left_id,
+                to: right_id,
+                label,
+                directed: meta.directed,
+                arrow_start: meta.arrow_start,
+                arrow_end: meta.arrow_end,
+                start_decoration: meta.start_decoration,
+                end_decoration: meta.end_decoration,
+                style: meta.style,
+            });
+            continue;
+        }
+
+        if let Some(id) = parse_state_simple(line) {
+            graph.ensure_node(&id, labels.get(&id).cloned(), Some(crate::ir::NodeShape::RoundRect));
+            continue;
+        }
+    }
+
+    Ok(ParseOutput { graph, init_config })
+}
+
+fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::Sequence;
+    graph.direction = Direction::LeftRight;
+    let (lines, init_config) = preprocess_input(input)?;
+
+    let mut labels: HashMap<String, String> = HashMap::new();
+    let mut order: Vec<String> = Vec::new();
+
+    for raw_line in lines {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("sequencediagram") {
+            continue;
+        }
+        if let Some((id, label)) = parse_sequence_participant(line) {
+            if !order.contains(&id) {
+                order.push(id.clone());
+            }
+            if let Some(label) = label.clone() {
+                labels.insert(id.clone(), label);
+            }
+            graph.ensure_node(&id, labels.get(&id).cloned(), Some(crate::ir::NodeShape::RoundRect));
+            continue;
+        }
+
+        if lower.starts_with("note ")
+            || lower.starts_with("activate ")
+            || lower.starts_with("deactivate ")
+            || lower.starts_with("autonumber")
+        {
+            continue;
+        }
+
+        if let Some((from, to, label, style)) = parse_sequence_message(line) {
+            if !order.contains(&from) {
+                order.push(from.clone());
+            }
+            if !order.contains(&to) {
+                order.push(to.clone());
+            }
+            graph.ensure_node(&from, labels.get(&from).cloned(), Some(crate::ir::NodeShape::RoundRect));
+            graph.ensure_node(&to, labels.get(&to).cloned(), Some(crate::ir::NodeShape::RoundRect));
+            graph.edges.push(crate::ir::Edge {
+                from,
+                to,
+                label,
+                directed: true,
+                arrow_start: false,
+                arrow_end: true,
+                start_decoration: None,
+                end_decoration: None,
+                style,
+            });
+        }
+    }
+
+    graph.sequence_participants = order;
     Ok(ParseOutput { graph, init_config })
 }
 
@@ -802,6 +1374,7 @@ fn strip_quotes(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ir::DiagramKind;
 
     #[test]
     fn parse_simple_flowchart() {
@@ -961,6 +1534,45 @@ mod tests {
             Some(crate::ir::EdgeDecoration::Cross)
         );
         assert!(parsed.graph.edges[1].arrow_end);
+    }
+
+    #[test]
+    fn parse_class_diagram_basic() {
+        let input = "classDiagram\nclass Animal {\n+String name\n+eat()\n}\nclass Dog\nAnimal <|-- Dog : inherits";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::Class);
+        assert!(parsed.graph.nodes.contains_key("Animal"));
+        assert!(parsed.graph.nodes.contains_key("Dog"));
+        assert_eq!(parsed.graph.edges.len(), 1);
+        assert_eq!(parsed.graph.edges[0].label.as_deref(), Some("inherits"));
+        let label = &parsed.graph.nodes.get("Animal").unwrap().label;
+        assert!(label.contains("Animal"));
+        assert!(label.contains("name"));
+    }
+
+    #[test]
+    fn parse_state_diagram_basic() {
+        let input = "stateDiagram-v2\n[*] --> Idle\nIdle --> Active : start\nstate \"Waiting\" as Wait\nWait --> Active";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::State);
+        assert!(parsed.graph.nodes.contains_key("Idle"));
+        assert!(parsed.graph.nodes.contains_key("Active"));
+        assert!(parsed.graph.nodes.contains_key("Wait"));
+        let wait_label = &parsed.graph.nodes.get("Wait").unwrap().label;
+        assert_eq!(wait_label, "Waiting");
+        assert!(parsed.graph.edges.len() >= 2);
+    }
+
+    #[test]
+    fn parse_sequence_diagram_basic() {
+        let input = "sequenceDiagram\nparticipant Alice as A\nparticipant Bob\nA->>Bob: Hello\nBob-->>A: Hi";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::Sequence);
+        assert_eq!(parsed.graph.sequence_participants.len(), 2);
+        assert_eq!(parsed.graph.sequence_participants[0], "A");
+        assert_eq!(parsed.graph.sequence_participants[1], "Bob");
+        assert_eq!(parsed.graph.edges.len(), 2);
+        assert_eq!(parsed.graph.edges[1].style, crate::ir::EdgeStyle::Dotted);
     }
 
     #[test]
