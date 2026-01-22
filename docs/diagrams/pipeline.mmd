@@ -1,0 +1,10 @@
+flowchart LR
+  INPUT["Mermaid text"] --> PARSE["Parse"]
+  PARSE --> AST["AST / IR"]
+  AST --> VALID["Validate + normalize"]
+  VALID --> LAYOUT["Layout (layered DAG)"]
+  LAYOUT --> GEOM["Geometry: nodes / edges / labels"]
+  GEOM --> SVG["SVG render"]
+  SVG --> PNG["PNG rasterize (optional)"]
+  SVG --> PDF["PDF export (optional)"]
+  THEME["Theme + style vars"] --> SVG

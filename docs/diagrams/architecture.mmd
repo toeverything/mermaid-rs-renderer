@@ -1,0 +1,18 @@
+flowchart LR
+  subgraph CLI["CLI (binary crate)"]
+    CLI_IN["Input: .mmd / stdin"] --> CLI_CFG["Config + theme"]
+    CLI_CFG --> CLI_CORE["Call core library"]
+    CLI_OUT["Output: SVG / PNG / PDF"]
+  end
+
+  subgraph CORE["Core library"]
+    PARSER["Parser"] --> AST["AST / IR"]
+    AST --> LAYOUT["Layout engine"]
+    LAYOUT --> RENDER["Renderer"]
+    RENDER --> EXPORT["Exporters"]
+    THEME["Theme / style system"] --> RENDER
+    DIRECTIVES["Init directives<br/>%%{init}%%"] --> PARSER
+  end
+
+  CLI_CORE --> PARSER
+  EXPORT --> CLI_OUT
