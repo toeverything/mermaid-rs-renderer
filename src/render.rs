@@ -219,6 +219,7 @@ fn compute_edge_label_positions(
     config: &LayoutConfig,
 ) -> HashMap<usize, Option<(f32, f32, TextBlock)>> {
     let mut occupied: Vec<(f32, f32, f32, f32)> = Vec::new();
+    let edge_obstacles = build_edge_obstacles(edges, 6.0);
 
     for node in nodes.values() {
         occupied.push((
@@ -246,25 +247,38 @@ fn compute_edge_label_positions(
             positions.insert(idx, None);
             continue;
         };
-        let (mid_x, mid_y) = edge_midpoint(edge);
-        let mut offset = 0.0;
+        let (mid_x, mid_y, offset_axis) = edge_label_anchor(edge);
         let mut placed = None;
 
-        for _ in 0..6 {
-            let x = mid_x;
-            let y = mid_y + offset;
+        let step = match offset_axis {
+            OffsetAxis::X => (label.width / 2.0 + 12.0).max(18.0),
+            OffsetAxis::Y => (label.height + 8.0).max(18.0),
+        };
+
+        for attempt in 0..6 {
+            let dir = if attempt % 2 == 0 { 1.0 } else { -1.0 };
+            let offset = if attempt == 0 {
+                0.0
+            } else {
+                let step_mul = ((attempt + 1) / 2) as f32;
+                dir * step_mul * step
+            };
+
+            let (x, y) = match offset_axis {
+                OffsetAxis::X => (mid_x + offset, mid_y),
+                OffsetAxis::Y => (mid_x, mid_y + offset),
+            };
             let rect = (
                 x - label.width / 2.0 - 6.0,
                 y - label.height / 2.0 - 4.0,
                 label.width + 12.0,
                 label.height + 8.0,
             );
-            if !collides(&rect, &occupied) {
+            if !collides(&rect, &occupied) && !collides_edges(&rect, &edge_obstacles, idx) {
                 occupied.push(rect);
                 placed = Some((x, y, label.clone()));
                 break;
             }
-            offset += label.height + 6.0;
         }
 
         if placed.is_none() {
@@ -277,22 +291,69 @@ fn compute_edge_label_positions(
     positions
 }
 
-fn edge_midpoint(edge: &EdgeLayout) -> (f32, f32) {
+#[derive(Debug, Clone, Copy)]
+enum OffsetAxis {
+    X,
+    Y,
+}
+
+fn edge_label_anchor(edge: &EdgeLayout) -> (f32, f32, OffsetAxis) {
     if edge.points.len() >= 4 {
         let p1 = edge.points[1];
         let p2 = edge.points[2];
-        ((p1.0 + p2.0) / 2.0, (p1.1 + p2.1) / 2.0)
-    } else if edge.points.len() >= 2 {
+        let dx = (p2.0 - p1.0).abs();
+        let dy = (p2.1 - p1.1).abs();
+        let axis = if dx > dy { OffsetAxis::Y } else { OffsetAxis::X };
+        return ((p1.0 + p2.0) / 2.0, (p1.1 + p2.1) / 2.0, axis);
+    }
+    if edge.points.len() >= 2 {
         let p1 = edge.points[0];
         let p2 = edge.points[edge.points.len() - 1];
-        ((p1.0 + p2.0) / 2.0, (p1.1 + p2.1) / 2.0)
-    } else {
-        (0.0, 0.0)
+        let dx = (p2.0 - p1.0).abs();
+        let dy = (p2.1 - p1.1).abs();
+        let axis = if dx > dy { OffsetAxis::Y } else { OffsetAxis::X };
+        return ((p1.0 + p2.0) / 2.0, (p1.1 + p2.1) / 2.0, axis);
     }
+    (0.0, 0.0, OffsetAxis::Y)
 }
 
 fn collides(rect: &(f32, f32, f32, f32), occupied: &[(f32, f32, f32, f32)]) -> bool {
     for (x, y, w, h) in occupied {
+        if rect.0 < x + w
+            && rect.0 + rect.2 > *x
+            && rect.1 < y + h
+            && rect.1 + rect.3 > *y
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn build_edge_obstacles(edges: &[EdgeLayout], pad: f32) -> Vec<(usize, (f32, f32, f32, f32))> {
+    let mut obstacles = Vec::new();
+    for (idx, edge) in edges.iter().enumerate() {
+        for segment in edge.points.windows(2) {
+            let (a, b) = (segment[0], segment[1]);
+            let min_x = a.0.min(b.0) - pad;
+            let max_x = a.0.max(b.0) + pad;
+            let min_y = a.1.min(b.1) - pad;
+            let max_y = a.1.max(b.1) + pad;
+            obstacles.push((idx, (min_x, min_y, max_x - min_x, max_y - min_y)));
+        }
+    }
+    obstacles
+}
+
+fn collides_edges(
+    rect: &(f32, f32, f32, f32),
+    obstacles: &[(usize, (f32, f32, f32, f32))],
+    edge_idx: usize,
+) -> bool {
+    for (idx, (x, y, w, h)) in obstacles {
+        if *idx == edge_idx {
+            continue;
+        }
         if rect.0 < x + w
             && rect.0 + rect.2 > *x
             && rect.1 < y + h
