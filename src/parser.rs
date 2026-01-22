@@ -94,23 +94,31 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
 
         if let Some((left, label, right, edge_meta)) = parse_edge_line(line) {
             let (left_id, left_label, left_shape, left_classes) = parse_node_token(&left);
-            let (right_id, right_label, right_shape, right_classes) = parse_node_token(&right);
             graph.ensure_node(&left_id, left_label, left_shape);
-            graph.ensure_node(&right_id, right_label, right_shape);
             apply_node_classes(&mut graph, &left_id, &left_classes);
-            apply_node_classes(&mut graph, &right_id, &right_classes);
-            graph.edges.push(crate::ir::Edge {
-                from: left_id.clone(),
-                to: right_id.clone(),
-                label,
-                directed: edge_meta.directed,
-                arrow_start: edge_meta.arrow_start,
-                arrow_end: edge_meta.arrow_end,
-                style: edge_meta.style,
-            });
-            if let Some(idx) = current_subgraph {
-                add_node_to_subgraph(&mut graph, idx, &left_id);
-                add_node_to_subgraph(&mut graph, idx, &right_id);
+            let targets: Vec<&str> = right
+                .split('&')
+                .map(|part| part.trim())
+                .filter(|part| !part.is_empty())
+                .collect();
+            for target in targets {
+                let (right_id, right_label, right_shape, right_classes) =
+                    parse_node_token(target);
+                graph.ensure_node(&right_id, right_label, right_shape);
+                apply_node_classes(&mut graph, &right_id, &right_classes);
+                graph.edges.push(crate::ir::Edge {
+                    from: left_id.clone(),
+                    to: right_id.clone(),
+                    label: label.clone(),
+                    directed: edge_meta.directed,
+                    arrow_start: edge_meta.arrow_start,
+                    arrow_end: edge_meta.arrow_end,
+                    style: edge_meta.style,
+                });
+                if let Some(idx) = current_subgraph {
+                    add_node_to_subgraph(&mut graph, idx, &left_id);
+                    add_node_to_subgraph(&mut graph, idx, &right_id);
+                }
             }
             continue;
         }
@@ -587,5 +595,14 @@ mod tests {
             parsed.graph.edges[0].label.as_deref(),
             Some("needs review")
         );
+    }
+
+    #[test]
+    fn parse_multi_target_edges() {
+        let input = "flowchart LR\nA --> B & C";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.edges.len(), 2);
+        assert!(parsed.graph.nodes.contains_key("B"));
+        assert!(parsed.graph.nodes.contains_key("C"));
     }
 }
