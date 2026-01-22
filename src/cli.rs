@@ -33,6 +33,14 @@ pub struct Args {
     /// Height
     #[arg(short = 'H', long = "height", default_value_t = 800.0)]
     pub height: f32,
+
+    /// Node spacing
+    #[arg(long = "nodeSpacing")]
+    pub node_spacing: Option<f32>,
+
+    /// Rank spacing
+    #[arg(long = "rankSpacing")]
+    pub rank_spacing: Option<f32>,
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy)]
@@ -46,6 +54,12 @@ pub fn run() -> Result<()> {
     let mut base_config = load_config(args.config.as_deref())?;
     base_config.render.width = args.width;
     base_config.render.height = args.height;
+    if let Some(spacing) = args.node_spacing {
+        base_config.layout.node_spacing = spacing;
+    }
+    if let Some(spacing) = args.rank_spacing {
+        base_config.layout.rank_spacing = spacing;
+    }
 
     let (input, is_markdown) = read_input(args.input.as_deref())?;
     let diagrams = if is_markdown {
