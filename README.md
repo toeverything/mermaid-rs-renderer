@@ -26,6 +26,9 @@ mmdr -i diagram.mmd -o diagram.png -e png
 
 # Use config file (Mermaid-like themeVariables)
 mmdr -i diagram.mmd -o diagram.svg -e svg -c config.json
+
+# Override spacing via CLI
+mmdr -i diagram.mmd -o diagram.svg -e svg --nodeSpacing 60 --rankSpacing 120
 ```
 
 ## Config
