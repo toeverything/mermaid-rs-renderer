@@ -259,6 +259,28 @@ sequenceDiagram
         assert_eq!(merged.layout.node_spacing, 55.0);
         assert_eq!(merged.layout.rank_spacing, 90.0);
     }
+
+    #[test]
+    fn merge_init_config_theme_variables() {
+        let config = Config::default();
+        let init = json!({
+            "themeVariables": {
+                "secondaryColor": "#ff00ff",
+                "tertiaryColor": "#00ffff",
+                "edgeLabelBackground": "#222222",
+                "clusterBkg": "#333333",
+                "clusterBorder": "#444444",
+                "background": "#101010"
+            }
+        });
+        let merged = merge_init_config(config, init);
+        assert_eq!(merged.theme.secondary_color, "#ff00ff");
+        assert_eq!(merged.theme.tertiary_color, "#00ffff");
+        assert_eq!(merged.theme.edge_label_background, "#222222");
+        assert_eq!(merged.theme.cluster_background, "#333333");
+        assert_eq!(merged.theme.cluster_border, "#444444");
+        assert_eq!(merged.theme.background, "#101010");
+    }
 }
 
 fn merge_init_config(mut config: Config, init: serde_json::Value) -> Config {
@@ -274,6 +296,24 @@ fn merge_init_config(mut config: Config, init: serde_json::Value) -> Config {
         }
         if let Some(val) = theme_vars.get("lineColor").and_then(|v| v.as_str()) {
             config.theme.line_color = val.to_string();
+        }
+        if let Some(val) = theme_vars.get("secondaryColor").and_then(|v| v.as_str()) {
+            config.theme.secondary_color = val.to_string();
+        }
+        if let Some(val) = theme_vars.get("tertiaryColor").and_then(|v| v.as_str()) {
+            config.theme.tertiary_color = val.to_string();
+        }
+        if let Some(val) = theme_vars.get("edgeLabelBackground").and_then(|v| v.as_str()) {
+            config.theme.edge_label_background = val.to_string();
+        }
+        if let Some(val) = theme_vars.get("clusterBkg").and_then(|v| v.as_str()) {
+            config.theme.cluster_background = val.to_string();
+        }
+        if let Some(val) = theme_vars.get("clusterBorder").and_then(|v| v.as_str()) {
+            config.theme.cluster_border = val.to_string();
+        }
+        if let Some(val) = theme_vars.get("background").and_then(|v| v.as_str()) {
+            config.theme.background = val.to_string();
         }
         if let Some(val) = theme_vars.get("fontFamily").and_then(|v| v.as_str()) {
             config.theme.font_family = val.to_string();
