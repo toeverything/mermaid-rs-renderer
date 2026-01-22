@@ -291,7 +291,7 @@ fn parse_node_only(
 
 fn parse_edge_line(line: &str) -> Option<(String, Option<String>, String, EdgeMeta)> {
     let label_arrow_re = Regex::new(
-        r"^(?P<left>.+?)\s*(?P<start><)?(?P<dash1>[-.=]+)\s+(?P<label>[^<>=]+?)\s+(?P<dash2>[-.=]+)(?P<end>>)?\s*(?P<right>.+)$",
+        r"^(?P<left>.+?)\s*(?P<start><)?(?P<dash1>[-.=]*[-=]+[-.=]*)\s+(?P<label>[^<>=]+?)\s+(?P<dash2>[-.=]*[-=]+[-.=]*)(?P<end>>)?\s*(?P<right>.+)$",
     )
     .ok()?;
     if let Some(caps) = label_arrow_re.captures(line) {
@@ -315,9 +315,10 @@ fn parse_edge_line(line: &str) -> Option<(String, Option<String>, String, EdgeMe
         }
     }
 
-    let arrow_re =
-        Regex::new(r"^(?P<left>.+?)\s*(?P<arrow><[-.=]+>|<[-.=]+|[-.=]+>|[-.=]+)\s*(?P<right>.+)$")
-            .ok()?;
+    let arrow_re = Regex::new(
+        r"^(?P<left>.+?)\s*(?P<arrow><[-.=]*[-=]+[-.=]*>|<[-.=]*[-=]+|[-.=]*[-=]+>|[-.=]*[-=]+)\s*(?P<right>.+)$",
+    )
+    .ok()?;
     let caps = arrow_re.captures(line)?;
     let left = caps.name("left")?.as_str().trim();
     let arrow = caps.name("arrow")?.as_str().trim();
@@ -559,28 +560,37 @@ fn split_inline_classes(token: &str) -> (String, Vec<String>) {
 }
 
 fn split_id_label(token: &str) -> Option<(&str, String, crate::ir::NodeShape)> {
-    let bracket_re = Regex::new(r"^([A-Za-z0-9_\-]+)\s*(\[.*\])$").ok()?;
-    if let Some(caps) = bracket_re.captures(token) {
-        let id = caps.get(1)?.as_str();
-        let raw = caps.get(2)?.as_str();
-        let (label, shape) = parse_shape_from_brackets(raw);
-        return Some((id, label, shape));
+    if let Some(start) = token.find('[') {
+        if token.ends_with(']') {
+            let id = token[..start].trim();
+            if !id.is_empty() {
+                let raw = &token[start..];
+                let (label, shape) = parse_shape_from_brackets(raw);
+                return Some((id, label, shape));
+            }
+        }
     }
 
-    let paren_re = Regex::new(r"^([A-Za-z0-9_\-]+)\s*(\(.*\))$").ok()?;
-    if let Some(caps) = paren_re.captures(token) {
-        let id = caps.get(1)?.as_str();
-        let raw = caps.get(2)?.as_str();
-        let (label, shape) = parse_shape_from_parens(raw);
-        return Some((id, label, shape));
+    if let Some(start) = token.find('(') {
+        if token.ends_with(')') {
+            let id = token[..start].trim();
+            if !id.is_empty() {
+                let raw = &token[start..];
+                let (label, shape) = parse_shape_from_parens(raw);
+                return Some((id, label, shape));
+            }
+        }
     }
 
-    let brace_re = Regex::new(r"^([A-Za-z0-9_\-]+)\s*(\{.*\})$").ok()?;
-    if let Some(caps) = brace_re.captures(token) {
-        let id = caps.get(1)?.as_str();
-        let raw = caps.get(2)?.as_str();
-        let (label, shape) = parse_shape_from_braces(raw);
-        return Some((id, label, shape));
+    if let Some(start) = token.find('{') {
+        if token.ends_with('}') {
+            let id = token[..start].trim();
+            if !id.is_empty() {
+                let raw = &token[start..];
+                let (label, shape) = parse_shape_from_braces(raw);
+                return Some((id, label, shape));
+            }
+        }
     }
 
     None
@@ -780,6 +790,14 @@ mod tests {
         let classes = parsed.graph.node_classes.get("A").unwrap();
         assert!(classes.iter().any(|c| c == "hot"));
         assert!(classes.iter().any(|c| c == "cold"));
+    }
+
+    #[test]
+    fn parse_node_id_with_dot() {
+        let input = "flowchart LR\nsvc.api[Service] --> db.main[(DB)]";
+        let parsed = parse_mermaid(input).unwrap();
+        assert!(parsed.graph.nodes.contains_key("svc.api"));
+        assert!(parsed.graph.nodes.contains_key("db.main"));
     }
 
     #[test]
