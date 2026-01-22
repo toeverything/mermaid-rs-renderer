@@ -34,6 +34,16 @@ mmdr -i diagram.mmd -o diagram.svg -e svg -c config.json
 mmdr -i diagram.mmd -o diagram.svg -e svg --nodeSpacing 60 --rankSpacing 120
 ```
 
+## Install
+
+```bash
+# From source
+cargo install --path .
+
+# From crates.io (once published)
+cargo install mermaid-rs-renderer
+```
+
 ## Config
 We accept a subset of Mermaid `themeVariables` in a JSON config file. Example:
 
