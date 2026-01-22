@@ -404,22 +404,32 @@ fn parse_class_line(line: &str, graph: &mut Graph) {
         return;
     }
     let class_name = parts.last().unwrap().to_string();
+    let class_names: Vec<String> = class_name
+        .split(',')
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .collect();
+    if class_names.is_empty() {
+        return;
+    }
     let nodes_raw = parts[1..parts.len() - 1].join(" ");
     for node_id in nodes_raw.split(',') {
         let id = node_id.trim();
         if id.is_empty() {
             continue;
         }
-        graph
-            .node_classes
-            .entry(id.to_string())
-            .or_default()
-            .push(class_name.clone());
-        graph
-            .subgraph_classes
-            .entry(id.to_string())
-            .or_default()
-            .push(class_name.clone());
+        for class_name in &class_names {
+            graph
+                .node_classes
+                .entry(id.to_string())
+                .or_default()
+                .push(class_name.clone());
+            graph
+                .subgraph_classes
+                .entry(id.to_string())
+                .or_default()
+                .push(class_name.clone());
+        }
     }
 }
 
@@ -761,6 +771,15 @@ mod tests {
         assert_eq!(parsed.graph.subgraphs.len(), 1);
         assert_eq!(parsed.graph.subgraphs[0].id.as_deref(), Some("Alpha"));
         assert!(parsed.graph.subgraph_styles.contains_key("Alpha"));
+    }
+
+    #[test]
+    fn parse_multiple_classes() {
+        let input = "flowchart LR\nclassDef hot fill:#f00\nclassDef cold fill:#00f\nA\nclass A hot,cold";
+        let parsed = parse_mermaid(input).unwrap();
+        let classes = parsed.graph.node_classes.get("A").unwrap();
+        assert!(classes.iter().any(|c| c == "hot"));
+        assert!(classes.iter().any(|c| c == "cold"));
     }
 
     #[test]
