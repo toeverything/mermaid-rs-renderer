@@ -29,13 +29,15 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
             }
 
             if let Some(caps) = init_re.captures(&line) {
-                if let Some(json_str) = caps.get(1).map(|m| m.as_str()) {
-                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str) {
-                        init_config = Some(value);
-                    }
+            if let Some(json_str) = caps.get(1).map(|m| m.as_str()) {
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str) {
+                    init_config = Some(value);
+                } else if let Ok(value) = json5::from_str::<serde_json::Value>(json_str) {
+                    init_config = Some(value);
                 }
-                continue;
             }
+            continue;
+        }
 
             if line.starts_with("%%") {
                 continue;
@@ -719,5 +721,12 @@ mod tests {
         assert_eq!(parsed.graph.subgraphs.len(), 1);
         assert_eq!(parsed.graph.subgraphs[0].id.as_deref(), Some("Alpha"));
         assert!(parsed.graph.subgraph_styles.contains_key("Alpha"));
+    }
+
+    #[test]
+    fn parse_init_with_single_quotes() {
+        let input = "%%{init: {'themeVariables': {'primaryColor': '#fff'}}}%%\nflowchart LR\nA-->B";
+        let parsed = parse_mermaid(input).unwrap();
+        assert!(parsed.init_config.is_some());
     }
 }
