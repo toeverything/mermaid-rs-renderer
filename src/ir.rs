@@ -59,6 +59,7 @@ pub struct Graph {
     pub node_classes: HashMap<String, Vec<String>>,
     pub node_styles: HashMap<String, NodeStyle>,
     pub edge_styles: HashMap<usize, EdgeStyleOverride>,
+    pub edge_style_default: Option<EdgeStyleOverride>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +92,7 @@ impl Graph {
             node_classes: HashMap::new(),
             node_styles: HashMap::new(),
             edge_styles: HashMap::new(),
+            edge_style_default: None,
         }
     }
 

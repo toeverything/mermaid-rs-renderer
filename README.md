@@ -6,7 +6,7 @@ A minimal Mermaid flowchart renderer in Rust.
 - Supports `flowchart` / `graph` with `TD/TB/LR` and subgraph `direction`
 - Node shapes: rectangle, round-rect, stadium, circle/double-circle, diamond, hexagon, cylinder, subroutine, trapezoids, parallelograms
 - Edge styles: solid, dotted, thick; arrowheads on start/end; labels
-- Styling directives: `classDef`, `class`, `style`, `linkStyle` (fill/stroke/text/stroke-width/dasharray subset)
+- Styling directives: `classDef`, `class`, inline `:::class`, `style`, `linkStyle` (fill/stroke/text/stroke-width/dasharray subset)
 - Subgraphs (`subgraph ... end`)
 - Mermaid init directives: `%%{init}%%` (themeVariables subset)
 - Modern default theme

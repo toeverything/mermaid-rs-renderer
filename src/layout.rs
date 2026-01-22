@@ -141,7 +141,12 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
             .label
             .as_ref()
             .map(|l| measure_label(l, theme, config));
-        let override_style = graph.edge_styles.get(&idx).cloned().unwrap_or_default();
+        let override_style = graph
+            .edge_styles
+            .get(&idx)
+            .cloned()
+            .or_else(|| graph.edge_style_default.clone())
+            .unwrap_or_default();
 
         let points = route_edge(from, to, graph.direction);
         edges.push(EdgeLayout {

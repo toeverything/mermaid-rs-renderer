@@ -93,10 +93,12 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
         }
 
         if let Some((left, label, right, edge_meta)) = parse_edge_line(line) {
-            let (left_id, left_label, left_shape) = parse_node_token(&left);
-            let (right_id, right_label, right_shape) = parse_node_token(&right);
+            let (left_id, left_label, left_shape, left_classes) = parse_node_token(&left);
+            let (right_id, right_label, right_shape, right_classes) = parse_node_token(&right);
             graph.ensure_node(&left_id, left_label, left_shape);
             graph.ensure_node(&right_id, right_label, right_shape);
+            apply_node_classes(&mut graph, &left_id, &left_classes);
+            apply_node_classes(&mut graph, &right_id, &right_classes);
             graph.edges.push(crate::ir::Edge {
                 from: left_id.clone(),
                 to: right_id.clone(),
@@ -113,8 +115,9 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
             continue;
         }
 
-        if let Some((node_id, node_label, node_shape)) = parse_node_only(line) {
+        if let Some((node_id, node_label, node_shape, node_classes)) = parse_node_only(line) {
             graph.ensure_node(&node_id, node_label, node_shape);
+            apply_node_classes(&mut graph, &node_id, &node_classes);
             if let Some(idx) = current_subgraph {
                 add_node_to_subgraph(&mut graph, idx, &node_id);
             }
@@ -145,22 +148,49 @@ fn parse_subgraph_header(input: &str) -> (Option<String>, String) {
     (None, strip_quotes(trimmed))
 }
 
-fn parse_node_only(line: &str) -> Option<(String, Option<String>, Option<crate::ir::NodeShape>)> {
+fn parse_node_only(
+    line: &str,
+) -> Option<(String, Option<String>, Option<crate::ir::NodeShape>, Vec<String>)> {
     if line.contains("--") {
         return None;
     }
-    let (id, label, shape) = parse_node_token(line);
+    let (id, label, shape, classes) = parse_node_token(line);
     if id.is_empty() {
         None
     } else {
-        Some((id, label, shape))
+        Some((id, label, shape, classes))
     }
 }
 
-fn parse_edge_line(
-    line: &str,
-) -> Option<(String, Option<String>, String, EdgeMeta)> {
-    let arrow_re = Regex::new(r"^(?P<left>.+?)\s*(?P<arrow><[-.=]+>|<[-.=]+|[-.=]+>|[-.=]+)\s*(?P<right>.+)$").ok()?;
+fn parse_edge_line(line: &str) -> Option<(String, Option<String>, String, EdgeMeta)> {
+    let label_arrow_re = Regex::new(
+        r"^(?P<left>.+?)\s*(?P<start><)?(?P<dash1>[-.=]+)\s+(?P<label>[^<>=]+?)\s+(?P<dash2>[-.=]+)(?P<end>>)?\s*(?P<right>.+)$",
+    )
+    .ok()?;
+    if let Some(caps) = label_arrow_re.captures(line) {
+        let left = caps.name("left")?.as_str().trim();
+        let right = caps.name("right")?.as_str().trim();
+        let label_raw = caps.name("label")?.as_str().trim();
+        let label_clean = label_raw.trim_matches('|').trim();
+        if !label_clean.is_empty() && !left.is_empty() && !right.is_empty() {
+            let start = caps.name("start").map(|m| m.as_str()).unwrap_or("");
+            let dash1 = caps.name("dash1")?.as_str();
+            let dash2 = caps.name("dash2")?.as_str();
+            let end = caps.name("end").map(|m| m.as_str()).unwrap_or("");
+            let arrow = format!("{}{}{}{}", start, dash1, dash2, end);
+            let edge_meta = parse_edge_meta(&arrow);
+            return Some((
+                left.to_string(),
+                Some(label_clean.to_string()),
+                right.to_string(),
+                edge_meta,
+            ));
+        }
+    }
+
+    let arrow_re =
+        Regex::new(r"^(?P<left>.+?)\s*(?P<arrow><[-.=]+>|<[-.=]+|[-.=]+>|[-.=]+)\s*(?P<right>.+)$")
+            .ok()?;
     let caps = arrow_re.captures(line)?;
     let left = caps.name("left")?.as_str().trim();
     let arrow = caps.name("arrow")?.as_str().trim();
@@ -260,6 +290,19 @@ fn parse_class_line(line: &str, graph: &mut Graph) {
     }
 }
 
+fn apply_node_classes(graph: &mut Graph, node_id: &str, classes: &[String]) {
+    for class_name in classes {
+        if class_name.is_empty() {
+            continue;
+        }
+        graph
+            .node_classes
+            .entry(node_id.to_string())
+            .or_default()
+            .push(class_name.clone());
+    }
+}
+
 fn parse_style_line(line: &str, graph: &mut Graph) {
     let mut parts = line.splitn(3, ' ');
     let _ = parts.next();
@@ -277,12 +320,23 @@ fn parse_link_style_line(line: &str, graph: &mut Graph) {
     let _ = parts.next();
     let index_str = parts.next().unwrap_or("").trim();
     let rest = parts.next().unwrap_or("").trim();
-    let Ok(index) = index_str.parse::<usize>() else { return; };
     if rest.is_empty() {
         return;
     }
     let style = parse_edge_style(rest);
-    graph.edge_styles.insert(index, style);
+    if index_str == "default" {
+        graph.edge_style_default = Some(style);
+        return;
+    }
+    for raw in index_str.split(',') {
+        let token = raw.trim();
+        if token.is_empty() {
+            continue;
+        }
+        if let Ok(index) = token.parse::<usize>() {
+            graph.edge_styles.insert(index, style.clone());
+        }
+    }
 }
 
 fn parse_node_style(input: &str) -> crate::ir::NodeStyle {
@@ -331,10 +385,11 @@ fn parse_edge_style(input: &str) -> crate::ir::EdgeStyleOverride {
 
 fn parse_node_token(
     token: &str,
-) -> (String, Option<String>, Option<crate::ir::NodeShape>) {
-    let trimmed = token.trim();
+) -> (String, Option<String>, Option<crate::ir::NodeShape>, Vec<String>) {
+    let (base, classes) = split_inline_classes(token);
+    let trimmed = base.trim();
     if let Some((id, label, shape)) = split_id_label(trimmed) {
-        return (id.to_string(), Some(label), Some(shape));
+        return (id.to_string(), Some(label), Some(shape), classes);
     }
 
     let id = trimmed
@@ -342,7 +397,17 @@ fn parse_node_token(
         .next()
         .unwrap_or("")
         .to_string();
-    (id, None, None)
+    (id, None, None, classes)
+}
+
+fn split_inline_classes(token: &str) -> (String, Vec<String>) {
+    let mut parts = token.split(":::");
+    let base = parts.next().unwrap_or("").trim().to_string();
+    let classes = parts
+        .map(|part| part.trim().to_string())
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    (base, classes)
 }
 
 fn split_id_label(token: &str) -> Option<(&str, String, crate::ir::NodeShape)> {
@@ -500,5 +565,27 @@ mod tests {
         assert!(parsed.graph.edge_styles.contains_key(&0));
         let edge_style = parsed.graph.edge_styles.get(&0).unwrap();
         assert_eq!(edge_style.stroke.as_deref(), Some("#0ff"));
+    }
+
+    #[test]
+    fn parse_inline_class_and_linkstyle_default() {
+        let input = "flowchart LR\nclassDef hot fill:#f00\nA[Alpha]:::hot --> B\nB --> C\nlinkStyle default stroke:#0ff,stroke-width:3\nlinkStyle 1 stroke:#00f";
+        let parsed = parse_mermaid(input).unwrap();
+        let classes = parsed.graph.node_classes.get("A").cloned().unwrap_or_default();
+        assert!(classes.iter().any(|c| c == "hot"));
+        assert!(parsed.graph.edge_style_default.is_some());
+        let edge_style = parsed.graph.edge_styles.get(&1).unwrap();
+        assert_eq!(edge_style.stroke.as_deref(), Some("#00f"));
+    }
+
+    #[test]
+    fn parse_edge_label_in_arrow() {
+        let input = "flowchart LR\nA -- needs review --> B";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.edges.len(), 1);
+        assert_eq!(
+            parsed.graph.edges[0].label.as_deref(),
+            Some("needs review")
+        );
     }
 }
