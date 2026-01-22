@@ -464,19 +464,32 @@ fn parse_style_line(line: &str, graph: &mut Graph) {
 
 fn parse_link_style_line(line: &str, graph: &mut Graph) {
     let trimmed = line.trim();
-    let mut parts = trimmed.splitn(3, char::is_whitespace);
-    let _ = parts.next();
-    let index_str = parts.next().unwrap_or("").trim();
-    let rest = parts.next().unwrap_or("").trim();
-    if rest.is_empty() {
+    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+    if tokens.len() < 3 {
         return;
     }
-    let style = parse_edge_style(rest);
-    if index_str == "default" {
+
+    let mut style_idx = None;
+    for (idx, token) in tokens.iter().enumerate().skip(1) {
+        if token.contains(':') {
+            style_idx = Some(idx);
+            break;
+        }
+    }
+    let Some(style_idx) = style_idx else { return; };
+    let index_tokens = &tokens[1..style_idx];
+    let style_str = tokens[style_idx..].join(" ");
+    if style_str.is_empty() {
+        return;
+    }
+
+    let style = parse_edge_style(&style_str);
+    if index_tokens.len() == 1 && index_tokens[0] == "default" {
         graph.edge_style_default = Some(style);
         return;
     }
-    for raw in index_str.split(',') {
+
+    for raw in index_tokens.iter().flat_map(|token| token.split(',')) {
         let token = raw.trim();
         if token.is_empty() {
             continue;
@@ -820,5 +833,13 @@ mod tests {
         let input = "flowchart LR\nA-->B %% comment\nB-->C";
         let parsed = parse_mermaid(input).unwrap();
         assert_eq!(parsed.graph.edges.len(), 2);
+    }
+
+    #[test]
+    fn parse_link_style_whitespace_indexes() {
+        let input = "flowchart LR\nA-->B\nB-->C\nlinkStyle 0 1 stroke:#0f0";
+        let parsed = parse_mermaid(input).unwrap();
+        assert!(parsed.graph.edge_styles.contains_key(&0));
+        assert!(parsed.graph.edge_styles.contains_key(&1));
     }
 }
