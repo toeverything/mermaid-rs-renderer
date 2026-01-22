@@ -19,3 +19,7 @@ usvg = "0.46"
 
 [dev-dependencies]
 criterion = "0.5"
+
+[[bench]]
+name = "renderer"
+harness = false
