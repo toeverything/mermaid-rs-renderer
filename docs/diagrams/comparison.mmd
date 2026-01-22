@@ -1,0 +1,17 @@
+flowchart LR
+  subgraph Rust["Rust Renderer (this project)"]
+    A["Mermaid text"] --> B["Rust parser / IR"]
+    B --> C["Layout + overlap avoidance"]
+    C --> D["SVG renderer"]
+    D --> E["resvg rasterizer"]
+    E --> F["PNG / PDF"]
+    T1["Theme + config"] --> C
+  end
+
+  subgraph MMD["Mermaid CLI (mmdc)"]
+    A2["Mermaid text"] --> B2["mermaid-js parser"]
+    B2 --> C2["mermaid-js layout + SVG"]
+    C2 --> D2["Puppeteer / Chromium"]
+    D2 --> E2["PNG / PDF"]
+    T2["Theme + config"] --> C2
+  end
