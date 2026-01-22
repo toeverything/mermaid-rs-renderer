@@ -144,7 +144,15 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 theme.edge_label_background,
                 theme.primary_border_color
             ));
-            svg.push_str(&text_block_svg(x, y, &label, theme, config, true, None));
+            svg.push_str(&text_block_svg(
+                x,
+                y,
+                &label,
+                theme,
+                config,
+                true,
+                edge.override_style.label_color.as_deref(),
+            ));
         }
     }
 

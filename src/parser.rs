@@ -559,6 +559,7 @@ fn parse_edge_style(input: &str) -> crate::ir::EdgeStyleOverride {
                 style.stroke_width = value.trim_end_matches("px").parse::<f32>().ok();
             }
             "stroke-dasharray" => style.dasharray = Some(value.to_string()),
+            "color" => style.label_color = Some(value.to_string()),
             _ => {}
         }
     }
@@ -736,7 +737,7 @@ mod tests {
 
     #[test]
     fn parse_edge_styles() {
-        let input = "flowchart LR\nA -.-> B\nC ==> D\nE <--> F\nG --- H";
+        let input = "flowchart LR\nA -.-> B\nC ==> D\nE <--> F\nG --- H\nlinkStyle 0 stroke:#0ff,stroke-width:2,color:#f00";
         let parsed = parse_mermaid(input).unwrap();
         assert_eq!(parsed.graph.edges.len(), 4);
         assert_eq!(parsed.graph.edges[0].style, crate::ir::EdgeStyle::Dotted);
@@ -744,6 +745,8 @@ mod tests {
         assert_eq!(parsed.graph.edges[2].arrow_start, true);
         assert_eq!(parsed.graph.edges[2].arrow_end, true);
         assert_eq!(parsed.graph.edges[3].directed, false);
+        let style = parsed.graph.edge_styles.get(&0).unwrap();
+        assert_eq!(style.label_color.as_deref(), Some("#f00"));
     }
 
     #[test]

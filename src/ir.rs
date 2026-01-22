@@ -134,6 +134,7 @@ pub struct EdgeStyleOverride {
     pub stroke: Option<String>,
     pub stroke_width: Option<f32>,
     pub dasharray: Option<String>,
+    pub label_color: Option<String>,
 }
 
 impl Default for Graph {
