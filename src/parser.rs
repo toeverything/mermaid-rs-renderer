@@ -94,10 +94,19 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
             continue;
         }
 
-        if line.starts_with("linkStyle") {
-            parse_link_style_line(&line, &mut graph);
-            continue;
-        }
+            if line.starts_with("linkStyle") {
+                parse_link_style_line(&line, &mut graph);
+                continue;
+            }
+
+            if line.starts_with("click ")
+                || line.starts_with("link ")
+                || line.starts_with("accTitle")
+                || line.starts_with("accDescr")
+                || line.starts_with("title ")
+            {
+                continue;
+            }
 
             if let Some((left, label, right, edge_meta)) = parse_edge_line(&line) {
             let (left_id, left_label, left_shape, left_classes) = parse_node_token(&left);
@@ -728,5 +737,13 @@ mod tests {
         let input = "%%{init: {'themeVariables': {'primaryColor': '#fff'}}}%%\nflowchart LR\nA-->B";
         let parsed = parse_mermaid(input).unwrap();
         assert!(parsed.init_config.is_some());
+    }
+
+    #[test]
+    fn ignores_click_directive() {
+        let input = "flowchart LR\nA-->B\nclick A \"https://example.com\"";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.nodes.len(), 2);
+        assert_eq!(parsed.graph.edges.len(), 1);
     }
 }
