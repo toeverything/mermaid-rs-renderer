@@ -488,6 +488,49 @@ fn apply_subgraph_direction_overrides(
             min_x,
             min_y,
         );
+
+        if matches!(direction, Direction::RightLeft | Direction::BottomTop) {
+            mirror_subgraph_nodes(&sub.nodes, nodes, direction);
+        }
+    }
+}
+
+fn mirror_subgraph_nodes(
+    node_ids: &[String],
+    nodes: &mut BTreeMap<String, NodeLayout>,
+    direction: Direction,
+) {
+    let mut min_x = f32::MAX;
+    let mut min_y = f32::MAX;
+    let mut max_x = f32::MIN;
+    let mut max_y = f32::MIN;
+
+    for node_id in node_ids {
+        if let Some(node) = nodes.get(node_id) {
+            min_x = min_x.min(node.x);
+            min_y = min_y.min(node.y);
+            max_x = max_x.max(node.x + node.width);
+            max_y = max_y.max(node.y + node.height);
+        }
+    }
+
+    if min_x == f32::MAX {
+        return;
+    }
+
+    if matches!(direction, Direction::RightLeft) {
+        for node_id in node_ids {
+            if let Some(node) = nodes.get_mut(node_id) {
+                node.x = min_x + (max_x - (node.x + node.width));
+            }
+        }
+    }
+    if matches!(direction, Direction::BottomTop) {
+        for node_id in node_ids {
+            if let Some(node) = nodes.get_mut(node_id) {
+                node.y = min_y + (max_y - (node.y + node.height));
+            }
+        }
     }
 }
 
