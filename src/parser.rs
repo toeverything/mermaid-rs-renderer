@@ -113,35 +113,55 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
             }
 
             if let Some((left, label, right, edge_meta)) = parse_edge_line(&line) {
-            let (left_id, left_label, left_shape, left_classes) = parse_node_token(&left);
-            graph.ensure_node(&left_id, left_label, left_shape);
-            apply_node_classes(&mut graph, &left_id, &left_classes);
+            let sources: Vec<&str> = left
+                .split('&')
+                .map(|part| part.trim())
+                .filter(|part| !part.is_empty())
+                .collect();
             let targets: Vec<&str> = right
                 .split('&')
                 .map(|part| part.trim())
                 .filter(|part| !part.is_empty())
                 .collect();
+
+            let mut source_ids = Vec::new();
+            for source in sources {
+                let (left_id, left_label, left_shape, left_classes) = parse_node_token(source);
+                graph.ensure_node(&left_id, left_label, left_shape);
+                apply_node_classes(&mut graph, &left_id, &left_classes);
+                if let Some(idx) = current_subgraph {
+                    add_node_to_subgraph(&mut graph, idx, &left_id);
+                }
+                source_ids.push(left_id);
+            }
+
+            let mut target_ids = Vec::new();
             for target in targets {
                 let (right_id, right_label, right_shape, right_classes) =
                     parse_node_token(target);
                 graph.ensure_node(&right_id, right_label, right_shape);
                 apply_node_classes(&mut graph, &right_id, &right_classes);
-                graph.edges.push(crate::ir::Edge {
-                    from: left_id.clone(),
-                    to: right_id.clone(),
-                    label: label.clone(),
-                    directed: edge_meta.directed,
-                    arrow_start: edge_meta.arrow_start,
-                    arrow_end: edge_meta.arrow_end,
-                    style: edge_meta.style,
-                });
                 if let Some(idx) = current_subgraph {
-                    add_node_to_subgraph(&mut graph, idx, &left_id);
                     add_node_to_subgraph(&mut graph, idx, &right_id);
+                }
+                target_ids.push(right_id);
+            }
+
+            for left_id in &source_ids {
+                for right_id in &target_ids {
+                    graph.edges.push(crate::ir::Edge {
+                        from: left_id.clone(),
+                        to: right_id.clone(),
+                        label: label.clone(),
+                        directed: edge_meta.directed,
+                        arrow_start: edge_meta.arrow_start,
+                        arrow_end: edge_meta.arrow_end,
+                        style: edge_meta.style,
+                    });
                 }
             }
             continue;
-            }
+        }
 
             if let Some((node_id, node_label, node_shape, node_classes)) = parse_node_only(&line) {
                 graph.ensure_node(&node_id, node_label, node_shape);
@@ -765,6 +785,16 @@ mod tests {
         let input = "flowchart LR\nA --> B & C";
         let parsed = parse_mermaid(input).unwrap();
         assert_eq!(parsed.graph.edges.len(), 2);
+        assert!(parsed.graph.nodes.contains_key("B"));
+        assert!(parsed.graph.nodes.contains_key("C"));
+    }
+
+    #[test]
+    fn parse_multi_source_edges() {
+        let input = "flowchart LR\nA & B --> C";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.edges.len(), 2);
+        assert!(parsed.graph.nodes.contains_key("A"));
         assert!(parsed.graph.nodes.contains_key("B"));
         assert!(parsed.graph.nodes.contains_key("C"));
     }
