@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
@@ -46,6 +46,7 @@ pub struct Subgraph {
     pub id: Option<String>,
     pub label: String,
     pub nodes: Vec<String>,
+    pub direction: Option<Direction>,
 }
 
 #[derive(Debug, Clone)]
@@ -54,6 +55,10 @@ pub struct Graph {
     pub nodes: BTreeMap<String, Node>,
     pub edges: Vec<Edge>,
     pub subgraphs: Vec<Subgraph>,
+    pub class_defs: HashMap<String, NodeStyle>,
+    pub node_classes: HashMap<String, Vec<String>>,
+    pub node_styles: HashMap<String, NodeStyle>,
+    pub edge_styles: HashMap<usize, EdgeStyleOverride>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,6 +87,10 @@ impl Graph {
             nodes: BTreeMap::new(),
             edges: Vec::new(),
             subgraphs: Vec::new(),
+            class_defs: HashMap::new(),
+            node_classes: HashMap::new(),
+            node_styles: HashMap::new(),
+            edge_styles: HashMap::new(),
         }
     }
 
@@ -98,6 +107,21 @@ impl Graph {
             entry.shape = shape;
         }
     }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct NodeStyle {
+    pub fill: Option<String>,
+    pub stroke: Option<String>,
+    pub text_color: Option<String>,
+    pub stroke_width: Option<f32>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct EdgeStyleOverride {
+    pub stroke: Option<String>,
+    pub stroke_width: Option<f32>,
+    pub dasharray: Option<String>,
 }
 
 impl Default for Graph {

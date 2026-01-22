@@ -55,8 +55,40 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
                 id,
                 label,
                 nodes: Vec::new(),
+                direction: None,
             });
             current_subgraph = Some(graph.subgraphs.len() - 1);
+            continue;
+        }
+
+        if let Some(direction) = parse_direction_line(line) {
+            if let Some(idx) = current_subgraph {
+                if let Some(sub) = graph.subgraphs.get_mut(idx) {
+                    sub.direction = Some(direction);
+                }
+            } else {
+                graph.direction = direction;
+            }
+            continue;
+        }
+
+        if line.starts_with("classDef ") {
+            parse_class_def(line, &mut graph);
+            continue;
+        }
+
+        if line.starts_with("class ") {
+            parse_class_line(line, &mut graph);
+            continue;
+        }
+
+        if line.starts_with("style ") {
+            parse_style_line(line, &mut graph);
+            continue;
+        }
+
+        if line.starts_with("linkStyle ") {
+            parse_link_style_line(line, &mut graph);
             continue;
         }
 
@@ -186,6 +218,115 @@ fn parse_edge_meta(arrow: &str) -> EdgeMeta {
         arrow_end,
         style,
     }
+}
+
+fn parse_direction_line(line: &str) -> Option<Direction> {
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    if parts.len() == 2 && parts[0] == "direction" {
+        return Direction::from_token(parts[1]);
+    }
+    None
+}
+
+fn parse_class_def(line: &str, graph: &mut Graph) {
+    let mut parts = line.splitn(3, ' ');
+    let _ = parts.next();
+    let class_name = parts.next().unwrap_or("").trim();
+    let rest = parts.next().unwrap_or("").trim();
+    if class_name.is_empty() || rest.is_empty() {
+        return;
+    }
+    let style = parse_node_style(rest);
+    graph.class_defs.insert(class_name.to_string(), style);
+}
+
+fn parse_class_line(line: &str, graph: &mut Graph) {
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    if parts.len() < 3 {
+        return;
+    }
+    let class_name = parts.last().unwrap().to_string();
+    let nodes_raw = parts[1..parts.len() - 1].join(" ");
+    for node_id in nodes_raw.split(',') {
+        let id = node_id.trim();
+        if id.is_empty() {
+            continue;
+        }
+        graph
+            .node_classes
+            .entry(id.to_string())
+            .or_default()
+            .push(class_name.clone());
+    }
+}
+
+fn parse_style_line(line: &str, graph: &mut Graph) {
+    let mut parts = line.splitn(3, ' ');
+    let _ = parts.next();
+    let node_id = parts.next().unwrap_or("").trim();
+    let rest = parts.next().unwrap_or("").trim();
+    if node_id.is_empty() || rest.is_empty() {
+        return;
+    }
+    let style = parse_node_style(rest);
+    graph.node_styles.insert(node_id.to_string(), style);
+}
+
+fn parse_link_style_line(line: &str, graph: &mut Graph) {
+    let mut parts = line.splitn(3, ' ');
+    let _ = parts.next();
+    let index_str = parts.next().unwrap_or("").trim();
+    let rest = parts.next().unwrap_or("").trim();
+    let Ok(index) = index_str.parse::<usize>() else { return; };
+    if rest.is_empty() {
+        return;
+    }
+    let style = parse_edge_style(rest);
+    graph.edge_styles.insert(index, style);
+}
+
+fn parse_node_style(input: &str) -> crate::ir::NodeStyle {
+    let mut style = crate::ir::NodeStyle::default();
+    for part in input.split(',') {
+        let mut kv = part.splitn(2, ':');
+        let key = kv.next().unwrap_or("").trim();
+        let value = kv.next().unwrap_or("").trim();
+        if key.is_empty() || value.is_empty() {
+            continue;
+        }
+        match key {
+            "fill" => style.fill = Some(value.to_string()),
+            "stroke" => style.stroke = Some(value.to_string()),
+            "stroke-width" => {
+                let width = value.trim_end_matches("px").parse::<f32>().ok();
+                style.stroke_width = width;
+            }
+            "color" => style.text_color = Some(value.to_string()),
+            _ => {}
+        }
+    }
+    style
+}
+
+fn parse_edge_style(input: &str) -> crate::ir::EdgeStyleOverride {
+    let mut style = crate::ir::EdgeStyleOverride::default();
+    for part in input.split(',') {
+        let mut kv = part.splitn(2, ':');
+        let key = kv.next().unwrap_or("").trim();
+        let value = kv.next().unwrap_or("").trim();
+        if key.is_empty() || value.is_empty() {
+            continue;
+        }
+        match key {
+            "stroke" => style.stroke = Some(value.to_string()),
+            "stroke-width" => {
+                style.stroke_width = value.trim_end_matches("px").parse::<f32>().ok();
+            }
+            "stroke-dasharray" => style.dasharray = Some(value.to_string()),
+            _ => {}
+        }
+    }
+    style
 }
 
 fn parse_node_token(
@@ -347,5 +488,17 @@ mod tests {
         assert_eq!(parsed.graph.edges[2].arrow_start, true);
         assert_eq!(parsed.graph.edges[2].arrow_end, true);
         assert_eq!(parsed.graph.edges[3].directed, false);
+    }
+
+    #[test]
+    fn parse_class_and_styles() {
+        let input = "flowchart LR\nclassDef hot fill:#f00,stroke:#000,color:#fff,stroke-width:2\nA[One]\nclass A hot\nstyle A fill:#0f0,stroke:#00f,stroke-width:3,color:#111\nA --> B\nlinkStyle 0 stroke:#0ff,stroke-width:4,stroke-dasharray:5 5";
+        let parsed = parse_mermaid(input).unwrap();
+        assert!(parsed.graph.class_defs.contains_key("hot"));
+        assert!(parsed.graph.node_classes.contains_key("A"));
+        assert!(parsed.graph.node_styles.contains_key("A"));
+        assert!(parsed.graph.edge_styles.contains_key(&0));
+        let edge_style = parsed.graph.edge_styles.get(&0).unwrap();
+        assert_eq!(edge_style.stroke.as_deref(), Some("#0ff"));
     }
 }

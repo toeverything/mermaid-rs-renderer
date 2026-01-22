@@ -19,6 +19,7 @@ pub struct NodeLayout {
     pub height: f32,
     pub label: TextBlock,
     pub shape: crate::ir::NodeShape,
+    pub style: crate::ir::NodeStyle,
 }
 
 #[derive(Debug, Clone)]
@@ -31,6 +32,7 @@ pub struct EdgeLayout {
     pub arrow_start: bool,
     pub arrow_end: bool,
     pub style: crate::ir::EdgeStyle,
+    pub override_style: crate::ir::EdgeStyleOverride,
 }
 
 #[derive(Debug, Clone)]
@@ -58,6 +60,7 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
     for node in graph.nodes.values() {
         let label = measure_label(&node.label, theme, config);
         let (width, height) = shape_size(node.shape, &label, config);
+        let style = resolve_node_style(node.id.as_str(), graph);
         nodes.insert(
             node.id.clone(),
             NodeLayout {
@@ -68,6 +71,7 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
                 height,
                 label,
                 shape: node.shape,
+                style,
             },
         );
     }
@@ -94,7 +98,7 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
 
     for (rank_idx, bucket) in rank_nodes.iter().enumerate() {
         let mut cross_cursor = 0.0;
-        let mut max_main = 0.0;
+        let mut max_main: f32 = 0.0;
 
         for node_id in bucket {
             if let Some(node_layout) = nodes.get_mut(node_id) {
@@ -125,17 +129,19 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
     }
 
     if !graph.subgraphs.is_empty() {
+        apply_subgraph_direction_overrides(graph, &mut nodes, config);
         apply_subgraph_bands(graph, &mut nodes, config);
     }
 
     let mut edges = Vec::new();
-    for edge in &graph.edges {
+    for (idx, edge) in graph.edges.iter().enumerate() {
         let from = nodes.get(&edge.from).expect("from node missing");
         let to = nodes.get(&edge.to).expect("to node missing");
         let label = edge
             .label
             .as_ref()
             .map(|l| measure_label(l, theme, config));
+        let override_style = graph.edge_styles.get(&idx).cloned().unwrap_or_default();
 
         let points = route_edge(from, to, graph.direction);
         edges.push(EdgeLayout {
@@ -147,6 +153,7 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
             arrow_start: edge.arrow_start,
             arrow_end: edge.arrow_end,
             style: edge.style,
+            override_style,
         });
     }
 
@@ -335,6 +342,155 @@ fn apply_subgraph_bands(graph: &Graph, nodes: &mut BTreeMap<String, NodeLayout>,
     }
 }
 
+fn apply_subgraph_direction_overrides(
+    graph: &Graph,
+    nodes: &mut BTreeMap<String, NodeLayout>,
+    config: &LayoutConfig,
+) {
+    for sub in &graph.subgraphs {
+        let Some(direction) = sub.direction else { continue };
+        if sub.nodes.is_empty() {
+            continue;
+        }
+        if direction == graph.direction {
+            continue;
+        }
+
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        for node_id in &sub.nodes {
+            if let Some(node) = nodes.get(node_id) {
+                min_x = min_x.min(node.x);
+                min_y = min_y.min(node.y);
+            }
+        }
+        if min_x == f32::MAX {
+            continue;
+        }
+
+        let ranks = compute_ranks_subset(&sub.nodes, &graph.edges);
+        assign_positions(
+            &sub.nodes,
+            &ranks,
+            direction,
+            config,
+            nodes,
+            min_x,
+            min_y,
+        );
+    }
+}
+
+fn compute_ranks_subset(node_ids: &[String], edges: &[crate::ir::Edge]) -> HashMap<String, usize> {
+    let mut indeg: HashMap<String, usize> = HashMap::new();
+    let mut adj: HashMap<String, Vec<String>> = HashMap::new();
+    let set: HashSet<String> = node_ids.iter().cloned().collect();
+
+    for id in &set {
+        indeg.insert(id.clone(), 0);
+    }
+
+    for edge in edges {
+        if set.contains(&edge.from) && set.contains(&edge.to) {
+            adj.entry(edge.from.clone())
+                .or_default()
+                .push(edge.to.clone());
+            *indeg.entry(edge.to.clone()).or_insert(0) += 1;
+        }
+    }
+
+    let mut queue: VecDeque<String> = indeg
+        .iter()
+        .filter(|(_, deg)| **deg == 0)
+        .map(|(id, _)| id.clone())
+        .collect();
+
+    let mut order = Vec::new();
+    while let Some(node) = queue.pop_front() {
+        order.push(node.clone());
+        if let Some(nexts) = adj.get(&node) {
+            for next in nexts {
+                if let Some(deg) = indeg.get_mut(next) {
+                    *deg -= 1;
+                    if *deg == 0 {
+                        queue.push_back(next.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    if order.len() < set.len() {
+        for id in &set {
+            if !order.contains(id) {
+                order.push(id.clone());
+            }
+        }
+    }
+
+    let mut ranks: HashMap<String, usize> = HashMap::new();
+    for node in &order {
+        let rank = *ranks.get(node).unwrap_or(&0);
+        ranks.entry(node.clone()).or_insert(rank);
+        if let Some(nexts) = adj.get(node) {
+            for next in nexts {
+                let entry = ranks.entry(next.clone()).or_insert(0);
+                *entry = (*entry).max(rank + 1);
+            }
+        }
+    }
+
+    ranks
+}
+
+fn assign_positions(
+    node_ids: &[String],
+    ranks: &HashMap<String, usize>,
+    direction: Direction,
+    config: &LayoutConfig,
+    nodes: &mut BTreeMap<String, NodeLayout>,
+    origin_x: f32,
+    origin_y: f32,
+) {
+    let mut max_rank = 0usize;
+    for rank in ranks.values() {
+        max_rank = max_rank.max(*rank);
+    }
+
+    let mut rank_nodes: Vec<Vec<String>> = vec![Vec::new(); max_rank + 1];
+    for node_id in node_ids {
+        let rank = *ranks.get(node_id).unwrap_or(&0);
+        if let Some(bucket) = rank_nodes.get_mut(rank) {
+            bucket.push(node_id.clone());
+        }
+    }
+    for bucket in &mut rank_nodes {
+        bucket.sort();
+    }
+
+    let mut main_cursor = 0.0;
+    for bucket in rank_nodes {
+        let mut cross_cursor = 0.0;
+        let mut max_main: f32 = 0.0;
+        for node_id in bucket {
+            if let Some(node) = nodes.get_mut(&node_id) {
+                if direction == Direction::LeftRight {
+                    node.x = origin_x + main_cursor;
+                    node.y = origin_y + cross_cursor;
+                    cross_cursor += node.height + config.node_spacing;
+                    max_main = max_main.max(node.width);
+                } else {
+                    node.x = origin_x + cross_cursor;
+                    node.y = origin_y + main_cursor;
+                    cross_cursor += node.width + config.node_spacing;
+                    max_main = max_main.max(node.height);
+                }
+            }
+        }
+        main_cursor += max_main + config.rank_spacing;
+    }
+}
+
 fn bounds_from_layout(
     nodes: &BTreeMap<String, NodeLayout>,
     subgraphs: &[SubgraphLayout],
@@ -463,6 +619,39 @@ fn wrap_line(line: &str, max_chars: usize) -> Vec<String> {
         lines.push(current);
     }
     lines
+}
+
+fn resolve_node_style(node_id: &str, graph: &Graph) -> crate::ir::NodeStyle {
+    let mut style = crate::ir::NodeStyle::default();
+
+    if let Some(classes) = graph.node_classes.get(node_id) {
+        for class_name in classes {
+            if let Some(class_style) = graph.class_defs.get(class_name) {
+                merge_node_style(&mut style, class_style);
+            }
+        }
+    }
+
+    if let Some(node_style) = graph.node_styles.get(node_id) {
+        merge_node_style(&mut style, node_style);
+    }
+
+    style
+}
+
+fn merge_node_style(target: &mut crate::ir::NodeStyle, source: &crate::ir::NodeStyle) {
+    if source.fill.is_some() {
+        target.fill = source.fill.clone();
+    }
+    if source.stroke.is_some() {
+        target.stroke = source.stroke.clone();
+    }
+    if source.text_color.is_some() {
+        target.text_color = source.text_color.clone();
+    }
+    if source.stroke_width.is_some() {
+        target.stroke_width = source.stroke_width;
+    }
 }
 
 fn shape_size(
