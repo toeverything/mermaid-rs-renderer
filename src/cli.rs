@@ -219,6 +219,7 @@ fn resolve_multi_outputs(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn extracts_mermaid_blocks() {
@@ -244,6 +245,20 @@ sequenceDiagram
         assert!(blocks[1].contains("flowchart"));
         assert!(blocks[2].contains("sequenceDiagram"));
     }
+
+    #[test]
+    fn merge_init_config_updates_layout() {
+        let config = Config::default();
+        let init = json!({
+            "flowchart": {
+                "nodeSpacing": 55,
+                "rankSpacing": 90
+            }
+        });
+        let merged = merge_init_config(config, init);
+        assert_eq!(merged.layout.node_spacing, 55.0);
+        assert_eq!(merged.layout.rank_spacing, 90.0);
+    }
 }
 
 fn merge_init_config(mut config: Config, init: serde_json::Value) -> Config {
@@ -265,6 +280,14 @@ fn merge_init_config(mut config: Config, init: serde_json::Value) -> Config {
         }
         if let Some(val) = theme_vars.get("fontSize").and_then(|v| v.as_f64()) {
             config.theme.font_size = val as f32;
+        }
+    }
+    if let Some(flowchart) = init.get("flowchart") {
+        if let Some(val) = flowchart.get("nodeSpacing").and_then(|v| v.as_f64()) {
+            config.layout.node_spacing = val as f32;
+        }
+        if let Some(val) = flowchart.get("rankSpacing").and_then(|v| v.as_f64()) {
+            config.layout.rank_spacing = val as f32;
         }
     }
     config
