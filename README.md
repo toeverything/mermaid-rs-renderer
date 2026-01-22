@@ -38,6 +38,12 @@ We accept a subset of Mermaid `themeVariables` in a JSON config file. Example:
     "primaryTextColor": "#1C2430",
     "primaryBorderColor": "#C7D2E5",
     "lineColor": "#7A8AA6",
+    "secondaryColor": "#F0F4FF",
+    "tertiaryColor": "#E8EEFF",
+    "edgeLabelBackground": "#FFFFFF",
+    "clusterBkg": "#F8FAFF",
+    "clusterBorder": "#C7D2E5",
+    "background": "#FFFFFF",
     "fontFamily": "Inter, Segoe UI, system-ui",
     "fontSize": 13
   },
