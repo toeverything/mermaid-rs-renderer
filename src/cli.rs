@@ -280,6 +280,7 @@ sequenceDiagram
         assert_eq!(merged.theme.cluster_background, "#333333");
         assert_eq!(merged.theme.cluster_border, "#444444");
         assert_eq!(merged.theme.background, "#101010");
+        assert_eq!(merged.render.background, "#101010");
     }
 }
 
@@ -330,5 +331,6 @@ fn merge_init_config(mut config: Config, init: serde_json::Value) -> Config {
             config.layout.rank_spacing = val as f32;
         }
     }
+    config.render.background = config.theme.background.clone();
     config
 }
