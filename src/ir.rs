@@ -20,6 +20,7 @@ impl Direction {
 pub struct Node {
     pub id: String,
     pub label: String,
+    pub shape: NodeShape,
 }
 
 #[derive(Debug, Clone)]
@@ -45,6 +46,25 @@ pub struct Graph {
     pub subgraphs: Vec<Subgraph>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NodeShape {
+    Rectangle,
+    RoundRect,
+    Stadium,
+    Subroutine,
+    Cylinder,
+    Circle,
+    DoubleCircle,
+    Diamond,
+    Hexagon,
+    Parallelogram,
+    ParallelogramAlt,
+    Trapezoid,
+    TrapezoidAlt,
+    Asymmetric,
+    Text,
+}
+
 impl Graph {
     pub fn new() -> Self {
         Self {
@@ -55,13 +75,17 @@ impl Graph {
         }
     }
 
-    pub fn ensure_node(&mut self, id: &str, label: Option<String>) {
+    pub fn ensure_node(&mut self, id: &str, label: Option<String>, shape: Option<NodeShape>) {
         let entry = self.nodes.entry(id.to_string()).or_insert(Node {
             id: id.to_string(),
             label: id.to_string(),
+            shape: NodeShape::Rectangle,
         });
         if let Some(label) = label {
             entry.label = label;
+        }
+        if let Some(shape) = shape {
+            entry.shape = shape;
         }
     }
 }

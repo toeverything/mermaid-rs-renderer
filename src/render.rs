@@ -74,15 +74,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
     }
 
     for node in layout.nodes.values() {
-        svg.push_str(&format!(
-            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"10\" ry=\"10\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1.4\"/>",
-            node.x,
-            node.y,
-            node.width,
-            node.height,
-            theme.primary_color,
-            theme.primary_border_color
-        ));
+        svg.push_str(&shape_svg(node, theme));
         let center_x = node.x + node.width / 2.0;
         let center_y = node.y + node.height / 2.0;
         svg.push_str(&text_block_svg(center_x, center_y, &node.label, theme, config, false));
@@ -257,6 +249,78 @@ fn primary_font(fonts: &str) -> String {
         .to_string()
 }
 
+fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
+    let stroke = &theme.primary_border_color;
+    let fill = &theme.primary_color;
+    let x = node.x;
+    let y = node.y;
+    let w = node.width;
+    let h = node.height;
+    match node.shape {
+        crate::ir::NodeShape::Diamond => {
+            let cx = x + w / 2.0;
+            let cy = y + h / 2.0;
+            let points = format!(
+                "{:.2},{:.2} {:.2},{:.2} {:.2},{:.2} {:.2},{:.2}",
+                cx,
+                y,
+                x + w,
+                cy,
+                cx,
+                y + h,
+                x,
+                cy
+            );
+            format!(
+                "<polygon points=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1.4\"/>",
+                points, fill, stroke
+            )
+        }
+        crate::ir::NodeShape::Circle | crate::ir::NodeShape::DoubleCircle => {
+            let cx = x + w / 2.0;
+            let cy = y + h / 2.0;
+            let r = (w.min(h)) / 2.0;
+            let mut svg = format!(
+                "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1.4\"/>",
+                cx, cy, r, fill, stroke
+            );
+            if node.shape == crate::ir::NodeShape::DoubleCircle {
+                let r2 = r - 4.0;
+                if r2 > 0.0 {
+                    svg.push_str(&format!(
+                        "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"none\" stroke=\"{}\" stroke-width=\"1.0\"/>",
+                        cx, cy, r2, stroke
+                    ));
+                }
+            }
+            svg
+        }
+        crate::ir::NodeShape::Stadium => format!(
+            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"{:.2}\" ry=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1.4\"/>",
+            x,
+            y,
+            w,
+            h,
+            h / 2.0,
+            h / 2.0,
+            fill,
+            stroke
+        ),
+        crate::ir::NodeShape::RoundRect => format!(
+            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"10\" ry=\"10\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1.4\"/>",
+            x, y, w, h, fill, stroke
+        ),
+        crate::ir::NodeShape::Cylinder => format!(
+            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"12\" ry=\"12\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1.4\"/>",
+            x, y, w, h, fill, stroke
+        ),
+        _ => format!(
+            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"6\" ry=\"6\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1.4\"/>",
+            x, y, w, h, fill, stroke
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,8 +332,8 @@ mod tests {
     fn render_svg_basic() {
         let mut graph = Graph::new();
         graph.direction = Direction::LeftRight;
-        graph.ensure_node("A", Some("Alpha".to_string()));
-        graph.ensure_node("B", Some("Beta".to_string()));
+        graph.ensure_node("A", Some("Alpha".to_string()), Some(crate::ir::NodeShape::Rectangle));
+        graph.ensure_node("B", Some("Beta".to_string()), Some(crate::ir::NodeShape::Rectangle));
         graph.edges.push(crate::ir::Edge {
             from: "A".to_string(),
             to: "B".to_string(),

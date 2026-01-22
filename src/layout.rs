@@ -18,6 +18,7 @@ pub struct NodeLayout {
     pub width: f32,
     pub height: f32,
     pub label: TextBlock,
+    pub shape: crate::ir::NodeShape,
 }
 
 #[derive(Debug, Clone)]
@@ -53,8 +54,7 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
 
     for node in graph.nodes.values() {
         let label = measure_label(&node.label, theme, config);
-        let width = label.width + config.node_padding_x * 2.0;
-        let height = label.height + config.node_padding_y * 2.0;
+        let (width, height) = shape_size(node.shape, &label, config);
         nodes.insert(
             node.id.clone(),
             NodeLayout {
@@ -64,6 +64,7 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
                 width,
                 height,
                 label,
+                shape: node.shape,
             },
         );
     }
@@ -458,10 +459,42 @@ fn wrap_line(line: &str, max_chars: usize) -> Vec<String> {
     lines
 }
 
+fn shape_size(
+    shape: crate::ir::NodeShape,
+    label: &TextBlock,
+    config: &LayoutConfig,
+) -> (f32, f32) {
+    let mut width = label.width + config.node_padding_x * 2.0;
+    let mut height = label.height + config.node_padding_y * 2.0;
+
+    match shape {
+        crate::ir::NodeShape::Diamond => {
+            width *= 1.4;
+            height *= 1.4;
+        }
+        crate::ir::NodeShape::Circle | crate::ir::NodeShape::DoubleCircle => {
+            let size = width.max(height);
+            width = size;
+            height = size;
+        }
+        crate::ir::NodeShape::Stadium | crate::ir::NodeShape::RoundRect => {
+            width *= 1.1;
+            height *= 1.05;
+        }
+        crate::ir::NodeShape::Cylinder => {
+            width *= 1.1;
+            height *= 1.1;
+        }
+        _ => {}
+    }
+
+    (width, height)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{Direction, Graph};
+    use crate::ir::{Direction, Graph, NodeShape};
 
     #[test]
     fn wraps_long_labels() {
@@ -476,8 +509,8 @@ mod tests {
     fn layout_places_nodes() {
         let mut graph = Graph::new();
         graph.direction = Direction::LeftRight;
-        graph.ensure_node("A", Some("Alpha".to_string()));
-        graph.ensure_node("B", Some("Beta".to_string()));
+        graph.ensure_node("A", Some("Alpha".to_string()), Some(NodeShape::Rectangle));
+        graph.ensure_node("B", Some("Beta".to_string()), Some(NodeShape::Rectangle));
         graph.edges.push(crate::ir::Edge {
             from: "A".to_string(),
             to: "B".to_string(),

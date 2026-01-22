@@ -61,10 +61,10 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
         }
 
         if let Some((left, label, right, directed)) = parse_edge_line(line) {
-            let (left_id, left_label) = parse_node_token(&left);
-            let (right_id, right_label) = parse_node_token(&right);
-            graph.ensure_node(&left_id, left_label);
-            graph.ensure_node(&right_id, right_label);
+            let (left_id, left_label, left_shape) = parse_node_token(&left);
+            let (right_id, right_label, right_shape) = parse_node_token(&right);
+            graph.ensure_node(&left_id, left_label, left_shape);
+            graph.ensure_node(&right_id, right_label, right_shape);
             graph.edges.push(crate::ir::Edge {
                 from: left_id.clone(),
                 to: right_id.clone(),
@@ -78,8 +78,8 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
             continue;
         }
 
-        if let Some((node_id, node_label)) = parse_node_only(line) {
-            graph.ensure_node(&node_id, node_label);
+        if let Some((node_id, node_label, node_shape)) = parse_node_only(line) {
+            graph.ensure_node(&node_id, node_label, node_shape);
             if let Some(idx) = current_subgraph {
                 add_node_to_subgraph(&mut graph, idx, &node_id);
             }
@@ -103,22 +103,22 @@ fn parse_subgraph_header(input: &str) -> (Option<String>, String) {
         return (None, "Subgraph".to_string());
     }
 
-    if let Some((id, label)) = split_id_label(trimmed) {
+    if let Some((id, label, _shape)) = split_id_label(trimmed) {
         return (Some(id.to_string()), label);
     }
 
     (None, strip_quotes(trimmed))
 }
 
-fn parse_node_only(line: &str) -> Option<(String, Option<String>)> {
+fn parse_node_only(line: &str) -> Option<(String, Option<String>, Option<crate::ir::NodeShape>)> {
     if line.contains("--") {
         return None;
     }
-    let (id, label) = parse_node_token(line);
+    let (id, label, shape) = parse_node_token(line);
     if id.is_empty() {
         None
     } else {
-        Some((id, label))
+        Some((id, label, shape))
     }
 }
 
@@ -155,10 +155,12 @@ fn parse_edge_line(line: &str) -> Option<(String, Option<String>, String, bool)>
     Some((left.to_string(), label, right_token.to_string(), directed))
 }
 
-fn parse_node_token(token: &str) -> (String, Option<String>) {
+fn parse_node_token(
+    token: &str,
+) -> (String, Option<String>, Option<crate::ir::NodeShape>) {
     let trimmed = token.trim();
-    if let Some((id, label)) = split_id_label(trimmed) {
-        return (id.to_string(), Some(label));
+    if let Some((id, label, shape)) = split_id_label(trimmed) {
+        return (id.to_string(), Some(label), Some(shape));
     }
 
     let id = trimmed
@@ -166,25 +168,56 @@ fn parse_node_token(token: &str) -> (String, Option<String>) {
         .next()
         .unwrap_or("")
         .to_string();
-    (id, None)
+    (id, None, None)
 }
 
-fn split_id_label(token: &str) -> Option<(&str, String)> {
-    let bracket_re = Regex::new(r"^([A-Za-z0-9_\-]+)\s*\[(.*)\]$").ok()?;
+fn split_id_label(token: &str) -> Option<(&str, String, crate::ir::NodeShape)> {
+    let bracket_re = Regex::new(r"^([A-Za-z0-9_\-]+)\s*(\[.*\])$").ok()?;
     if let Some(caps) = bracket_re.captures(token) {
         let id = caps.get(1)?.as_str();
-        let label = strip_quotes(caps.get(2)?.as_str());
-        return Some((id, label));
+        let raw = caps.get(2)?.as_str();
+        let (label, shape) = parse_shape_from_brackets(raw);
+        return Some((id, label, shape));
     }
 
-    let paren_re = Regex::new(r"^([A-Za-z0-9_\-]+)\s*\((.*)\)$").ok()?;
+    let paren_re = Regex::new(r"^([A-Za-z0-9_\-]+)\s*(\(.*\))$").ok()?;
     if let Some(caps) = paren_re.captures(token) {
         let id = caps.get(1)?.as_str();
-        let label = strip_quotes(caps.get(2)?.as_str());
-        return Some((id, label));
+        let raw = caps.get(2)?.as_str();
+        let (label, shape) = parse_shape_from_parens(raw);
+        return Some((id, label, shape));
     }
 
     None
+}
+
+fn parse_shape_from_brackets(raw: &str) -> (String, crate::ir::NodeShape) {
+    let trimmed = raw.trim();
+    if trimmed.starts_with("[[") && trimmed.ends_with("]]") {
+        return (strip_quotes(&trimmed[2..trimmed.len() - 2]), crate::ir::NodeShape::Subroutine);
+    }
+    if trimmed.starts_with("[(") && trimmed.ends_with(")]") {
+        return (strip_quotes(&trimmed[2..trimmed.len() - 2]), crate::ir::NodeShape::Cylinder);
+    }
+    if trimmed.starts_with("[") && trimmed.ends_with("]") {
+        let inner = &trimmed[1..trimmed.len() - 1];
+        if inner.starts_with('(') && inner.ends_with(')') {
+            return (strip_quotes(&inner[1..inner.len() - 1]), crate::ir::NodeShape::Stadium);
+        }
+        return (strip_quotes(inner), crate::ir::NodeShape::Rectangle);
+    }
+    (strip_quotes(trimmed), crate::ir::NodeShape::Rectangle)
+}
+
+fn parse_shape_from_parens(raw: &str) -> (String, crate::ir::NodeShape) {
+    let trimmed = raw.trim();
+    if trimmed.starts_with("((") && trimmed.ends_with("))") {
+        return (strip_quotes(&trimmed[2..trimmed.len() - 2]), crate::ir::NodeShape::DoubleCircle);
+    }
+    if trimmed.starts_with('(') && trimmed.ends_with(')') {
+        return (strip_quotes(&trimmed[1..trimmed.len() - 1]), crate::ir::NodeShape::RoundRect);
+    }
+    (strip_quotes(trimmed), crate::ir::NodeShape::RoundRect)
 }
 
 fn strip_quotes(input: &str) -> String {
@@ -208,6 +241,10 @@ mod tests {
         assert_eq!(parsed.graph.edges.len(), 1);
         assert_eq!(parsed.graph.edges[0].label.as_deref(), Some("go"));
         assert_eq!(parsed.graph.direction, Direction::LeftRight);
+        assert_eq!(
+            parsed.graph.nodes.get("B").unwrap().shape,
+            crate::ir::NodeShape::RoundRect
+        );
     }
 
     #[test]
