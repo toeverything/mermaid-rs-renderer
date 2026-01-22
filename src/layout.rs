@@ -805,6 +805,9 @@ fn merge_node_style(target: &mut crate::ir::NodeStyle, source: &crate::ir::NodeS
     if source.stroke_width.is_some() {
         target.stroke_width = source.stroke_width;
     }
+    if source.stroke_dasharray.is_some() {
+        target.stroke_dasharray = source.stroke_dasharray.clone();
+    }
 }
 
 fn shape_size(

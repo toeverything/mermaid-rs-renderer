@@ -363,6 +363,7 @@ fn parse_node_style(input: &str) -> crate::ir::NodeStyle {
                 let width = value.trim_end_matches("px").parse::<f32>().ok();
                 style.stroke_width = width;
             }
+            "stroke-dasharray" => style.stroke_dasharray = Some(value.to_string()),
             "color" => style.text_color = Some(value.to_string()),
             _ => {}
         }

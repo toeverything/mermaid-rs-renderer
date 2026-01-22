@@ -121,6 +121,7 @@ pub struct NodeStyle {
     pub stroke: Option<String>,
     pub text_color: Option<String>,
     pub stroke_width: Option<f32>,
+    pub stroke_dasharray: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
