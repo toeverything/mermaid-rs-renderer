@@ -1,0 +1,14 @@
+{
+  "themeVariables": {
+    "primaryColor": "#F8FAFF",
+    "primaryTextColor": "#1C2430",
+    "primaryBorderColor": "#C7D2E5",
+    "lineColor": "#7A8AA6",
+    "fontFamily": "Inter, Segoe UI, system-ui",
+    "fontSize": 13
+  },
+  "flowchart": {
+    "nodeSpacing": 40,
+    "rankSpacing": 80
+  }
+}
