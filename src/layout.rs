@@ -219,13 +219,15 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         if min_x != f32::MAX {
             let style = resolve_subgraph_style(sub, graph);
             let padding = 24.0;
+            let label_height = theme.font_size * config.label_line_height;
+            let top_padding = padding + label_height + 8.0;
             subgraphs.push(SubgraphLayout {
                 label: sub.label.clone(),
                 nodes: sub.nodes.clone(),
                 x: min_x - padding,
-                y: min_y - padding,
+                y: min_y - top_padding,
                 width: (max_x - min_x) + padding * 2.0,
-                height: (max_y - min_y) + padding * 2.0,
+                height: (max_y - min_y) + padding + top_padding,
                 style,
             });
         }

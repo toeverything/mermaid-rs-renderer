@@ -77,7 +77,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             sub_dash
         ));
         let label_x = subgraph.x + 12.0;
-        let label_y = subgraph.y + 20.0;
+        let label_y = subgraph.y + theme.font_size + 8.0;
         let label_color = subgraph
             .style
             .text_color
