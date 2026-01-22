@@ -3,10 +3,12 @@
 A minimal Mermaid flowchart renderer in Rust.
 
 ## Status
-- Supports `flowchart` / `graph` with `TD/TB/LR`
-- Nodes with `[]` or `()` labels
-- Directed (`-->`) and undirected (`---`) edges
+- Supports `flowchart` / `graph` with `TD/TB/LR` and subgraph `direction`
+- Node shapes: rectangle, round-rect, stadium, circle/double-circle, diamond, hexagon, cylinder, subroutine, trapezoids, parallelograms
+- Edge styles: solid, dotted, thick; arrowheads on start/end; labels
+- Styling directives: `classDef`, `class`, `style`, `linkStyle` (fill/stroke/text/stroke-width/dasharray subset)
 - Subgraphs (`subgraph ... end`)
+- Mermaid init directives: `%%{init}%%` (themeVariables subset)
 - Modern default theme
 
 ## Usage
@@ -14,6 +16,10 @@ A minimal Mermaid flowchart renderer in Rust.
 ```bash
 # Render SVG to stdout
 cat diagram.mmd | mmdr -e svg
+
+# Render a Markdown file (all mermaid blocks)
+# If output is a directory, renders diagram-1.svg, diagram-2.svg, ...
+mmdr -i README.md -o /tmp/diagrams -e svg
 
 # Render to PNG
 mmdr -i diagram.mmd -o diagram.png -e png
