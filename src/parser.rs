@@ -320,7 +320,10 @@ fn parse_style_line(line: &str, graph: &mut Graph) {
         return;
     }
     let style = parse_node_style(rest);
-    graph.node_styles.insert(node_id.to_string(), style);
+    graph.node_styles.insert(node_id.to_string(), style.clone());
+    graph
+        .subgraph_styles
+        .insert(node_id.to_string(), style);
 }
 
 fn parse_link_style_line(line: &str, graph: &mut Graph) {
@@ -605,5 +608,14 @@ mod tests {
         assert_eq!(parsed.graph.edges.len(), 2);
         assert!(parsed.graph.nodes.contains_key("B"));
         assert!(parsed.graph.nodes.contains_key("C"));
+    }
+
+    #[test]
+    fn parse_subgraph_style() {
+        let input = "flowchart LR\nsubgraph SG[Group]\nA --> B\nend\nstyle SG fill:#faf,stroke:#111";
+        let parsed = parse_mermaid(input).unwrap();
+        let style = parsed.graph.subgraph_styles.get("SG").unwrap();
+        assert_eq!(style.fill.as_deref(), Some("#faf"));
+        assert_eq!(style.stroke.as_deref(), Some("#111"));
     }
 }

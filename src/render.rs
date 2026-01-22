@@ -48,27 +48,51 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
     svg.push_str("</defs>");
 
     for subgraph in &layout.subgraphs {
+        let sub_fill = subgraph
+            .style
+            .fill
+            .as_ref()
+            .unwrap_or(&theme.cluster_background);
+        let sub_stroke = subgraph
+            .style
+            .stroke
+            .as_ref()
+            .unwrap_or(&theme.cluster_border);
+        let sub_dash = subgraph
+            .style
+            .stroke_dasharray
+            .as_ref()
+            .map(|value| format!(" stroke-dasharray=\"{}\"", value))
+            .unwrap_or_else(|| " stroke-dasharray=\"6 4\"".to_string());
+        let sub_stroke_width = subgraph.style.stroke_width.unwrap_or(1.2);
         svg.push_str(&format!(
-            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"10\" ry=\"10\" fill=\"{}\" stroke=\"{}\" stroke-dasharray=\"6 4\" stroke-width=\"1.2\"/>",
+            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"10\" ry=\"10\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{} />",
             subgraph.x,
             subgraph.y,
             subgraph.width,
             subgraph.height,
-            theme.cluster_background,
-            theme.cluster_border
+            sub_fill,
+            sub_stroke,
+            sub_stroke_width,
+            sub_dash
         ));
         let label_x = subgraph.x + 12.0;
         let label_y = subgraph.y + 20.0;
+        let label_color = subgraph
+            .style
+            .text_color
+            .as_ref()
+            .unwrap_or(&theme.primary_text_color);
         svg.push_str(&format!(
             "<text x=\"{label_x:.2}\" y=\"{label_y:.2}\" font-family=\"{}\" font-size=\"{}\" fill=\"{}\">{}</text>",
             theme.font_family,
             theme.font_size,
-            theme.primary_text_color,
+            label_color,
             escape_xml(&subgraph.label)
         ));
     }
 
-    let label_positions = compute_edge_label_positions(&layout.edges, theme, config);
+    let label_positions = compute_edge_label_positions(&layout.edges, &layout.nodes, &layout.subgraphs, theme, config);
 
     for (idx, edge) in layout.edges.iter().enumerate() {
         let d = points_to_path(&edge.points);
@@ -189,10 +213,32 @@ fn text_block_svg(
 
 fn compute_edge_label_positions(
     edges: &[EdgeLayout],
-    _theme: &Theme,
-    _config: &LayoutConfig,
+    nodes: &std::collections::BTreeMap<String, crate::layout::NodeLayout>,
+    subgraphs: &[crate::layout::SubgraphLayout],
+    theme: &Theme,
+    config: &LayoutConfig,
 ) -> HashMap<usize, Option<(f32, f32, TextBlock)>> {
     let mut occupied: Vec<(f32, f32, f32, f32)> = Vec::new();
+
+    for node in nodes.values() {
+        occupied.push((
+            node.x - 6.0,
+            node.y - 6.0,
+            node.width + 12.0,
+            node.height + 12.0,
+        ));
+    }
+
+    for sub in subgraphs {
+        if sub.label.trim().is_empty() {
+            continue;
+        }
+        let width = sub.label.chars().count() as f32 * theme.font_size * 0.6;
+        let height = theme.font_size * config.label_line_height;
+        let x = sub.x + 12.0;
+        let y = sub.y + 20.0 - height;
+        occupied.push((x - 4.0, y - 2.0, width + 8.0, height + 4.0));
+    }
     let mut positions = HashMap::new();
 
     for (idx, edge) in edges.iter().enumerate() {

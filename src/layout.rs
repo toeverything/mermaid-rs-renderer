@@ -43,6 +43,7 @@ pub struct SubgraphLayout {
     pub y: f32,
     pub width: f32,
     pub height: f32,
+    pub style: crate::ir::NodeStyle,
 }
 
 #[derive(Debug, Clone)]
@@ -185,6 +186,12 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         }
 
         if min_x != f32::MAX {
+            let style = sub
+                .id
+                .as_ref()
+                .and_then(|id| graph.subgraph_styles.get(id))
+                .cloned()
+                .unwrap_or_default();
             let padding = 24.0;
             subgraphs.push(SubgraphLayout {
                 label: sub.label.clone(),
@@ -193,6 +200,7 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
                 y: min_y - padding,
                 width: (max_x - min_x) + padding * 2.0,
                 height: (max_y - min_y) + padding * 2.0,
+                style,
             });
         }
     }
