@@ -35,7 +35,7 @@ pub struct Args {
     pub height: f32,
 }
 
-#[derive(ValueEnum, Debug, Clone)]
+#[derive(ValueEnum, Debug, Clone, Copy)]
 pub enum OutputFormat {
     Svg,
     Png,
@@ -43,46 +43,83 @@ pub enum OutputFormat {
 
 pub fn run() -> Result<()> {
     let args = Args::parse();
-    let mut config = load_config(args.config.as_deref())?;
-    config.render.width = args.width;
-    config.render.height = args.height;
+    let mut base_config = load_config(args.config.as_deref())?;
+    base_config.render.width = args.width;
+    base_config.render.height = args.height;
 
-    let input = read_input(args.input.as_deref())?;
-    let parsed = parse_mermaid(&input)?;
+    let (input, is_markdown) = read_input(args.input.as_deref())?;
+    let diagrams = if is_markdown {
+        extract_mermaid_blocks(&input)
+    } else {
+        vec![input]
+    };
 
-    if let Some(init_cfg) = parsed.init_config {
-        config = merge_init_config(config, init_cfg);
+    if diagrams.is_empty() {
+        return Err(anyhow::anyhow!("No Mermaid diagrams found in input"));
     }
 
-    let layout = compute_layout(&parsed.graph, &config.theme, &config.layout);
-    let svg = render_svg(&layout, &config.theme, &config.layout);
-
-    match args.output_format {
-        OutputFormat::Svg => {
-            write_output_svg(&svg, args.output.as_deref())?;
+    if diagrams.len() == 1 {
+        let parsed = parse_mermaid(&diagrams[0])?;
+        let mut config = base_config.clone();
+        if let Some(init_cfg) = parsed.init_config {
+            config = merge_init_config(config, init_cfg);
         }
-        OutputFormat::Png => {
-            let output = ensure_output(&args.output, "png")?;
-            write_output_png(&svg, &output, &config.render, &config.theme)?;
+        let layout = compute_layout(&parsed.graph, &config.theme, &config.layout);
+        let svg = render_svg(&layout, &config.theme, &config.layout);
+        match args.output_format {
+            OutputFormat::Svg => {
+                write_output_svg(&svg, args.output.as_deref())?;
+            }
+            OutputFormat::Png => {
+                let output = ensure_output(&args.output, "png")?;
+                write_output_png(&svg, &output, &config.render, &config.theme)?;
+            }
+        }
+        return Ok(());
+    }
+
+    // Multiple diagrams (Markdown input)
+    let outputs = resolve_multi_outputs(args.output.as_deref(), args.output_format, diagrams.len())?;
+    for (idx, diagram) in diagrams.iter().enumerate() {
+        let parsed = parse_mermaid(diagram)?;
+        let mut config = base_config.clone();
+        if let Some(init_cfg) = parsed.init_config.clone() {
+            config = merge_init_config(config, init_cfg);
+        }
+        let layout = compute_layout(&parsed.graph, &config.theme, &config.layout);
+        let svg = render_svg(&layout, &config.theme, &config.layout);
+        match args.output_format {
+            OutputFormat::Svg => {
+                write_output_svg(&svg, Some(&outputs[idx]))?;
+            }
+            OutputFormat::Png => {
+                write_output_png(&svg, &outputs[idx], &config.render, &config.theme)?;
+            }
         }
     }
 
     Ok(())
 }
 
-fn read_input(path: Option<&Path>) -> Result<String> {
+fn read_input(path: Option<&Path>) -> Result<(String, bool)> {
     if let Some(path) = path {
         if path == Path::new("-") {
             let mut buf = String::new();
             io::stdin().read_to_string(&mut buf)?;
-            return Ok(buf);
+            return Ok((buf, false));
         }
-        return Ok(std::fs::read_to_string(path)?);
+        let content = std::fs::read_to_string(path)?;
+        let is_md = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|ext| matches!(ext, "md" | "markdown"))
+            .unwrap_or(false);
+        return Ok((content, is_md));
     }
 
     let mut buf = String::new();
     io::stdin().read_to_string(&mut buf)?;
-    Ok(buf)
+    Ok((buf, false))
 }
 
 fn ensure_output(output: &Option<PathBuf>, ext: &str) -> Result<PathBuf> {
@@ -93,6 +130,91 @@ fn ensure_output(output: &Option<PathBuf>, ext: &str) -> Result<PathBuf> {
         "Output path required for {} output",
         ext
     ))
+}
+
+fn extract_mermaid_blocks(input: &str) -> Vec<String> {
+    let mut blocks = Vec::new();
+    let mut in_block = false;
+    let mut current = Vec::new();
+    let mut fence = String::new();
+
+    for line in input.lines() {
+        let trimmed = line.trim();
+        if !in_block {
+            if trimmed.starts_with("```mermaid") {
+                in_block = true;
+                fence = "```".to_string();
+                continue;
+            }
+            if trimmed.starts_with(":::mermaid") {
+                in_block = true;
+                fence = ":::".to_string();
+                continue;
+            }
+        } else if trimmed == fence {
+            in_block = false;
+            blocks.push(current.join("\n"));
+            current.clear();
+            continue;
+        }
+
+        if in_block {
+            current.push(line.to_string());
+        }
+    }
+
+    blocks
+}
+
+fn resolve_multi_outputs(
+    output: Option<&Path>,
+    format: OutputFormat,
+    count: usize,
+) -> Result<Vec<PathBuf>> {
+    let ext = match format {
+        OutputFormat::Svg => "svg",
+        OutputFormat::Png => "png",
+    };
+    let base = output.ok_or_else(|| anyhow::anyhow!("Output path required for markdown input"))?;
+    if base.is_dir() {
+        let mut outputs = Vec::new();
+        for idx in 0..count {
+            outputs.push(base.join(format!("diagram-{}.{}", idx + 1, ext)));
+        }
+        return Ok(outputs);
+    }
+    let stem = base.file_stem().and_then(|s| s.to_str()).unwrap_or("diagram");
+    let parent = base.parent().unwrap_or_else(|| Path::new("."));
+    let mut outputs = Vec::new();
+    for idx in 0..count {
+        outputs.push(parent.join(format!("{}-{}.{}", stem, idx + 1, ext)));
+    }
+    Ok(outputs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extracts_mermaid_blocks() {
+        let input = r#"
+text
+```mermaid
+flowchart LR
+  A --> B
+```
+more
+:::mermaid
+sequenceDiagram
+  A->>B: hi
+:::
+"#;
+        let blocks = extract_mermaid_blocks(input);
+        assert_eq!(blocks.len(), 2);
+        assert!(blocks[0].contains("flowchart"));
+        assert!(blocks[1].contains("sequenceDiagram"));
+    }
 }
 
 fn merge_init_config(mut config: Config, init: serde_json::Value) -> Config {
