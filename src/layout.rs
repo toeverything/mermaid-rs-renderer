@@ -93,6 +93,8 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         bucket.sort();
     }
 
+    order_rank_nodes(&mut rank_nodes, &graph.edges);
+
     let mut main_cursor = 0.0;
     let mut _max_cross: f32 = 0.0;
 
@@ -200,6 +202,101 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         subgraphs,
         width,
         height,
+    }
+}
+
+fn order_rank_nodes(rank_nodes: &mut [Vec<String>], edges: &[crate::ir::Edge]) {
+    if rank_nodes.len() <= 1 {
+        return;
+    }
+    let mut incoming: HashMap<String, Vec<String>> = HashMap::new();
+    let mut outgoing: HashMap<String, Vec<String>> = HashMap::new();
+
+    for edge in edges {
+        outgoing
+            .entry(edge.from.clone())
+            .or_default()
+            .push(edge.to.clone());
+        incoming
+            .entry(edge.to.clone())
+            .or_default()
+            .push(edge.from.clone());
+    }
+
+    let mut positions: HashMap<String, usize> = HashMap::new();
+    let update_positions = |rank_nodes: &mut [Vec<String>], positions: &mut HashMap<String, usize>| {
+        positions.clear();
+        for bucket in rank_nodes.iter() {
+            for (idx, node_id) in bucket.iter().enumerate() {
+                positions.insert(node_id.clone(), idx);
+            }
+        }
+    };
+
+    update_positions(rank_nodes, &mut positions);
+
+    let sort_bucket = |bucket: &mut Vec<String>,
+                           neighbors: &HashMap<String, Vec<String>>,
+                           positions: &HashMap<String, usize>| {
+        let current_positions: HashMap<String, usize> = bucket
+            .iter()
+            .enumerate()
+            .map(|(idx, id)| (id.clone(), idx))
+            .collect();
+        bucket.sort_by(|a, b| {
+            let a_score = barycenter(a, neighbors, positions, &current_positions);
+            let b_score = barycenter(b, neighbors, positions, &current_positions);
+            match a_score.partial_cmp(&b_score) {
+                Some(std::cmp::Ordering::Equal) | None => {
+                    let a_pos = current_positions.get(a).copied().unwrap_or(0);
+                    let b_pos = current_positions.get(b).copied().unwrap_or(0);
+                    a_pos.cmp(&b_pos)
+                }
+                Some(ordering) => ordering,
+            }
+        });
+    };
+
+    for _ in 0..2 {
+        for rank in 1..rank_nodes.len() {
+            if rank_nodes[rank].len() <= 1 {
+                continue;
+            }
+            sort_bucket(&mut rank_nodes[rank], &incoming, &positions);
+            update_positions(rank_nodes, &mut positions);
+        }
+        for rank in (0..rank_nodes.len().saturating_sub(1)).rev() {
+            if rank_nodes[rank].len() <= 1 {
+                continue;
+            }
+            sort_bucket(&mut rank_nodes[rank], &outgoing, &positions);
+            update_positions(rank_nodes, &mut positions);
+        }
+    }
+
+}
+
+fn barycenter(
+    node_id: &str,
+    neighbors: &HashMap<String, Vec<String>>,
+    positions: &HashMap<String, usize>,
+    current_positions: &HashMap<String, usize>,
+) -> f32 {
+    let Some(list) = neighbors.get(node_id) else {
+        return *current_positions.get(node_id).unwrap_or(&0) as f32;
+    };
+    let mut total = 0.0;
+    let mut count = 0.0;
+    for neighbor in list {
+        if let Some(pos) = positions.get(neighbor) {
+            total += *pos as f32;
+            count += 1.0;
+        }
+    }
+    if count == 0.0 {
+        *current_positions.get(node_id).unwrap_or(&0) as f32
+    } else {
+        total / count
     }
 }
 
