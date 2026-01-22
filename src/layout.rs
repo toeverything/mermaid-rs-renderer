@@ -1,8 +1,8 @@
 use crate::config::LayoutConfig;
 use crate::ir::{Direction, Graph};
 use crate::theme::Theme;
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::cmp::Ordering;
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 #[derive(Debug, Clone)]
 pub struct TextBlock {
@@ -84,9 +84,9 @@ fn is_horizontal(direction: Direction) -> bool {
 pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
     match graph.kind {
         crate::ir::DiagramKind::Sequence => compute_sequence_layout(graph, theme, config),
-        crate::ir::DiagramKind::Class | crate::ir::DiagramKind::State | crate::ir::DiagramKind::Flowchart => {
-            compute_flowchart_layout(graph, theme, config)
-        }
+        crate::ir::DiagramKind::Class
+        | crate::ir::DiagramKind::State
+        | crate::ir::DiagramKind::Flowchart => compute_flowchart_layout(graph, theme, config),
     }
 }
 
@@ -189,10 +189,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         };
         let from = nodes.get(&edge.from).expect("from node missing");
         let to = nodes.get(&edge.to).expect("to node missing");
-        let label = edge
-            .label
-            .as_ref()
-            .map(|l| measure_label(l, theme, config));
+        let label = edge.label.as_ref().map(|l| measure_label(l, theme, config));
         let override_style = resolve_edge_style(idx, graph);
 
         let points = route_edge_with_avoidance(
@@ -275,10 +272,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
     let mut message_cursor = max_node_height + config.node_spacing * 1.2;
     let mut message_ys = Vec::new();
     for edge in &graph.edges {
-        let label_block = edge
-            .label
-            .as_ref()
-            .map(|l| measure_label(l, theme, config));
+        let label_block = edge.label.as_ref().map(|l| measure_label(l, theme, config));
         let label_height = label_block
             .as_ref()
             .map(|b| b.height)
@@ -292,20 +286,12 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         let from = nodes.get(&edge.from).expect("from node missing");
         let to = nodes.get(&edge.to).expect("to node missing");
         let y = message_ys.get(idx).copied().unwrap_or(message_cursor);
-        let label = edge
-            .label
-            .as_ref()
-            .map(|l| measure_label(l, theme, config));
+        let label = edge.label.as_ref().map(|l| measure_label(l, theme, config));
 
         let points = if edge.from == edge.to {
             let pad = config.node_spacing.max(20.0) * 0.6;
             let x = from.x + from.width / 2.0;
-            vec![
-                (x, y),
-                (x + pad, y),
-                (x + pad, y + pad),
-                (x, y + pad),
-            ]
+            vec![(x, y), (x + pad, y), (x + pad, y + pad), (x, y + pad)]
         } else {
             let from_x = from.x + from.width / 2.0;
             let to_x = to.x + to.width / 2.0;
@@ -399,7 +385,8 @@ fn order_rank_nodes(rank_nodes: &mut [Vec<String>], edges: &[crate::ir::Edge]) {
     }
 
     let mut positions: HashMap<String, usize> = HashMap::new();
-    let update_positions = |rank_nodes: &mut [Vec<String>], positions: &mut HashMap<String, usize>| {
+    let update_positions = |rank_nodes: &mut [Vec<String>],
+                            positions: &mut HashMap<String, usize>| {
         positions.clear();
         for bucket in rank_nodes.iter() {
             for (idx, node_id) in bucket.iter().enumerate() {
@@ -411,8 +398,8 @@ fn order_rank_nodes(rank_nodes: &mut [Vec<String>], edges: &[crate::ir::Edge]) {
     update_positions(rank_nodes, &mut positions);
 
     let sort_bucket = |bucket: &mut Vec<String>,
-                           neighbors: &HashMap<String, Vec<String>>,
-                           positions: &HashMap<String, usize>| {
+                       neighbors: &HashMap<String, Vec<String>>,
+                       positions: &HashMap<String, usize>| {
         let current_positions: HashMap<String, usize> = bucket
             .iter()
             .enumerate()
@@ -448,7 +435,6 @@ fn order_rank_nodes(rank_nodes: &mut [Vec<String>], edges: &[crate::ir::Edge]) {
             update_positions(rank_nodes, &mut positions);
         }
     }
-
 }
 
 fn barycenter(
@@ -536,7 +522,11 @@ fn compute_ranks(graph: &Graph) -> HashMap<String, usize> {
     ranks
 }
 
-fn apply_subgraph_bands(graph: &Graph, nodes: &mut BTreeMap<String, NodeLayout>, config: &LayoutConfig) {
+fn apply_subgraph_bands(
+    graph: &Graph,
+    nodes: &mut BTreeMap<String, NodeLayout>,
+    config: &LayoutConfig,
+) {
     let mut group_nodes: Vec<Vec<String>> = Vec::new();
     let mut node_group: HashMap<String, usize> = HashMap::new();
 
@@ -587,11 +577,11 @@ fn apply_subgraph_bands(graph: &Graph, nodes: &mut BTreeMap<String, NodeLayout>,
     }
 
     // Order groups by their current position to minimize crossing shifts.
-        if is_horizontal(graph.direction) {
-            groups.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
-        } else {
-            groups.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-        }
+    if is_horizontal(graph.direction) {
+        groups.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
+    } else {
+        groups.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    }
 
     let spacing = config.rank_spacing * 0.8;
     if is_horizontal(graph.direction) {
@@ -652,7 +642,9 @@ fn apply_subgraph_direction_overrides(
     config: &LayoutConfig,
 ) {
     for sub in &graph.subgraphs {
-        let Some(direction) = sub.direction else { continue };
+        let Some(direction) = sub.direction else {
+            continue;
+        };
         if sub.nodes.is_empty() {
             continue;
         }
@@ -673,15 +665,7 @@ fn apply_subgraph_direction_overrides(
         }
 
         let ranks = compute_ranks_subset(&sub.nodes, &graph.edges);
-        assign_positions(
-            &sub.nodes,
-            &ranks,
-            direction,
-            config,
-            nodes,
-            min_x,
-            min_y,
-        );
+        assign_positions(&sub.nodes, &ranks, direction, config, nodes, min_x, min_y);
 
         if matches!(direction, Direction::RightLeft | Direction::BottomTop) {
             mirror_subgraph_nodes(&sub.nodes, nodes, direction);
@@ -915,8 +899,16 @@ fn normalize_layout(
     }
 
     let padding = 24.0;
-    let shift_x = if min_x < padding { padding - min_x } else { 0.0 };
-    let shift_y = if min_y < padding { padding - min_y } else { 0.0 };
+    let shift_x = if min_x < padding {
+        padding - min_x
+    } else {
+        0.0
+    };
+    let shift_y = if min_y < padding {
+        padding - min_y
+    } else {
+        0.0
+    };
 
     if shift_x == 0.0 && shift_y == 0.0 {
         return;
@@ -1095,11 +1087,7 @@ fn path_intersects_obstacles(
     false
 }
 
-fn segment_intersects_rect(
-    a: (f32, f32),
-    b: (f32, f32),
-    rect: &Obstacle,
-) -> bool {
+fn segment_intersects_rect(a: (f32, f32), b: (f32, f32), rect: &Obstacle) -> bool {
     let (x1, y1) = a;
     let (x2, y2) = b;
     if (x1 - x2).abs() < f32::EPSILON {
@@ -1137,7 +1125,11 @@ fn measure_label(text: &str, theme: &Theme, config: &LayoutConfig) -> TextBlock 
     let width = max_len as f32 * approx_char_width;
     let height = lines.len() as f32 * theme.font_size * config.label_line_height;
 
-    TextBlock { lines, width, height }
+    TextBlock {
+        lines,
+        width,
+        height,
+    }
 }
 
 fn split_lines(text: &str) -> Vec<String> {
@@ -1304,9 +1296,7 @@ fn build_subgraph_layouts(
     subgraphs.sort_by(|a, b| {
         let area_a = a.width * a.height;
         let area_b = b.width * b.height;
-        area_b
-            .partial_cmp(&area_a)
-            .unwrap_or(Ordering::Equal)
+        area_b.partial_cmp(&area_a).unwrap_or(Ordering::Equal)
     });
     subgraphs
 }
@@ -1329,11 +1319,7 @@ fn merge_node_style(target: &mut crate::ir::NodeStyle, source: &crate::ir::NodeS
     }
 }
 
-fn shape_size(
-    shape: crate::ir::NodeShape,
-    label: &TextBlock,
-    config: &LayoutConfig,
-) -> (f32, f32) {
+fn shape_size(shape: crate::ir::NodeShape, label: &TextBlock, config: &LayoutConfig) -> (f32, f32) {
     let mut width = label.width + config.node_padding_x * 2.0;
     let mut height = label.height + config.node_padding_y * 2.0;
 

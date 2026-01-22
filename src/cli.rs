@@ -1,4 +1,4 @@
-use crate::config::{load_config, Config};
+use crate::config::{Config, load_config};
 use crate::layout::compute_layout;
 use crate::parser::parse_mermaid;
 use crate::render::{render_svg, write_output_png, write_output_svg};
@@ -8,7 +8,11 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser, Debug)]
-#[command(name = "mmdr", version, about = "Mermaid renderer in Rust (flowchart subset)")]
+#[command(
+    name = "mmdr",
+    version,
+    about = "Mermaid renderer in Rust (flowchart subset)"
+)]
 pub struct Args {
     /// Input file (.mmd) or '-' for stdin
     #[arg(short = 'i', long = "input")]
@@ -93,7 +97,8 @@ pub fn run() -> Result<()> {
     }
 
     // Multiple diagrams (Markdown input)
-    let outputs = resolve_multi_outputs(args.output.as_deref(), args.output_format, diagrams.len())?;
+    let outputs =
+        resolve_multi_outputs(args.output.as_deref(), args.output_format, diagrams.len())?;
     for (idx, diagram) in diagrams.iter().enumerate() {
         let parsed = parse_mermaid(diagram)?;
         let mut config = base_config.clone();
@@ -143,10 +148,7 @@ fn ensure_output(output: &Option<PathBuf>, ext: &str) -> Result<PathBuf> {
     if let Some(path) = output {
         return Ok(path.clone());
     }
-    Err(anyhow::anyhow!(
-        "Output path required for {} output",
-        ext
-    ))
+    Err(anyhow::anyhow!("Output path required for {} output", ext))
 }
 
 fn extract_mermaid_blocks(input: &str) -> Vec<String> {
@@ -224,7 +226,10 @@ fn resolve_multi_outputs(
         }
         return Ok(outputs);
     }
-    let stem = base.file_stem().and_then(|s| s.to_str()).unwrap_or("diagram");
+    let stem = base
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("diagram");
     let parent = base.parent().unwrap_or_else(|| Path::new("."));
     let mut outputs = Vec::new();
     for idx in 0..count {
@@ -309,7 +314,10 @@ fn merge_init_config(mut config: Config, init: serde_json::Value) -> Config {
         if let Some(val) = theme_vars.get("primaryTextColor").and_then(|v| v.as_str()) {
             config.theme.primary_text_color = val.to_string();
         }
-        if let Some(val) = theme_vars.get("primaryBorderColor").and_then(|v| v.as_str()) {
+        if let Some(val) = theme_vars
+            .get("primaryBorderColor")
+            .and_then(|v| v.as_str())
+        {
             config.theme.primary_border_color = val.to_string();
         }
         if let Some(val) = theme_vars.get("lineColor").and_then(|v| v.as_str()) {
@@ -321,7 +329,10 @@ fn merge_init_config(mut config: Config, init: serde_json::Value) -> Config {
         if let Some(val) = theme_vars.get("tertiaryColor").and_then(|v| v.as_str()) {
             config.theme.tertiary_color = val.to_string();
         }
-        if let Some(val) = theme_vars.get("edgeLabelBackground").and_then(|v| v.as_str()) {
+        if let Some(val) = theme_vars
+            .get("edgeLabelBackground")
+            .and_then(|v| v.as_str())
+        {
             config.theme.edge_label_background = val.to_string();
         }
         if let Some(val) = theme_vars.get("clusterBkg").and_then(|v| v.as_str()) {

@@ -104,7 +104,8 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         ));
     }
 
-    let label_positions = compute_edge_label_positions(&layout.edges, &layout.nodes, &layout.subgraphs);
+    let label_positions =
+        compute_edge_label_positions(&layout.edges, &layout.nodes, &layout.subgraphs);
 
     for (idx, edge) in layout.edges.iter().enumerate() {
         let d = points_to_path(&edge.points);
@@ -137,22 +138,27 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         }
         svg.push_str(&format!(
             "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" {} {} {} />",
-            d,
-            stroke,
-            stroke_width,
-            marker_end,
-            marker_start,
-            dash
+            d, stroke, stroke_width, marker_end, marker_start, dash
         ));
 
         if let Some(point) = edge.points.first().copied() {
             if let Some(decoration) = edge.start_decoration {
-                svg.push_str(&edge_decoration_svg(point, decoration, &stroke, stroke_width));
+                svg.push_str(&edge_decoration_svg(
+                    point,
+                    decoration,
+                    &stroke,
+                    stroke_width,
+                ));
             }
         }
         if let Some(point) = edge.points.last().copied() {
             if let Some(decoration) = edge.end_decoration {
-                svg.push_str(&edge_decoration_svg(point, decoration, &stroke, stroke_width));
+                svg.push_str(&edge_decoration_svg(
+                    point,
+                    decoration,
+                    &stroke,
+                    stroke_width,
+                ));
             }
         }
 
@@ -182,7 +188,15 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         svg.push_str(&shape_svg(node, theme));
         let center_x = node.x + node.width / 2.0;
         let center_y = node.y + node.height / 2.0;
-        svg.push_str(&text_block_svg(center_x, center_y, &node.label, theme, config, false, node.style.text_color.as_deref()));
+        svg.push_str(&text_block_svg(
+            center_x,
+            center_y,
+            &node.label,
+            theme,
+            config,
+            false,
+            node.style.text_color.as_deref(),
+        ));
     }
 
     svg.push_str("</svg>");
@@ -230,10 +244,16 @@ fn text_block_svg(
 
     for (idx, line) in label.lines.iter().enumerate() {
         if idx == 0 {
-            text.push_str(&format!("<tspan x=\"{x:.2}\" dy=\"0\">{}", escape_xml(line)));
+            text.push_str(&format!(
+                "<tspan x=\"{x:.2}\" dy=\"0\">{}",
+                escape_xml(line)
+            ));
         } else {
             let dy = theme.font_size * config.label_line_height;
-            text.push_str(&format!("<tspan x=\"{x:.2}\" dy=\"{dy:.2}\">{}", escape_xml(line)));
+            text.push_str(&format!(
+                "<tspan x=\"{x:.2}\" dy=\"{dy:.2}\">{}",
+                escape_xml(line)
+            ));
         }
         text.push_str("</tspan>");
     }
@@ -261,10 +281,16 @@ fn text_block_svg_left(
 
     for (idx, line) in label.lines.iter().enumerate() {
         if idx == 0 {
-            text.push_str(&format!("<tspan x=\"{x:.2}\" dy=\"0\">{}", escape_xml(line)));
+            text.push_str(&format!(
+                "<tspan x=\"{x:.2}\" dy=\"0\">{}",
+                escape_xml(line)
+            ));
         } else {
             let dy = theme.font_size * config.label_line_height;
-            text.push_str(&format!("<tspan x=\"{x:.2}\" dy=\"{dy:.2}\">{}", escape_xml(line)));
+            text.push_str(&format!(
+                "<tspan x=\"{x:.2}\" dy=\"{dy:.2}\">{}",
+                escape_xml(line)
+            ));
         }
         text.push_str("</tspan>");
     }
@@ -363,7 +389,11 @@ fn edge_label_anchor(edge: &EdgeLayout) -> (f32, f32, OffsetAxis) {
         let p2 = edge.points[2];
         let dx = (p2.0 - p1.0).abs();
         let dy = (p2.1 - p1.1).abs();
-        let axis = if dx > dy { OffsetAxis::Y } else { OffsetAxis::X };
+        let axis = if dx > dy {
+            OffsetAxis::Y
+        } else {
+            OffsetAxis::X
+        };
         return ((p1.0 + p2.0) / 2.0, (p1.1 + p2.1) / 2.0, axis);
     }
     if edge.points.len() >= 2 {
@@ -371,7 +401,11 @@ fn edge_label_anchor(edge: &EdgeLayout) -> (f32, f32, OffsetAxis) {
         let p2 = edge.points[edge.points.len() - 1];
         let dx = (p2.0 - p1.0).abs();
         let dy = (p2.1 - p1.1).abs();
-        let axis = if dx > dy { OffsetAxis::Y } else { OffsetAxis::X };
+        let axis = if dx > dy {
+            OffsetAxis::Y
+        } else {
+            OffsetAxis::X
+        };
         return ((p1.0 + p2.0) / 2.0, (p1.1 + p2.1) / 2.0, axis);
     }
     (0.0, 0.0, OffsetAxis::Y)
@@ -379,11 +413,7 @@ fn edge_label_anchor(edge: &EdgeLayout) -> (f32, f32, OffsetAxis) {
 
 fn collides(rect: &(f32, f32, f32, f32), occupied: &[(f32, f32, f32, f32)]) -> bool {
     for (x, y, w, h) in occupied {
-        if rect.0 < x + w
-            && rect.0 + rect.2 > *x
-            && rect.1 < y + h
-            && rect.1 + rect.3 > *y
-        {
+        if rect.0 < x + w && rect.0 + rect.2 > *x && rect.1 < y + h && rect.1 + rect.3 > *y {
             return true;
         }
     }
@@ -414,11 +444,7 @@ fn collides_edges(
         if *idx == edge_idx {
             continue;
         }
-        if rect.0 < x + w
-            && rect.0 + rect.2 > *x
-            && rect.1 < y + h
-            && rect.1 + rect.3 > *y
-        {
+        if rect.0 < x + w && rect.0 + rect.2 > *x && rect.1 < y + h && rect.1 + rect.3 > *y {
             return true;
         }
     }
@@ -456,7 +482,11 @@ pub fn write_output_png(
         .ok_or_else(|| anyhow::anyhow!("Failed to allocate pixmap"))?;
 
     let mut pixmap_mut = pixmap.as_mut();
-    resvg::render(&tree, resvg::tiny_skia::Transform::default(), &mut pixmap_mut);
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::default(),
+        &mut pixmap_mut,
+    );
     pixmap.save_png(output)?;
     Ok(())
 }
@@ -513,9 +543,7 @@ fn edge_decoration_svg(
             );
             format!(
                 "<polygon points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"/>",
-                points,
-                stroke,
-                stroke_width
+                points, stroke, stroke_width
             )
         }
     }
@@ -536,11 +564,7 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
         .stroke
         .as_ref()
         .unwrap_or(&theme.primary_border_color);
-    let fill = node
-        .style
-        .fill
-        .as_ref()
-        .unwrap_or(&theme.primary_color);
+    let fill = node.style.fill.as_ref().unwrap_or(&theme.primary_color);
     let dash = node
         .style
         .stroke_dasharray
@@ -580,7 +604,12 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
             let r = (w.min(h)) / 2.0;
             let mut svg = format!(
                 "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}/>",
-                cx, cy, r, fill, stroke, node.style.stroke_width.unwrap_or(1.4)
+                cx,
+                cy,
+                r,
+                fill,
+                stroke,
+                node.style.stroke_width.unwrap_or(1.4)
             );
             if node.shape == crate::ir::NodeShape::DoubleCircle {
                 let r2 = r - 4.0;
@@ -734,8 +763,16 @@ mod tests {
     fn render_svg_basic() {
         let mut graph = Graph::new();
         graph.direction = Direction::LeftRight;
-        graph.ensure_node("A", Some("Alpha".to_string()), Some(crate::ir::NodeShape::Rectangle));
-        graph.ensure_node("B", Some("Beta".to_string()), Some(crate::ir::NodeShape::Rectangle));
+        graph.ensure_node(
+            "A",
+            Some("Alpha".to_string()),
+            Some(crate::ir::NodeShape::Rectangle),
+        );
+        graph.ensure_node(
+            "B",
+            Some("Beta".to_string()),
+            Some(crate::ir::NodeShape::Rectangle),
+        );
         graph.edges.push(crate::ir::Edge {
             from: "A".to_string(),
             to: "B".to_string(),

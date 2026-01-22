@@ -1,11 +1,14 @@
 # mermaid-rs-renderer
 
-A minimal Mermaid flowchart renderer in Rust.
+A fast Mermaid renderer in Rust (flowchart + basic class/state/sequence).
 
 ## Status
 - Supports `flowchart` / `graph` with `TD/TB/LR/BT/RL` and subgraph `direction`
+- Basic `classDiagram` (class blocks + relations)
+- Basic `stateDiagram-v2` (states, aliases, transitions, start/end)
+- Basic `sequenceDiagram` (participants, messages, lifelines; no activation or notes yet)
 - Node shapes: rectangle, round-rect, stadium, circle/double-circle, diamond, hexagon, cylinder, subroutine, trapezoids, parallelograms
-- Edge styles: solid, dotted, thick; arrowheads + circle/cross decorations; labels
+- Edge styles: solid, dotted, thick; arrowheads + circle/cross/diamond decorations; labels
 - Styling directives: `classDef`, `class`, inline `:::class`, `style` (nodes + subgraphs), `linkStyle` (fill/stroke/text/stroke-width/dasharray + label color)
 - Subgraphs (`subgraph ... end`)
 - Mermaid init directives: `%%{init}%%` (themeVariables subset, JSON5-style allowed)
@@ -63,6 +66,39 @@ We accept a subset of Mermaid `themeVariables` in a JSON config file. Example:
 cargo test
 cargo run -- -i docs/diagrams/architecture.mmd -o /tmp/arch.svg -e svg
 ```
+
+## Benchmarks
+
+We include two benchmark layers:
+
+1) **Microbenchmarks** (parse/layout/render) via Criterion:
+```bash
+cargo bench --bench renderer
+```
+
+2) **End-to-end CLI comparison** vs Mermaid CLI:
+```bash
+cargo build --release
+scripts/bench_compare.py
+```
+
+You can tweak runs with `RUNS`/`WARMUP`, or skip mermaid-cli with `SKIP_MERMAID_CLI=1`.
+
+### Latest end-to-end results (January 22, 2026)
+
+Machine: Intel(R) Core(TM) Ultra 7 256V (8 cores), Linux 6.18.2-arch2-1  
+Node: v25.2.1, mermaid-cli: 11.12.0  
+Runs: 2 warmup + 8 measured, SVG output
+
+| Case | mmdr mean (ms) | mermaid-cli mean (ms) | Speedup |
+|---|---:|---:|---:|
+| flowchart_small | 2.85 | 2783.71 | ~976× |
+| flowchart_medium | 3.09 | 2962.13 | ~960× |
+| flowchart_large | 6.42 | 3342.53 | ~521× |
+
+Notes:
+- `mermaid-cli` includes Chromium startup (via Puppeteer), so it has a large fixed cost.
+- These are wall-clock timings on this machine; expect different results on your system.
 
 ## License
 MIT

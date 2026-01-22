@@ -1,7 +1,31 @@
 use crate::ir::{DiagramKind, Direction, Graph, Subgraph};
 use anyhow::Result;
+use once_cell::sync::Lazy;
 use regex::Regex;
 use std::collections::HashMap;
+
+static HEADER_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(flowchart|graph)\s+(\w+)").unwrap());
+static SUBGRAPH_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^subgraph\s+(.*)$").unwrap());
+static INIT_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^%%\{\s*init\s*:\s*(\{.*\})\s*\}%%").unwrap());
+static PIPE_LABEL_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"^(?P<left>.+?)\s*(?P<arrow1><?[-.=ox]*[-=]+[-.=ox]*)\|(?P<label>.+?)\|(?P<arrow2>[-.=ox]*[-=]+[-.=ox]*>?)\s*(?P<right>.+)$",
+    )
+    .unwrap()
+});
+static LABEL_ARROW_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"^(?P<left>.+?)\s*(?P<start><)?(?P<dash1>[-.=ox]*[-=]+[-.=ox]*)\s+(?P<label>[^<>=]+?)\s+(?P<dash2>[-.=ox]*[-=]+[-.=ox]*)(?P<end>>)?\s*(?P<right>.+)$",
+    )
+    .unwrap()
+});
+static ARROW_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"^(?P<left>.+?)\s*(?P<arrow><[-.=ox]*[-=]+[-.=ox]*>|<[-.=ox]*[-=]+|[-.=ox]*[-=]+>|[-.=ox]*[-=]+)\s*(?P<right>.+)$",
+    )
+    .unwrap()
+});
 
 #[derive(Debug, Default)]
 pub struct ParseOutput {
@@ -52,7 +76,6 @@ fn detect_diagram_kind(input: &str) -> DiagramKind {
 }
 
 fn preprocess_input(input: &str) -> Result<(Vec<String>, Option<serde_json::Value>)> {
-    let init_re = Regex::new(r"^%%\{\s*init\s*:\s*(\{.*\})\s*\}%%")?;
     let mut init_config: Option<serde_json::Value> = None;
     let mut lines = Vec::new();
 
@@ -61,7 +84,7 @@ fn preprocess_input(input: &str) -> Result<(Vec<String>, Option<serde_json::Valu
         if trimmed_line.is_empty() {
             continue;
         }
-        if let Some(caps) = init_re.captures(trimmed_line) {
+        if let Some(caps) = INIT_RE.captures(trimmed_line) {
             if let Some(json_str) = caps.get(1).map(|m| m.as_str()) {
                 if let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str) {
                     init_config = Some(value);
@@ -89,8 +112,6 @@ fn parse_flowchart(input: &str) -> Result<ParseOutput> {
     graph.kind = DiagramKind::Flowchart;
     let mut subgraph_stack: Vec<usize> = Vec::new();
 
-    let header_re = Regex::new(r"^(flowchart|graph)\s+(\w+)")?;
-    let subgraph_re = Regex::new(r"^subgraph\s+(.*)$")?;
     let (lines, init_config) = preprocess_input(input)?;
 
     for raw_line in lines {
@@ -99,7 +120,7 @@ fn parse_flowchart(input: &str) -> Result<ParseOutput> {
                 continue;
             }
 
-            if let Some(caps) = header_re.captures(&line) {
+            if let Some(caps) = HEADER_RE.captures(&line) {
                 if let Some(dir) = caps.get(2).and_then(|m| Direction::from_token(m.as_str())) {
                     graph.direction = dir;
                 }
@@ -111,7 +132,7 @@ fn parse_flowchart(input: &str) -> Result<ParseOutput> {
                 continue;
             }
 
-            if let Some(caps) = subgraph_re.captures(&line) {
+            if let Some(caps) = SUBGRAPH_RE.captures(&line) {
                 let rest = caps.get(1).map(|m| m.as_str()).unwrap_or("");
                 let (id, label, classes) = parse_subgraph_header(rest);
                 graph.subgraphs.push(Subgraph {
@@ -421,7 +442,11 @@ fn edge_meta_from_state_token(token: &str) -> EdgeMeta {
     }
 }
 
-fn normalize_state_token(token: &str, is_start: bool, counter: &mut usize) -> (String, crate::ir::NodeShape) {
+fn normalize_state_token(
+    token: &str,
+    is_start: bool,
+    counter: &mut usize,
+) -> (String, crate::ir::NodeShape) {
     let trimmed = token.trim();
     if trimmed == "[*]" || trimmed == "*" {
         let id = if is_start {
@@ -487,8 +512,12 @@ fn parse_sequence_participant(line: &str) -> Option<(String, Option<String>)> {
     Some((strip_quotes(rest), None))
 }
 
-fn parse_sequence_message(line: &str) -> Option<(String, String, Option<String>, crate::ir::EdgeStyle)> {
-    let tokens = ["-->>+", "->>+", "-->+", "->+", "-->>", "->>", "-->", "->", "<--", "<-"];
+fn parse_sequence_message(
+    line: &str,
+) -> Option<(String, String, Option<String>, crate::ir::EdgeStyle)> {
+    let tokens = [
+        "-->>+", "->>+", "-->+", "->+", "-->>", "->>", "-->", "->", "<--", "<-",
+    ];
     for token in tokens {
         if let Some(pos) = line.find(token) {
             let left = line[..pos].trim();
@@ -549,11 +578,17 @@ fn parse_class_diagram(input: &str) -> Result<ParseOutput> {
             if let Some(end_idx) = line.find('}') {
                 let fragment = line[..end_idx].trim();
                 if !fragment.is_empty() {
-                    members.entry(active.clone()).or_default().push(fragment.to_string());
+                    members
+                        .entry(active.clone())
+                        .or_default()
+                        .push(fragment.to_string());
                 }
                 current_class = None;
             } else {
-                members.entry(active.clone()).or_default().push(line.to_string());
+                members
+                    .entry(active.clone())
+                    .or_default()
+                    .push(line.to_string());
             }
             continue;
         }
@@ -567,8 +602,16 @@ fn parse_class_diagram(input: &str) -> Result<ParseOutput> {
             if let Some(label) = right_label {
                 labels.insert(right_id.clone(), label);
             }
-            graph.ensure_node(&left_id, labels.get(&left_id).cloned(), Some(crate::ir::NodeShape::Rectangle));
-            graph.ensure_node(&right_id, labels.get(&right_id).cloned(), Some(crate::ir::NodeShape::Rectangle));
+            graph.ensure_node(
+                &left_id,
+                labels.get(&left_id).cloned(),
+                Some(crate::ir::NodeShape::Rectangle),
+            );
+            graph.ensure_node(
+                &right_id,
+                labels.get(&right_id).cloned(),
+                Some(crate::ir::NodeShape::Rectangle),
+            );
             graph.edges.push(crate::ir::Edge {
                 from: left_id,
                 to: right_id,
@@ -589,7 +632,11 @@ fn parse_class_diagram(input: &str) -> Result<ParseOutput> {
                 if let Some(label) = label.clone() {
                     labels.insert(id.clone(), label);
                 }
-                graph.ensure_node(&id, labels.get(&id).cloned(), Some(crate::ir::NodeShape::Rectangle));
+                graph.ensure_node(
+                    &id,
+                    labels.get(&id).cloned(),
+                    Some(crate::ir::NodeShape::Rectangle),
+                );
                 if let Some(body) = body {
                     for entry in split_class_body(&body) {
                         if !entry.is_empty() {
@@ -611,7 +658,10 @@ fn parse_class_diagram(input: &str) -> Result<ParseOutput> {
     }
 
     for (id, node) in graph.nodes.iter_mut() {
-        let class_name = labels.get(id).cloned().unwrap_or_else(|| node.label.clone());
+        let class_name = labels
+            .get(id)
+            .cloned()
+            .unwrap_or_else(|| node.label.clone());
         let mut lines = Vec::new();
         lines.push(class_name.clone());
         if let Some(items) = members.get(id) {
@@ -648,13 +698,18 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
 
         if let Some((id, label)) = parse_state_alias_line(line) {
             labels.insert(id.clone(), label);
-            graph.ensure_node(&id, labels.get(&id).cloned(), Some(crate::ir::NodeShape::RoundRect));
+            graph.ensure_node(
+                &id,
+                labels.get(&id).cloned(),
+                Some(crate::ir::NodeShape::RoundRect),
+            );
             continue;
         }
 
         if let Some((left, meta, right, label)) = parse_state_transition(line) {
             let (left_id, left_shape) = normalize_state_token(&left, true, &mut special_counter);
-            let (right_id, right_shape) = normalize_state_token(&right, false, &mut special_counter);
+            let (right_id, right_shape) =
+                normalize_state_token(&right, false, &mut special_counter);
 
             let left_label = labels.get(&left_id).cloned();
             let right_label = labels.get(&right_id).cloned();
@@ -675,7 +730,11 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
         }
 
         if let Some(id) = parse_state_simple(line) {
-            graph.ensure_node(&id, labels.get(&id).cloned(), Some(crate::ir::NodeShape::RoundRect));
+            graph.ensure_node(
+                &id,
+                labels.get(&id).cloned(),
+                Some(crate::ir::NodeShape::RoundRect),
+            );
             continue;
         }
     }
@@ -708,7 +767,11 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
             if let Some(label) = label.clone() {
                 labels.insert(id.clone(), label);
             }
-            graph.ensure_node(&id, labels.get(&id).cloned(), Some(crate::ir::NodeShape::RoundRect));
+            graph.ensure_node(
+                &id,
+                labels.get(&id).cloned(),
+                Some(crate::ir::NodeShape::RoundRect),
+            );
             continue;
         }
 
@@ -727,8 +790,16 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
             if !order.contains(&to) {
                 order.push(to.clone());
             }
-            graph.ensure_node(&from, labels.get(&from).cloned(), Some(crate::ir::NodeShape::RoundRect));
-            graph.ensure_node(&to, labels.get(&to).cloned(), Some(crate::ir::NodeShape::RoundRect));
+            graph.ensure_node(
+                &from,
+                labels.get(&from).cloned(),
+                Some(crate::ir::NodeShape::RoundRect),
+            );
+            graph.ensure_node(
+                &to,
+                labels.get(&to).cloned(),
+                Some(crate::ir::NodeShape::RoundRect),
+            );
             graph.edges.push(crate::ir::Edge {
                 from,
                 to,
@@ -861,7 +932,12 @@ fn extract_leading_decoration(right: &str) -> Option<(char, String)> {
     if rest.is_empty() {
         return None;
     }
-    if rest.chars().next().map(|c| c.is_whitespace()).unwrap_or(false) {
+    if rest
+        .chars()
+        .next()
+        .map(|c| c.is_whitespace())
+        .unwrap_or(false)
+    {
         return Some((first, rest.trim_start().to_string()));
     }
     None
@@ -891,7 +967,12 @@ fn parse_subgraph_header(input: &str) -> (Option<String>, String, Vec<String>) {
 
 fn parse_node_only(
     line: &str,
-) -> Option<(String, Option<String>, Option<crate::ir::NodeShape>, Vec<String>)> {
+) -> Option<(
+    String,
+    Option<String>,
+    Option<crate::ir::NodeShape>,
+    Vec<String>,
+)> {
     if line.contains("--") {
         return None;
     }
@@ -904,11 +985,7 @@ fn parse_node_only(
 }
 
 fn parse_edge_line(line: &str) -> Option<(String, Option<String>, String, EdgeMeta)> {
-    let pipe_label_re = Regex::new(
-        r"^(?P<left>.+?)\s*(?P<arrow1><?[-.=ox]*[-=]+[-.=ox]*)\|(?P<label>.+?)\|(?P<arrow2>[-.=ox]*[-=]+[-.=ox]*>?)\s*(?P<right>.+)$",
-    )
-    .ok()?;
-    if let Some(caps) = pipe_label_re.captures(line) {
+    if let Some(caps) = PIPE_LABEL_RE.captures(line) {
         let left = caps.name("left")?.as_str().trim();
         let right = caps.name("right")?.as_str().trim();
         let label_clean = caps.name("label")?.as_str().trim();
@@ -926,11 +1003,7 @@ fn parse_edge_line(line: &str) -> Option<(String, Option<String>, String, EdgeMe
         }
     }
 
-    let label_arrow_re = Regex::new(
-        r"^(?P<left>.+?)\s*(?P<start><)?(?P<dash1>[-.=ox]*[-=]+[-.=ox]*)\s+(?P<label>[^<>=]+?)\s+(?P<dash2>[-.=ox]*[-=]+[-.=ox]*)(?P<end>>)?\s*(?P<right>.+)$",
-    )
-    .ok()?;
-    if let Some(caps) = label_arrow_re.captures(line) {
+    if let Some(caps) = LABEL_ARROW_RE.captures(line) {
         let left = caps.name("left")?.as_str().trim();
         let right = caps.name("right")?.as_str().trim();
         let label_raw = caps.name("label")?.as_str().trim();
@@ -951,11 +1024,7 @@ fn parse_edge_line(line: &str) -> Option<(String, Option<String>, String, EdgeMe
         }
     }
 
-    let arrow_re = Regex::new(
-        r"^(?P<left>.+?)\s*(?P<arrow><[-.=ox]*[-=]+[-.=ox]*>|<[-.=ox]*[-=]+|[-.=ox]*[-=]+>|[-.=ox]*[-=]+)\s*(?P<right>.+)$",
-    )
-    .ok()?;
-    let caps = arrow_re.captures(line)?;
+    let caps = ARROW_RE.captures(line)?;
     let left = caps.name("left")?.as_str().trim();
     let mut arrow = caps.name("arrow")?.as_str().trim().to_string();
     let mut right = caps.name("right")?.as_str().trim().to_string();
@@ -1140,9 +1209,7 @@ fn parse_style_line(line: &str, graph: &mut Graph) {
             continue;
         }
         graph.node_styles.insert(id.to_string(), style.clone());
-        graph
-            .subgraph_styles
-            .insert(id.to_string(), style.clone());
+        graph.subgraph_styles.insert(id.to_string(), style.clone());
     }
 }
 
@@ -1160,7 +1227,9 @@ fn parse_link_style_line(line: &str, graph: &mut Graph) {
             break;
         }
     }
-    let Some(style_idx) = style_idx else { return; };
+    let Some(style_idx) = style_idx else {
+        return;
+    };
     let index_tokens = &tokens[1..style_idx];
     let style_str = tokens[style_idx..].join(" ");
     if style_str.is_empty() {
@@ -1232,18 +1301,19 @@ fn parse_edge_style(input: &str) -> crate::ir::EdgeStyleOverride {
 
 fn parse_node_token(
     token: &str,
-) -> (String, Option<String>, Option<crate::ir::NodeShape>, Vec<String>) {
+) -> (
+    String,
+    Option<String>,
+    Option<crate::ir::NodeShape>,
+    Vec<String>,
+) {
     let (base, classes) = split_inline_classes(token);
     let trimmed = base.trim();
     if let Some((id, label, shape)) = split_id_label(trimmed) {
         return (id.to_string(), Some(label), Some(shape), classes);
     }
 
-    let id = trimmed
-        .split_whitespace()
-        .next()
-        .unwrap_or("")
-        .to_string();
+    let id = trimmed.split_whitespace().next().unwrap_or("").to_string();
     (id, None, None, classes)
 }
 
@@ -1321,15 +1391,24 @@ fn parse_shape_from_brackets(raw: &str) -> (String, crate::ir::NodeShape) {
         );
     }
     if trimmed.starts_with("[[") && trimmed.ends_with("]]") {
-        return (strip_quotes(&trimmed[2..trimmed.len() - 2]), crate::ir::NodeShape::Subroutine);
+        return (
+            strip_quotes(&trimmed[2..trimmed.len() - 2]),
+            crate::ir::NodeShape::Subroutine,
+        );
     }
     if trimmed.starts_with("[(") && trimmed.ends_with(")]") {
-        return (strip_quotes(&trimmed[2..trimmed.len() - 2]), crate::ir::NodeShape::Cylinder);
+        return (
+            strip_quotes(&trimmed[2..trimmed.len() - 2]),
+            crate::ir::NodeShape::Cylinder,
+        );
     }
     if trimmed.starts_with("[") && trimmed.ends_with("]") {
         let inner = &trimmed[1..trimmed.len() - 1];
         if inner.starts_with('(') && inner.ends_with(')') {
-            return (strip_quotes(&inner[1..inner.len() - 1]), crate::ir::NodeShape::Stadium);
+            return (
+                strip_quotes(&inner[1..inner.len() - 1]),
+                crate::ir::NodeShape::Stadium,
+            );
         }
         return (strip_quotes(inner), crate::ir::NodeShape::Rectangle);
     }
@@ -1339,12 +1418,18 @@ fn parse_shape_from_brackets(raw: &str) -> (String, crate::ir::NodeShape) {
 fn parse_shape_from_parens(raw: &str) -> (String, crate::ir::NodeShape) {
     let trimmed = raw.trim();
     if trimmed.starts_with("((") && trimmed.ends_with("))") {
-        return (strip_quotes(&trimmed[2..trimmed.len() - 2]), crate::ir::NodeShape::DoubleCircle);
+        return (
+            strip_quotes(&trimmed[2..trimmed.len() - 2]),
+            crate::ir::NodeShape::DoubleCircle,
+        );
     }
     if trimmed.starts_with('(') && trimmed.ends_with(')') {
         let inner = &trimmed[1..trimmed.len() - 1];
         if inner.starts_with('[') && inner.ends_with(']') {
-            return (strip_quotes(&inner[1..inner.len() - 1]), crate::ir::NodeShape::Stadium);
+            return (
+                strip_quotes(&inner[1..inner.len() - 1]),
+                crate::ir::NodeShape::Stadium,
+            );
         }
         return (strip_quotes(inner), crate::ir::NodeShape::RoundRect);
     }
@@ -1354,10 +1439,16 @@ fn parse_shape_from_parens(raw: &str) -> (String, crate::ir::NodeShape) {
 fn parse_shape_from_braces(raw: &str) -> (String, crate::ir::NodeShape) {
     let trimmed = raw.trim();
     if trimmed.starts_with("{{") && trimmed.ends_with("}}") {
-        return (strip_quotes(&trimmed[2..trimmed.len() - 2]), crate::ir::NodeShape::Hexagon);
+        return (
+            strip_quotes(&trimmed[2..trimmed.len() - 2]),
+            crate::ir::NodeShape::Hexagon,
+        );
     }
     if trimmed.starts_with('{') && trimmed.ends_with('}') {
-        return (strip_quotes(&trimmed[1..trimmed.len() - 1]), crate::ir::NodeShape::Diamond);
+        return (
+            strip_quotes(&trimmed[1..trimmed.len() - 1]),
+            crate::ir::NodeShape::Diamond,
+        );
     }
     (strip_quotes(trimmed), crate::ir::NodeShape::Diamond)
 }
@@ -1443,7 +1534,12 @@ mod tests {
     fn parse_inline_class_and_linkstyle_default() {
         let input = "flowchart LR\nclassDef hot fill:#f00\nA[Alpha]:::hot --> B\nB --> C\nlinkStyle default stroke:#0ff,stroke-width:3\nlinkStyle 1 stroke:#00f";
         let parsed = parse_mermaid(input).unwrap();
-        let classes = parsed.graph.node_classes.get("A").cloned().unwrap_or_default();
+        let classes = parsed
+            .graph
+            .node_classes
+            .get("A")
+            .cloned()
+            .unwrap_or_default();
         assert!(classes.iter().any(|c| c == "hot"));
         assert!(parsed.graph.edge_style_default.is_some());
         let edge_style = parsed.graph.edge_styles.get(&1).unwrap();
@@ -1455,10 +1551,7 @@ mod tests {
         let input = "flowchart LR\nA -- needs review --> B\nC --|ship it|--> D";
         let parsed = parse_mermaid(input).unwrap();
         assert_eq!(parsed.graph.edges.len(), 2);
-        assert_eq!(
-            parsed.graph.edges[0].label.as_deref(),
-            Some("needs review")
-        );
+        assert_eq!(parsed.graph.edges[0].label.as_deref(), Some("needs review"));
         assert_eq!(parsed.graph.edges[1].label.as_deref(), Some("ship it"));
     }
 
@@ -1577,7 +1670,8 @@ mod tests {
 
     #[test]
     fn parse_multiple_classes() {
-        let input = "flowchart LR\nclassDef hot fill:#f00\nclassDef cold fill:#00f\nA\nclass A hot,cold";
+        let input =
+            "flowchart LR\nclassDef hot fill:#f00\nclassDef cold fill:#00f\nA\nclass A hot,cold";
         let parsed = parse_mermaid(input).unwrap();
         let classes = parsed.graph.node_classes.get("A").unwrap();
         assert!(classes.iter().any(|c| c == "hot"));
