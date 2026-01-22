@@ -22,13 +22,7 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
         if trimmed_line.is_empty() {
             continue;
         }
-
-        for line in split_statements(trimmed_line) {
-            if line.is_empty() {
-                continue;
-            }
-
-            if let Some(caps) = init_re.captures(&line) {
+        if let Some(caps) = init_re.captures(trimmed_line) {
             if let Some(json_str) = caps.get(1).map(|m| m.as_str()) {
                 if let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str) {
                     init_config = Some(value);
@@ -39,7 +33,17 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
             continue;
         }
 
-            if line.starts_with("%%") {
+        if trimmed_line.starts_with("%%") {
+            continue;
+        }
+
+        let without_comment = strip_trailing_comment(trimmed_line);
+        if without_comment.is_empty() {
+            continue;
+        }
+
+        for line in split_statements(&without_comment) {
+            if line.is_empty() {
                 continue;
             }
 
@@ -221,6 +225,33 @@ fn split_statements(line: &str) -> Vec<String> {
         parts.push(trimmed.to_string());
     }
     parts
+}
+
+fn strip_trailing_comment(line: &str) -> String {
+    let mut quote: Option<char> = None;
+    let mut chars = line.chars().peekable();
+    let mut out = String::new();
+    while let Some(ch) = chars.next() {
+        if let Some(q) = quote {
+            if ch == q {
+                quote = None;
+            }
+            out.push(ch);
+            continue;
+        }
+        if ch == '"' || ch == '\'' {
+            quote = Some(ch);
+            out.push(ch);
+            continue;
+        }
+        if ch == '%' {
+            if let Some('%') = chars.peek().copied() {
+                break;
+            }
+        }
+        out.push(ch);
+    }
+    out.trim().to_string()
 }
 
 fn parse_subgraph_header(input: &str) -> (Option<String>, String) {
@@ -745,5 +776,12 @@ mod tests {
         let parsed = parse_mermaid(input).unwrap();
         assert_eq!(parsed.graph.nodes.len(), 2);
         assert_eq!(parsed.graph.edges.len(), 1);
+    }
+
+    #[test]
+    fn strips_inline_comments() {
+        let input = "flowchart LR\nA-->B %% comment\nB-->C";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.edges.len(), 2);
     }
 }
