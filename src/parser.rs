@@ -59,18 +59,21 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
                 continue;
             }
 
-            if let Some(caps) = subgraph_re.captures(&line) {
-                let rest = caps.get(1).map(|m| m.as_str()).unwrap_or("");
-                let (id, label) = parse_subgraph_header(rest);
-                graph.subgraphs.push(Subgraph {
-                    id,
-                    label,
-                    nodes: Vec::new(),
-                    direction: None,
-                });
-                current_subgraph = Some(graph.subgraphs.len() - 1);
-                continue;
+        if let Some(caps) = subgraph_re.captures(&line) {
+            let rest = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+            let (id, label, classes) = parse_subgraph_header(rest);
+            graph.subgraphs.push(Subgraph {
+                id: id.clone(),
+                label,
+                nodes: Vec::new(),
+                direction: None,
+            });
+            current_subgraph = Some(graph.subgraphs.len() - 1);
+            if let Some(id) = id {
+                apply_subgraph_classes(&mut graph, &id, &classes);
             }
+            continue;
+        }
 
             if let Some(direction) = parse_direction_line(&line) {
                 if let Some(idx) = current_subgraph {
@@ -274,25 +277,26 @@ fn strip_trailing_comment(line: &str) -> String {
     out.trim().to_string()
 }
 
-fn parse_subgraph_header(input: &str) -> (Option<String>, String) {
-    let trimmed = input.trim();
+fn parse_subgraph_header(input: &str) -> (Option<String>, String, Vec<String>) {
+    let (base, classes) = split_inline_classes(input);
+    let trimmed = base.trim();
     if trimmed.is_empty() {
-        return (None, "Subgraph".to_string());
+        return (None, "Subgraph".to_string(), classes);
     }
 
     if let Some((id, label, _shape)) = split_id_label(trimmed) {
-        return (Some(id.to_string()), label);
+        return (Some(id.to_string()), label, classes);
     }
 
     if !trimmed.contains(|c: char| c == '"' || c == '\'') {
         let parts: Vec<&str> = trimmed.split_whitespace().collect();
         if parts.len() == 1 {
             let token = parts[0];
-            return (Some(token.to_string()), token.to_string());
+            return (Some(token.to_string()), token.to_string(), classes);
         }
     }
 
-    (None, strip_quotes(trimmed))
+    (None, strip_quotes(trimmed), classes)
 }
 
 fn parse_node_only(
@@ -484,6 +488,19 @@ fn apply_node_classes(graph: &mut Graph, node_id: &str, classes: &[String]) {
         graph
             .node_classes
             .entry(node_id.to_string())
+            .or_default()
+            .push(class_name.clone());
+    }
+}
+
+fn apply_subgraph_classes(graph: &mut Graph, subgraph_id: &str, classes: &[String]) {
+    for class_name in classes {
+        if class_name.is_empty() {
+            continue;
+        }
+        graph
+            .subgraph_classes
+            .entry(subgraph_id.to_string())
             .or_default()
             .push(class_name.clone());
     }
@@ -827,7 +844,7 @@ mod tests {
 
     #[test]
     fn parse_subgraph_style() {
-        let input = "flowchart LR\nclassDef hot fill:#f00,stroke:#0f0\nsubgraph SG[Group]\nA --> B\nend\nclass SG hot\nstyle SG fill:#faf,stroke:#111";
+        let input = "flowchart LR\nclassDef hot fill:#f00,stroke:#0f0\nsubgraph SG[Group]:::hot\nA --> B\nend\nclass SG hot\nstyle SG fill:#faf,stroke:#111";
         let parsed = parse_mermaid(input).unwrap();
         let style = parsed.graph.subgraph_styles.get("SG").unwrap();
         assert_eq!(style.fill.as_deref(), Some("#faf"));
