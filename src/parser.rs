@@ -692,7 +692,7 @@ mod tests {
 
     #[test]
     fn parse_simple_flowchart() {
-        let input = "flowchart LR\nA[Start] -->|go| B(End)";
+        let input = "flowchart lr\nA[Start] -->|go| B(End)";
         let parsed = parse_mermaid(input).unwrap();
         assert_eq!(parsed.graph.nodes.len(), 2);
         assert_eq!(parsed.graph.edges.len(), 1);

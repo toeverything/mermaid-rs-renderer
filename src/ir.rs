@@ -10,7 +10,8 @@ pub enum Direction {
 
 impl Direction {
     pub fn from_token(token: &str) -> Option<Self> {
-        match token {
+        let upper = token.to_ascii_uppercase();
+        match upper.as_str() {
             "TD" | "TB" => Some(Self::TopDown),
             "BT" => Some(Self::BottomTop),
             "LR" => Some(Self::LeftRight),
