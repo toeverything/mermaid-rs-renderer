@@ -36,6 +36,8 @@ pub struct Edge {
     pub directed: bool,
     pub arrow_start: bool,
     pub arrow_end: bool,
+    pub start_decoration: Option<EdgeDecoration>,
+    pub end_decoration: Option<EdgeDecoration>,
     pub style: EdgeStyle,
 }
 
@@ -44,6 +46,12 @@ pub enum EdgeStyle {
     Solid,
     Dotted,
     Thick,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EdgeDecoration {
+    Circle,
+    Cross,
 }
 
 #[derive(Debug, Clone)]

@@ -134,6 +134,17 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             dash
         ));
 
+        if let Some(point) = edge.points.first().copied() {
+            if let Some(decoration) = edge.start_decoration {
+                svg.push_str(&edge_decoration_svg(point, decoration, &stroke, stroke_width));
+            }
+        }
+        if let Some(point) = edge.points.last().copied() {
+            if let Some(decoration) = edge.end_decoration {
+                svg.push_str(&edge_decoration_svg(point, decoration, &stroke, stroke_width));
+            }
+        }
+
         if let Some((x, y, label)) = label_positions.get(&idx).and_then(|v| v.clone()) {
             let rect_x = x - label.width / 2.0 - 6.0;
             let rect_y = y - label.height / 2.0 - 4.0;
@@ -448,6 +459,37 @@ fn escape_xml(input: &str) -> String {
         .replace('\'', "&apos;")
 }
 
+fn edge_decoration_svg(
+    point: (f32, f32),
+    decoration: crate::ir::EdgeDecoration,
+    stroke: &str,
+    stroke_width: f32,
+) -> String {
+    let (x, y) = point;
+    match decoration {
+        crate::ir::EdgeDecoration::Circle => format!(
+            "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"4\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"/>",
+            x, y, stroke, stroke_width
+        ),
+        crate::ir::EdgeDecoration::Cross => {
+            let size = 4.0;
+            format!(
+                "<path d=\"M {:.2} {:.2} L {:.2} {:.2} M {:.2} {:.2} L {:.2} {:.2}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"/>",
+                x - size,
+                y - size,
+                x + size,
+                y + size,
+                x - size,
+                y + size,
+                x + size,
+                y - size,
+                stroke,
+                stroke_width
+            )
+        }
+    }
+}
+
 fn primary_font(fonts: &str) -> String {
     fonts
         .split(',')
@@ -670,6 +712,8 @@ mod tests {
             directed: true,
             arrow_start: false,
             arrow_end: true,
+            start_decoration: None,
+            end_decoration: None,
             style: crate::ir::EdgeStyle::Solid,
         });
         let layout = compute_layout(&graph, &Theme::modern(), &LayoutConfig::default());

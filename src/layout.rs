@@ -31,6 +31,8 @@ pub struct EdgeLayout {
     pub directed: bool,
     pub arrow_start: bool,
     pub arrow_end: bool,
+    pub start_decoration: Option<crate::ir::EdgeDecoration>,
+    pub end_decoration: Option<crate::ir::EdgeDecoration>,
     pub style: crate::ir::EdgeStyle,
     pub override_style: crate::ir::EdgeStyleOverride,
 }
@@ -193,6 +195,8 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
             directed: edge.directed,
             arrow_start: edge.arrow_start,
             arrow_end: edge.arrow_end,
+            start_decoration: edge.start_decoration,
+            end_decoration: edge.end_decoration,
             style: edge.style,
             override_style,
         });
@@ -1183,6 +1187,8 @@ mod tests {
             directed: true,
             arrow_start: false,
             arrow_end: true,
+            start_decoration: None,
+            end_decoration: None,
             style: crate::ir::EdgeStyle::Solid,
         });
         let layout = compute_layout(&graph, &Theme::modern(), &LayoutConfig::default());
@@ -1203,6 +1209,8 @@ mod tests {
             directed: true,
             arrow_start: false,
             arrow_end: true,
+            start_decoration: None,
+            end_decoration: None,
             style: crate::ir::EdgeStyle::Solid,
         });
 

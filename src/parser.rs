@@ -159,6 +159,8 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
                         directed: edge_meta.directed,
                         arrow_start: edge_meta.arrow_start,
                         arrow_end: edge_meta.arrow_end,
+                        start_decoration: edge_meta.start_decoration,
+                        end_decoration: edge_meta.end_decoration,
                         style: edge_meta.style,
                     });
                 }
@@ -277,6 +279,22 @@ fn strip_trailing_comment(line: &str) -> String {
     out.trim().to_string()
 }
 
+fn extract_leading_decoration(right: &str) -> Option<(char, String)> {
+    let mut chars = right.chars();
+    let first = chars.next()?;
+    if first != 'o' && first != 'x' {
+        return None;
+    }
+    let rest: String = chars.collect();
+    if rest.is_empty() {
+        return None;
+    }
+    if rest.chars().next().map(|c| c.is_whitespace()).unwrap_or(false) {
+        return Some((first, rest.trim_start().to_string()));
+    }
+    None
+}
+
 fn parse_subgraph_header(input: &str) -> (Option<String>, String, Vec<String>) {
     let (base, classes) = split_inline_classes(input);
     let trimmed = base.trim();
@@ -315,7 +333,7 @@ fn parse_node_only(
 
 fn parse_edge_line(line: &str) -> Option<(String, Option<String>, String, EdgeMeta)> {
     let pipe_label_re = Regex::new(
-        r"^(?P<left>.+?)\s*(?P<arrow1><?[-.=]*[-=]+[-.=]*)\|(?P<label>.+?)\|(?P<arrow2>[-.=]*[-=]+[-.=]*>?)\s*(?P<right>.+)$",
+        r"^(?P<left>.+?)\s*(?P<arrow1><?[-.=ox]*[-=]+[-.=ox]*)\|(?P<label>.+?)\|(?P<arrow2>[-.=ox]*[-=]+[-.=ox]*>?)\s*(?P<right>.+)$",
     )
     .ok()?;
     if let Some(caps) = pipe_label_re.captures(line) {
@@ -337,7 +355,7 @@ fn parse_edge_line(line: &str) -> Option<(String, Option<String>, String, EdgeMe
     }
 
     let label_arrow_re = Regex::new(
-        r"^(?P<left>.+?)\s*(?P<start><)?(?P<dash1>[-.=]*[-=]+[-.=]*)\s+(?P<label>[^<>=]+?)\s+(?P<dash2>[-.=]*[-=]+[-.=]*)(?P<end>>)?\s*(?P<right>.+)$",
+        r"^(?P<left>.+?)\s*(?P<start><)?(?P<dash1>[-.=ox]*[-=]+[-.=ox]*)\s+(?P<label>[^<>=]+?)\s+(?P<dash2>[-.=ox]*[-=]+[-.=ox]*)(?P<end>>)?\s*(?P<right>.+)$",
     )
     .ok()?;
     if let Some(caps) = label_arrow_re.captures(line) {
@@ -362,13 +380,18 @@ fn parse_edge_line(line: &str) -> Option<(String, Option<String>, String, EdgeMe
     }
 
     let arrow_re = Regex::new(
-        r"^(?P<left>.+?)\s*(?P<arrow><[-.=]*[-=]+[-.=]*>|<[-.=]*[-=]+|[-.=]*[-=]+>|[-.=]*[-=]+)\s*(?P<right>.+)$",
+        r"^(?P<left>.+?)\s*(?P<arrow><[-.=ox]*[-=]+[-.=ox]*>|<[-.=ox]*[-=]+|[-.=ox]*[-=]+>|[-.=ox]*[-=]+)\s*(?P<right>.+)$",
     )
     .ok()?;
     let caps = arrow_re.captures(line)?;
     let left = caps.name("left")?.as_str().trim();
-    let arrow = caps.name("arrow")?.as_str().trim();
-    let right = caps.name("right")?.as_str().trim();
+    let mut arrow = caps.name("arrow")?.as_str().trim().to_string();
+    let mut right = caps.name("right")?.as_str().trim().to_string();
+
+    if let Some((dec, rest)) = extract_leading_decoration(&right) {
+        arrow.push(dec);
+        right = rest;
+    }
 
     if left.is_empty() || right.is_empty() || arrow.is_empty() {
         return None;
@@ -380,17 +403,17 @@ fn parse_edge_line(line: &str) -> Option<(String, Option<String>, String, EdgeMe
             let rest = right[end + 2..].trim();
             (Some(label), rest)
         } else {
-            (None, right)
+            (None, right.as_str())
         }
     } else {
-        (None, right)
+        (None, right.as_str())
     };
 
     if right_token.is_empty() {
         return None;
     }
 
-    let edge_meta = parse_edge_meta(arrow);
+    let edge_meta = parse_edge_meta(&arrow);
     Some((left.to_string(), label, right_token.to_string(), edge_meta))
 }
 
@@ -399,16 +422,38 @@ struct EdgeMeta {
     directed: bool,
     arrow_start: bool,
     arrow_end: bool,
+    start_decoration: Option<crate::ir::EdgeDecoration>,
+    end_decoration: Option<crate::ir::EdgeDecoration>,
     style: crate::ir::EdgeStyle,
 }
 
 fn parse_edge_meta(arrow: &str) -> EdgeMeta {
-    let arrow_start = arrow.starts_with('<');
-    let arrow_end = arrow.ends_with('>');
+    let mut trimmed = arrow.trim().to_string();
+    let mut start_decoration = None;
+    let mut end_decoration = None;
 
-    let style = if arrow.contains('=') {
+    if trimmed.starts_with('o') {
+        start_decoration = Some(crate::ir::EdgeDecoration::Circle);
+        trimmed.remove(0);
+    } else if trimmed.starts_with('x') {
+        start_decoration = Some(crate::ir::EdgeDecoration::Cross);
+        trimmed.remove(0);
+    }
+
+    if trimmed.ends_with('o') {
+        end_decoration = Some(crate::ir::EdgeDecoration::Circle);
+        trimmed.pop();
+    } else if trimmed.ends_with('x') {
+        end_decoration = Some(crate::ir::EdgeDecoration::Cross);
+        trimmed.pop();
+    }
+
+    let arrow_start = trimmed.starts_with('<');
+    let arrow_end = trimmed.ends_with('>');
+
+    let style = if trimmed.contains('=') {
         crate::ir::EdgeStyle::Thick
-    } else if arrow.contains('.') {
+    } else if trimmed.contains('.') {
         crate::ir::EdgeStyle::Dotted
     } else {
         crate::ir::EdgeStyle::Solid
@@ -420,6 +465,8 @@ fn parse_edge_meta(arrow: &str) -> EdgeMeta {
         directed,
         arrow_start,
         arrow_end,
+        start_decoration,
+        end_decoration,
         style,
     }
 }
@@ -881,6 +928,26 @@ mod tests {
         let parsed = parse_mermaid(input).unwrap();
         assert!(parsed.graph.node_styles.contains_key("A"));
         assert!(parsed.graph.node_styles.contains_key("B"));
+    }
+
+    #[test]
+    fn parse_edge_decorations() {
+        let input = "flowchart LR\nA o--o B\nC x--> D";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.edges.len(), 2);
+        assert_eq!(
+            parsed.graph.edges[0].start_decoration,
+            Some(crate::ir::EdgeDecoration::Circle)
+        );
+        assert_eq!(
+            parsed.graph.edges[0].end_decoration,
+            Some(crate::ir::EdgeDecoration::Circle)
+        );
+        assert_eq!(
+            parsed.graph.edges[1].start_decoration,
+            Some(crate::ir::EdgeDecoration::Cross)
+        );
+        assert!(parsed.graph.edges[1].arrow_end);
     }
 
     #[test]
