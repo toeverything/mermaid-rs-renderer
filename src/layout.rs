@@ -150,8 +150,20 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
     }
 
     let obstacles = build_obstacles(&nodes);
+    let pair_counts = build_edge_pair_counts(&graph.edges);
+    let mut pair_seen: HashMap<(String, String), usize> = HashMap::new();
     let mut edges = Vec::new();
     for (idx, edge) in graph.edges.iter().enumerate() {
+        let key = edge_pair_key(edge);
+        let total = *pair_counts.get(&key).unwrap_or(&1) as f32;
+        let seen = pair_seen.entry(key).or_insert(0usize);
+        let idx_in_pair = *seen as f32;
+        *seen += 1;
+        let base_offset = if total > 1.0 {
+            (idx_in_pair - (total - 1.0) / 2.0) * (config.node_spacing * 0.35)
+        } else {
+            0.0
+        };
         let from = nodes.get(&edge.from).expect("from node missing");
         let to = nodes.get(&edge.to).expect("to node missing");
         let label = edge
@@ -173,7 +185,7 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
             graph.direction,
             config,
             &obstacles,
-            idx,
+            base_offset,
         );
         edges.push(EdgeLayout {
             from: edge.from.clone(),
@@ -774,7 +786,7 @@ fn route_edge_with_avoidance(
     direction: Direction,
     config: &LayoutConfig,
     obstacles: &[Obstacle],
-    edge_index: usize,
+    base_offset: f32,
 ) -> Vec<(f32, f32)> {
     if from_id == to_id {
         return route_self_loop(from, direction, config);
@@ -792,8 +804,6 @@ fn route_edge_with_avoidance(
         )
     };
 
-    let base_offset = (edge_index % 3) as f32 * (config.node_spacing * 0.2)
-        - (config.node_spacing * 0.2);
     let step = config.node_spacing.max(16.0) * 0.6;
     let mut offsets = vec![base_offset];
     for i in 1..=4 {
@@ -860,6 +870,23 @@ fn build_obstacles(nodes: &BTreeMap<String, NodeLayout>) -> Vec<Obstacle> {
         });
     }
     obstacles
+}
+
+fn edge_pair_key(edge: &crate::ir::Edge) -> (String, String) {
+    if edge.from <= edge.to {
+        (edge.from.clone(), edge.to.clone())
+    } else {
+        (edge.to.clone(), edge.from.clone())
+    }
+}
+
+fn build_edge_pair_counts(edges: &[crate::ir::Edge]) -> HashMap<(String, String), usize> {
+    let mut counts: HashMap<(String, String), usize> = HashMap::new();
+    for edge in edges {
+        let key = edge_pair_key(edge);
+        *counts.entry(key).or_insert(0) += 1;
+    }
+    counts
 }
 
 fn path_intersects_obstacles(
