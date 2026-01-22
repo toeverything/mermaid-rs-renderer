@@ -8,7 +8,7 @@ A minimal Mermaid flowchart renderer in Rust.
 - Edge styles: solid, dotted, thick; arrowheads on start/end; labels
 - Styling directives: `classDef`, `class`, inline `:::class`, `style` (nodes + subgraphs), `linkStyle` (fill/stroke/text/stroke-width/dasharray subset)
 - Subgraphs (`subgraph ... end`)
-- Mermaid init directives: `%%{init}%%` (themeVariables subset)
+- Mermaid init directives: `%%{init}%%` (themeVariables subset, JSON5-style allowed)
 - Modern default theme
 
 ## Usage
