@@ -28,6 +28,9 @@ pub struct EdgeLayout {
     pub label: Option<TextBlock>,
     pub points: Vec<(f32, f32)>,
     pub directed: bool,
+    pub arrow_start: bool,
+    pub arrow_end: bool,
+    pub style: crate::ir::EdgeStyle,
 }
 
 #[derive(Debug, Clone)]
@@ -141,6 +144,9 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
             label,
             points,
             directed: edge.directed,
+            arrow_start: edge.arrow_start,
+            arrow_end: edge.arrow_end,
+            style: edge.style,
         });
     }
 
@@ -526,6 +532,9 @@ mod tests {
             to: "B".to_string(),
             label: None,
             directed: true,
+            arrow_start: false,
+            arrow_end: true,
+            style: crate::ir::EdgeStyle::Solid,
         });
         let layout = compute_layout(&graph, &Theme::modern(), &LayoutConfig::default());
         let a = layout.nodes.get("A").unwrap();

@@ -60,7 +60,7 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
             continue;
         }
 
-        if let Some((left, label, right, directed)) = parse_edge_line(line) {
+        if let Some((left, label, right, edge_meta)) = parse_edge_line(line) {
             let (left_id, left_label, left_shape) = parse_node_token(&left);
             let (right_id, right_label, right_shape) = parse_node_token(&right);
             graph.ensure_node(&left_id, left_label, left_shape);
@@ -69,7 +69,10 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
                 from: left_id.clone(),
                 to: right_id.clone(),
                 label,
-                directed,
+                directed: edge_meta.directed,
+                arrow_start: edge_meta.arrow_start,
+                arrow_end: edge_meta.arrow_end,
+                style: edge_meta.style,
             });
             if let Some(idx) = current_subgraph {
                 add_node_to_subgraph(&mut graph, idx, &left_id);
@@ -122,14 +125,14 @@ fn parse_node_only(line: &str) -> Option<(String, Option<String>, Option<crate::
     }
 }
 
-fn parse_edge_line(line: &str) -> Option<(String, Option<String>, String, bool)> {
-    let (left, arrow, right) = if let Some(pos) = line.find("-->") {
-        (line[..pos].trim(), "-->", line[pos + 3..].trim())
-    } else if let Some(pos) = line.find("---") {
-        (line[..pos].trim(), "---", line[pos + 3..].trim())
-    } else {
-        return None;
-    };
+fn parse_edge_line(
+    line: &str,
+) -> Option<(String, Option<String>, String, EdgeMeta)> {
+    let arrow_re = Regex::new(r"^(?P<left>.+?)\s*(?P<arrow><[-.=]+>|<[-.=]+|[-.=]+>|[-.=]+)\s*(?P<right>.+)$").ok()?;
+    let caps = arrow_re.captures(line)?;
+    let left = caps.name("left")?.as_str().trim();
+    let arrow = caps.name("arrow")?.as_str().trim();
+    let right = caps.name("right")?.as_str().trim();
 
     if left.is_empty() || right.is_empty() || arrow.is_empty() {
         return None;
@@ -151,8 +154,38 @@ fn parse_edge_line(line: &str) -> Option<(String, Option<String>, String, bool)>
         return None;
     }
 
-    let directed = arrow == "-->";
-    Some((left.to_string(), label, right_token.to_string(), directed))
+    let edge_meta = parse_edge_meta(arrow);
+    Some((left.to_string(), label, right_token.to_string(), edge_meta))
+}
+
+#[derive(Debug, Clone, Copy)]
+struct EdgeMeta {
+    directed: bool,
+    arrow_start: bool,
+    arrow_end: bool,
+    style: crate::ir::EdgeStyle,
+}
+
+fn parse_edge_meta(arrow: &str) -> EdgeMeta {
+    let arrow_start = arrow.starts_with('<');
+    let arrow_end = arrow.ends_with('>');
+
+    let style = if arrow.contains('=') {
+        crate::ir::EdgeStyle::Thick
+    } else if arrow.contains('.') {
+        crate::ir::EdgeStyle::Dotted
+    } else {
+        crate::ir::EdgeStyle::Solid
+    };
+
+    let directed = arrow_start || arrow_end;
+
+    EdgeMeta {
+        directed,
+        arrow_start,
+        arrow_end,
+        style,
+    }
 }
 
 fn parse_node_token(
@@ -302,5 +335,17 @@ mod tests {
         let sg = &parsed.graph.subgraphs[0];
         assert_eq!(sg.label, "My Group");
         assert_eq!(sg.nodes.len(), 2);
+    }
+
+    #[test]
+    fn parse_edge_styles() {
+        let input = "flowchart LR\nA -.-> B\nC ==> D\nE <--> F\nG --- H";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.edges.len(), 4);
+        assert_eq!(parsed.graph.edges[0].style, crate::ir::EdgeStyle::Dotted);
+        assert_eq!(parsed.graph.edges[1].style, crate::ir::EdgeStyle::Thick);
+        assert_eq!(parsed.graph.edges[2].arrow_start, true);
+        assert_eq!(parsed.graph.edges[2].arrow_end, true);
+        assert_eq!(parsed.graph.edges[3].directed, false);
     }
 }

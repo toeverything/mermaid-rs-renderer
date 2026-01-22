@@ -24,6 +24,10 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         "<marker id=\"arrow\" viewBox=\"0 0 10 10\" refX=\"10\" refY=\"5\" markerWidth=\"6\" markerHeight=\"6\" orient=\"auto-start-reverse\"><path d=\"M 0 0 L 10 5 L 0 10 z\" fill=\"{}\"/></marker>",
         theme.line_color
     ));
+    svg.push_str(&format!(
+        "<marker id=\"arrow-start\" viewBox=\"0 0 10 10\" refX=\"0\" refY=\"5\" markerWidth=\"6\" markerHeight=\"6\" orient=\"auto\"><path d=\"M 10 0 L 0 5 L 10 10 z\" fill=\"{}\"/></marker>",
+        theme.line_color
+    ));
     svg.push_str("</defs>");
 
     for subgraph in &layout.subgraphs {
@@ -51,12 +55,21 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
 
     for (idx, edge) in layout.edges.iter().enumerate() {
         let d = points_to_path(&edge.points);
-        let marker = if edge.directed { "marker-end=\"url(#arrow)\"" } else { "" };
+        let marker_end = if edge.arrow_end { "marker-end=\"url(#arrow)\"" } else { "" };
+        let marker_start = if edge.arrow_start { "marker-start=\"url(#arrow-start)\"" } else { "" };
+        let (dash, stroke_width) = match edge.style {
+            crate::ir::EdgeStyle::Solid => ("", 1.4),
+            crate::ir::EdgeStyle::Dotted => ("stroke-dasharray=\"3 5\"", 1.2),
+            crate::ir::EdgeStyle::Thick => ("", 2.6),
+        };
         svg.push_str(&format!(
-            "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"1.4\" {} />",
+            "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" {} {} {} />",
             d,
             theme.line_color,
-            marker
+            stroke_width,
+            marker_end,
+            marker_start,
+            dash
         ));
 
         if let Some((x, y, label)) = label_positions.get(&idx).and_then(|v| v.clone()) {
@@ -415,6 +428,9 @@ mod tests {
             to: "B".to_string(),
             label: Some("go".to_string()),
             directed: true,
+            arrow_start: false,
+            arrow_end: true,
+            style: crate::ir::EdgeStyle::Solid,
         });
         let layout = compute_layout(&graph, &Theme::modern(), &LayoutConfig::default());
         let svg = render_svg(&layout, &Theme::modern(), &LayoutConfig::default());

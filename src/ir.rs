@@ -29,6 +29,16 @@ pub struct Edge {
     pub to: String,
     pub label: Option<String>,
     pub directed: bool,
+    pub arrow_start: bool,
+    pub arrow_end: bool,
+    pub style: EdgeStyle,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EdgeStyle {
+    Solid,
+    Dotted,
+    Thick,
 }
 
 #[derive(Debug, Clone)]
