@@ -515,10 +515,16 @@ fn parse_style_line(line: &str, graph: &mut Graph) {
         return;
     }
     let style = parse_node_style(rest);
-    graph.node_styles.insert(node_id.to_string(), style.clone());
-    graph
-        .subgraph_styles
-        .insert(node_id.to_string(), style);
+    for raw in node_id.split(',') {
+        let id = raw.trim();
+        if id.is_empty() {
+            continue;
+        }
+        graph.node_styles.insert(id.to_string(), style.clone());
+        graph
+            .subgraph_styles
+            .insert(id.to_string(), style.clone());
+    }
 }
 
 fn parse_link_style_line(line: &str, graph: &mut Graph) {
@@ -867,6 +873,14 @@ mod tests {
         assert_eq!(parsed.graph.subgraphs.len(), 1);
         assert_eq!(parsed.graph.subgraphs[0].id.as_deref(), Some("Alpha"));
         assert!(parsed.graph.subgraph_styles.contains_key("Alpha"));
+    }
+
+    #[test]
+    fn parse_style_multiple_nodes() {
+        let input = "flowchart LR\nA-->B\nstyle A,B fill:#f00";
+        let parsed = parse_mermaid(input).unwrap();
+        assert!(parsed.graph.node_styles.contains_key("A"));
+        assert!(parsed.graph.node_styles.contains_key("B"));
     }
 
     #[test]
