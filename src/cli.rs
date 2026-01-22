@@ -141,17 +141,12 @@ fn extract_mermaid_blocks(input: &str) -> Vec<String> {
     for line in input.lines() {
         let trimmed = line.trim();
         if !in_block {
-            if trimmed.starts_with("```mermaid") {
+            if let Some(start_fence) = detect_mermaid_fence(trimmed) {
                 in_block = true;
-                fence = "```".to_string();
+                fence = start_fence;
                 continue;
             }
-            if trimmed.starts_with(":::mermaid") {
-                in_block = true;
-                fence = ":::".to_string();
-                continue;
-            }
-        } else if trimmed == fence {
+        } else if is_fence_end(trimmed, &fence) {
             in_block = false;
             blocks.push(current.join("\n"));
             current.clear();
@@ -164,6 +159,35 @@ fn extract_mermaid_blocks(input: &str) -> Vec<String> {
     }
 
     blocks
+}
+
+fn detect_mermaid_fence(line: &str) -> Option<String> {
+    if line.starts_with("```") {
+        let rest = line.trim_start_matches('`').trim();
+        if rest.starts_with("mermaid") {
+            return Some("```".to_string());
+        }
+    }
+    if line.starts_with("~~~") {
+        let rest = line.trim_start_matches('~').trim();
+        if rest.starts_with("mermaid") {
+            return Some("~~~".to_string());
+        }
+    }
+    if line.starts_with(":::") {
+        let rest = line.trim_start_matches(':').trim();
+        if rest.starts_with("mermaid") {
+            return Some(":::".to_string());
+        }
+    }
+    None
+}
+
+fn is_fence_end(line: &str, fence: &str) -> bool {
+    if !line.starts_with(fence) {
+        return false;
+    }
+    line[fence.len()..].trim().is_empty()
 }
 
 fn resolve_multi_outputs(
@@ -200,20 +224,25 @@ mod tests {
     fn extracts_mermaid_blocks() {
         let input = r#"
 text
-```mermaid
+``` mermaid
 flowchart LR
   A --> B
 ```
 more
-:::mermaid
+~~~mermaid
+flowchart TD
+  X --> Y
+~~~
+::: mermaid
 sequenceDiagram
   A->>B: hi
 :::
 "#;
         let blocks = extract_mermaid_blocks(input);
-        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks.len(), 3);
         assert!(blocks[0].contains("flowchart"));
-        assert!(blocks[1].contains("sequenceDiagram"));
+        assert!(blocks[1].contains("flowchart"));
+        assert!(blocks[2].contains("sequenceDiagram"));
     }
 }
 
