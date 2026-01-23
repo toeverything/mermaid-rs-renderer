@@ -192,16 +192,17 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         let label = edge.label.as_ref().map(|l| measure_label(l, theme, config));
         let override_style = resolve_edge_style(idx, graph);
 
-        let points = route_edge_with_avoidance(
-            &edge.from,
-            &edge.to,
+        let route_ctx = RouteContext {
+            from_id: &edge.from,
+            to_id: &edge.to,
             from,
             to,
-            graph.direction,
+            direction: graph.direction,
             config,
-            &obstacles,
+            obstacles: &obstacles,
             base_offset,
-        );
+        };
+        let points = route_edge_with_avoidance(&route_ctx);
         edges.push(EdgeLayout {
             from: edge.from.clone(),
             to: edge.to.clone(),
@@ -930,42 +931,50 @@ fn normalize_layout(
     }
 }
 
-fn route_edge_with_avoidance(
-    from_id: &str,
-    to_id: &str,
-    from: &NodeLayout,
-    to: &NodeLayout,
+struct RouteContext<'a> {
+    from_id: &'a str,
+    to_id: &'a str,
+    from: &'a NodeLayout,
+    to: &'a NodeLayout,
     direction: Direction,
-    config: &LayoutConfig,
-    obstacles: &[Obstacle],
+    config: &'a LayoutConfig,
+    obstacles: &'a [Obstacle],
     base_offset: f32,
-) -> Vec<(f32, f32)> {
-    if from_id == to_id {
-        return route_self_loop(from, direction, config);
+}
+
+fn route_edge_with_avoidance(ctx: &RouteContext<'_>) -> Vec<(f32, f32)> {
+    if ctx.from_id == ctx.to_id {
+        return route_self_loop(ctx.from, ctx.direction, ctx.config);
     }
 
-    let (start, end) = if is_horizontal(direction) {
+    let (start, end) = if is_horizontal(ctx.direction) {
         (
-            (from.x + from.width, from.y + from.height / 2.0),
-            (to.x, to.y + to.height / 2.0),
+            (
+                ctx.from.x + ctx.from.width,
+                ctx.from.y + ctx.from.height / 2.0,
+            ),
+            (ctx.to.x, ctx.to.y + ctx.to.height / 2.0),
         )
     } else {
         (
-            (from.x + from.width / 2.0, from.y + from.height),
-            (to.x + to.width / 2.0, to.y),
+            (
+                ctx.from.x + ctx.from.width / 2.0,
+                ctx.from.y + ctx.from.height,
+            ),
+            (ctx.to.x + ctx.to.width / 2.0, ctx.to.y),
         )
     };
 
-    let step = config.node_spacing.max(16.0) * 0.6;
-    let mut offsets = vec![base_offset];
+    let step = ctx.config.node_spacing.max(16.0) * 0.6;
+    let mut offsets = vec![ctx.base_offset];
     for i in 1..=4 {
         let delta = step * i as f32;
-        offsets.push(base_offset + delta);
-        offsets.push(base_offset - delta);
+        offsets.push(ctx.base_offset + delta);
+        offsets.push(ctx.base_offset - delta);
     }
 
     for offset in offsets {
-        let points = if is_horizontal(direction) {
+        let points = if is_horizontal(ctx.direction) {
             let mid_x = (start.0 + end.0) / 2.0 + offset;
             vec![start, (mid_x, start.1), (mid_x, end.1), end]
         } else {
@@ -973,12 +982,12 @@ fn route_edge_with_avoidance(
             vec![start, (start.0, mid_y), (end.0, mid_y), end]
         };
 
-        if !path_intersects_obstacles(&points, obstacles, from_id, to_id) {
+        if !path_intersects_obstacles(&points, ctx.obstacles, ctx.from_id, ctx.to_id) {
             return points;
         }
     }
 
-    if is_horizontal(direction) {
+    if is_horizontal(ctx.direction) {
         let mid_x = (start.0 + end.0) / 2.0;
         vec![start, (mid_x, start.1), (mid_x, end.1), end]
     } else {
@@ -1074,10 +1083,10 @@ fn path_intersects_obstacles(
             if obstacle.id == from_id || obstacle.id == to_id {
                 continue;
             }
-            if let Some(members) = &obstacle.members {
-                if members.contains(from_id) || members.contains(to_id) {
-                    continue;
-                }
+            if let Some(members) = &obstacle.members
+                && (members.contains(from_id) || members.contains(to_id))
+            {
+                continue;
             }
             if segment_intersects_rect(a, b, obstacle) {
                 return true;

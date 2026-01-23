@@ -22,10 +22,10 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
     let mut colors = Vec::new();
     colors.push(theme.line_color.clone());
     for edge in &layout.edges {
-        if let Some(color) = &edge.override_style.stroke {
-            if !colors.contains(color) {
-                colors.push(color.clone());
-            }
+        if let Some(color) = &edge.override_style.stroke
+            && !colors.contains(color)
+        {
+            colors.push(color.clone());
         }
     }
     let mut color_ids: HashMap<String, usize> = HashMap::new();
@@ -141,25 +141,25 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             d, stroke, stroke_width, marker_end, marker_start, dash
         ));
 
-        if let Some(point) = edge.points.first().copied() {
-            if let Some(decoration) = edge.start_decoration {
-                svg.push_str(&edge_decoration_svg(
-                    point,
-                    decoration,
-                    &stroke,
-                    stroke_width,
-                ));
-            }
+        if let Some(point) = edge.points.first().copied()
+            && let Some(decoration) = edge.start_decoration
+        {
+            svg.push_str(&edge_decoration_svg(
+                point,
+                decoration,
+                &stroke,
+                stroke_width,
+            ));
         }
-        if let Some(point) = edge.points.last().copied() {
-            if let Some(decoration) = edge.end_decoration {
-                svg.push_str(&edge_decoration_svg(
-                    point,
-                    decoration,
-                    &stroke,
-                    stroke_width,
-                ));
-            }
+        if let Some(point) = edge.points.last().copied()
+            && let Some(decoration) = edge.end_decoration
+        {
+            svg.push_str(&edge_decoration_svg(
+                point,
+                decoration,
+                &stroke,
+                stroke_width,
+            ));
         }
 
         if let Some((x, y, label)) = label_positions.get(&idx).and_then(|v| v.clone()) {
@@ -221,18 +221,14 @@ fn text_block_svg(
     label: &TextBlock,
     theme: &Theme,
     config: &LayoutConfig,
-    edge: bool,
+    _edge: bool,
     override_color: Option<&str>,
 ) -> String {
     let total_height = label.lines.len() as f32 * theme.font_size * config.label_line_height;
     let start_y = y - total_height / 2.0 + theme.font_size;
     let mut text = String::new();
     let anchor = "middle";
-    let default_fill = if edge {
-        theme.primary_text_color.as_str()
-    } else {
-        theme.primary_text_color.as_str()
-    };
+    let default_fill = theme.primary_text_color.as_str();
     let fill = override_color.unwrap_or(default_fill);
 
     text.push_str(&format!(
@@ -411,7 +407,10 @@ fn edge_label_anchor(edge: &EdgeLayout) -> (f32, f32, OffsetAxis) {
     (0.0, 0.0, OffsetAxis::Y)
 }
 
-fn collides(rect: &(f32, f32, f32, f32), occupied: &[(f32, f32, f32, f32)]) -> bool {
+type Rect = (f32, f32, f32, f32);
+type EdgeObstacle = (usize, Rect);
+
+fn collides(rect: &Rect, occupied: &[Rect]) -> bool {
     for (x, y, w, h) in occupied {
         if rect.0 < x + w && rect.0 + rect.2 > *x && rect.1 < y + h && rect.1 + rect.3 > *y {
             return true;
@@ -420,7 +419,7 @@ fn collides(rect: &(f32, f32, f32, f32), occupied: &[(f32, f32, f32, f32)]) -> b
     false
 }
 
-fn build_edge_obstacles(edges: &[EdgeLayout], pad: f32) -> Vec<(usize, (f32, f32, f32, f32))> {
+fn build_edge_obstacles(edges: &[EdgeLayout], pad: f32) -> Vec<EdgeObstacle> {
     let mut obstacles = Vec::new();
     for (idx, edge) in edges.iter().enumerate() {
         for segment in edge.points.windows(2) {
@@ -435,11 +434,7 @@ fn build_edge_obstacles(edges: &[EdgeLayout], pad: f32) -> Vec<(usize, (f32, f32
     obstacles
 }
 
-fn collides_edges(
-    rect: &(f32, f32, f32, f32),
-    obstacles: &[(usize, (f32, f32, f32, f32))],
-    edge_idx: usize,
-) -> bool {
+fn collides_edges(rect: &Rect, obstacles: &[EdgeObstacle], edge_idx: usize) -> bool {
     for (idx, (x, y, w, h)) in obstacles {
         if *idx == edge_idx {
             continue;
@@ -469,10 +464,12 @@ pub fn write_output_png(
     render_cfg: &RenderConfig,
     theme: &Theme,
 ) -> Result<()> {
-    let mut opt = usvg::Options::default();
-    opt.font_family = primary_font(&theme.font_family);
-    opt.default_size = usvg::Size::from_wh(render_cfg.width, render_cfg.height)
-        .unwrap_or(usvg::Size::from_wh(800.0, 600.0).unwrap());
+    let mut opt = usvg::Options {
+        font_family: primary_font(&theme.font_family),
+        default_size: usvg::Size::from_wh(render_cfg.width, render_cfg.height)
+            .unwrap_or(usvg::Size::from_wh(800.0, 600.0).unwrap()),
+        ..Default::default()
+    };
 
     opt.fontdb_mut().load_system_fonts();
 

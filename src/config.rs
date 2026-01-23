@@ -52,8 +52,10 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         let theme = Theme::modern();
-        let mut render = RenderConfig::default();
-        render.background = theme.background.clone();
+        let render = RenderConfig {
+            background: theme.background.clone(),
+            ..Default::default()
+        };
         Self {
             theme,
             layout: LayoutConfig::default(),
@@ -151,10 +153,10 @@ pub fn load_config(path: Option<&Path>) -> anyhow::Result<Config> {
         }
     }
 
-    if let Some(theme_name) = parsed.theme {
-        if theme_name == "modern" {
-            config.theme = Theme::modern();
-        }
+    if let Some(theme_name) = parsed.theme
+        && theme_name == "modern"
+    {
+        config.theme = Theme::modern();
     }
 
     config.render.background = config.theme.background.clone();

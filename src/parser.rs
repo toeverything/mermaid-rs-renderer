@@ -4,6 +4,13 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use std::collections::HashMap;
 
+type NodeTokenParts = (
+    String,
+    Option<String>,
+    Option<crate::ir::NodeShape>,
+    Vec<String>,
+);
+
 static HEADER_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(flowchart|graph)\s+(\w+)").unwrap());
 static SUBGRAPH_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^subgraph\s+(.*)$").unwrap());
 static INIT_RE: Lazy<Regex> =
@@ -664,12 +671,12 @@ fn parse_class_diagram(input: &str) -> Result<ParseOutput> {
             .unwrap_or_else(|| node.label.clone());
         let mut lines = Vec::new();
         lines.push(class_name.clone());
-        if let Some(items) = members.get(id) {
-            if !items.is_empty() {
-                lines.push("---".to_string());
-                for entry in items {
-                    lines.push(entry.trim().to_string());
-                }
+        if let Some(items) = members.get(id)
+            && !items.is_empty()
+        {
+            lines.push("---".to_string());
+            for entry in items {
+                lines.push(entry.trim().to_string());
             }
         }
         node.label = lines.join("\n");
@@ -819,10 +826,10 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
 }
 
 fn add_node_to_subgraph(graph: &mut Graph, idx: usize, node_id: &str) {
-    if let Some(subgraph) = graph.subgraphs.get_mut(idx) {
-        if !subgraph.nodes.contains(&node_id.to_string()) {
-            subgraph.nodes.push(node_id.to_string());
-        }
+    if let Some(subgraph) = graph.subgraphs.get_mut(idx)
+        && !subgraph.nodes.contains(&node_id.to_string())
+    {
+        subgraph.nodes.push(node_id.to_string());
     }
 }
 
@@ -912,10 +919,10 @@ fn strip_trailing_comment(line: &str) -> String {
             out.push(ch);
             continue;
         }
-        if ch == '%' {
-            if let Some('%') = chars.peek().copied() {
-                break;
-            }
+        if ch == '%'
+            && let Some('%') = chars.peek().copied()
+        {
+            break;
         }
         out.push(ch);
     }
@@ -954,7 +961,7 @@ fn parse_subgraph_header(input: &str) -> (Option<String>, String, Vec<String>) {
         return (Some(id.to_string()), label, classes);
     }
 
-    if !trimmed.contains(|c: char| c == '"' || c == '\'') {
+    if !trimmed.contains(['"', '\'']) {
         let parts: Vec<&str> = trimmed.split_whitespace().collect();
         if parts.len() == 1 {
             let token = parts[0];
@@ -965,14 +972,7 @@ fn parse_subgraph_header(input: &str) -> (Option<String>, String, Vec<String>) {
     (None, strip_quotes(trimmed), classes)
 }
 
-fn parse_node_only(
-    line: &str,
-) -> Option<(
-    String,
-    Option<String>,
-    Option<crate::ir::NodeShape>,
-    Vec<String>,
-)> {
+fn parse_node_only(line: &str) -> Option<NodeTokenParts> {
     if line.contains("--") {
         return None;
     }
@@ -1038,10 +1038,10 @@ fn parse_edge_line(line: &str) -> Option<(String, Option<String>, String, EdgeMe
         return None;
     }
 
-    let (label, right_token) = if right.starts_with('|') {
-        if let Some(end) = right[1..].find('|') {
-            let label = right[1..=end].trim_matches('|').trim().to_string();
-            let rest = right[end + 2..].trim();
+    let (label, right_token) = if let Some(stripped) = right.strip_prefix('|') {
+        if let Some(end) = stripped.find('|') {
+            let label = stripped[..end].trim().to_string();
+            let rest = stripped[end + 1..].trim();
             (Some(label), rest)
         } else {
             (None, right.as_str())
@@ -1328,36 +1328,36 @@ fn split_inline_classes(token: &str) -> (String, Vec<String>) {
 }
 
 fn split_id_label(token: &str) -> Option<(&str, String, crate::ir::NodeShape)> {
-    if let Some(start) = token.find('[') {
-        if token.ends_with(']') {
-            let id = token[..start].trim();
-            if !id.is_empty() {
-                let raw = &token[start..];
-                let (label, shape) = parse_shape_from_brackets(raw);
-                return Some((id, label, shape));
-            }
+    if let Some(start) = token.find('[')
+        && token.ends_with(']')
+    {
+        let id = token[..start].trim();
+        if !id.is_empty() {
+            let raw = &token[start..];
+            let (label, shape) = parse_shape_from_brackets(raw);
+            return Some((id, label, shape));
         }
     }
 
-    if let Some(start) = token.find('(') {
-        if token.ends_with(')') {
-            let id = token[..start].trim();
-            if !id.is_empty() {
-                let raw = &token[start..];
-                let (label, shape) = parse_shape_from_parens(raw);
-                return Some((id, label, shape));
-            }
+    if let Some(start) = token.find('(')
+        && token.ends_with(')')
+    {
+        let id = token[..start].trim();
+        if !id.is_empty() {
+            let raw = &token[start..];
+            let (label, shape) = parse_shape_from_parens(raw);
+            return Some((id, label, shape));
         }
     }
 
-    if let Some(start) = token.find('{') {
-        if token.ends_with('}') {
-            let id = token[..start].trim();
-            if !id.is_empty() {
-                let raw = &token[start..];
-                let (label, shape) = parse_shape_from_braces(raw);
-                return Some((id, label, shape));
-            }
+    if let Some(start) = token.find('{')
+        && token.ends_with('}')
+    {
+        let id = token[..start].trim();
+        if !id.is_empty() {
+            let raw = &token[start..];
+            let (label, shape) = parse_shape_from_braces(raw);
+            return Some((id, label, shape));
         }
     }
 
