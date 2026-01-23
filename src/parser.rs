@@ -453,7 +453,7 @@ fn normalize_state_token(
     token: &str,
     is_start: bool,
     counter: &mut usize,
-) -> (String, crate::ir::NodeShape) {
+) -> (String, crate::ir::NodeShape, Option<String>) {
     let trimmed = token.trim();
     if trimmed == "[*]" || trimmed == "*" {
         let id = if is_start {
@@ -462,9 +462,14 @@ fn normalize_state_token(
             format!("__end_{}__", *counter)
         };
         *counter += 1;
-        return (id, crate::ir::NodeShape::Circle);
+        let shape = if is_start {
+            crate::ir::NodeShape::Circle
+        } else {
+            crate::ir::NodeShape::DoubleCircle
+        };
+        return (id, shape, Some(String::new()));
     }
-    (strip_quotes(trimmed), crate::ir::NodeShape::RoundRect)
+    (strip_quotes(trimmed), crate::ir::NodeShape::RoundRect, None)
 }
 
 fn parse_state_simple(line: &str) -> Option<String> {
@@ -714,12 +719,13 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
         }
 
         if let Some((left, meta, right, label)) = parse_state_transition(line) {
-            let (left_id, left_shape) = normalize_state_token(&left, true, &mut special_counter);
-            let (right_id, right_shape) =
+            let (left_id, left_shape, left_label_override) =
+                normalize_state_token(&left, true, &mut special_counter);
+            let (right_id, right_shape, right_label_override) =
                 normalize_state_token(&right, false, &mut special_counter);
 
-            let left_label = labels.get(&left_id).cloned();
-            let right_label = labels.get(&right_id).cloned();
+            let left_label = left_label_override.or_else(|| labels.get(&left_id).cloned());
+            let right_label = right_label_override.or_else(|| labels.get(&right_id).cloned());
             graph.ensure_node(&left_id, left_label, Some(left_shape));
             graph.ensure_node(&right_id, right_label, Some(right_shape));
             graph.edges.push(crate::ir::Edge {

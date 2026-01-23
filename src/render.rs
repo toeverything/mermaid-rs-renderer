@@ -95,7 +95,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
 
     for lifeline in &layout.lifelines {
         svg.push_str(&format!(
-            "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" stroke-width=\"1.1\" stroke-dasharray=\"4 6\" opacity=\"0.6\"/>",
+            "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" stroke-width=\"1.1\" stroke-dasharray=\"4 6\" opacity=\"0.6\" stroke-linecap=\"round\"/>",
             lifeline.x,
             lifeline.y1,
             lifeline.x,
@@ -137,7 +137,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             dash = format!("stroke-dasharray=\"{}\"", dash_override);
         }
         svg.push_str(&format!(
-            "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" {} {} {} />",
+            "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" {} {} {} stroke-linecap=\"round\" stroke-linejoin=\"round\" />",
             d, stroke, stroke_width, marker_end, marker_start, dash
         ));
 
@@ -168,9 +168,8 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             let rect_w = label.width + 12.0;
             let rect_h = label.height + 8.0;
             svg.push_str(&format!(
-                "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"6\" ry=\"6\" fill=\"{}\" stroke=\"{}\" stroke-width=\"0.8\"/>",
-                theme.edge_label_background,
-                theme.primary_border_color
+                "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"6\" ry=\"6\" fill=\"{}\" fill-opacity=\"0.85\" stroke=\"none\"/>",
+                theme.edge_label_background
             ));
             svg.push_str(&text_block_svg(
                 x,
@@ -186,6 +185,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
 
     for node in layout.nodes.values() {
         svg.push_str(&shape_svg(node, theme));
+        svg.push_str(&divider_lines_svg(node, theme, config));
         let center_x = node.x + node.width / 2.0;
         let center_y = node.y + node.height / 2.0;
         svg.push_str(&text_block_svg(
@@ -238,20 +238,18 @@ fn text_block_svg(
         fill
     ));
 
+    let line_height = theme.font_size * config.label_line_height;
     for (idx, line) in label.lines.iter().enumerate() {
-        if idx == 0 {
-            text.push_str(&format!(
-                "<tspan x=\"{x:.2}\" dy=\"0\">{}",
-                escape_xml(line)
-            ));
+        let dy = if idx == 0 { 0.0 } else { line_height };
+        let rendered = if is_divider_line(line) {
+            String::new()
         } else {
-            let dy = theme.font_size * config.label_line_height;
-            text.push_str(&format!(
-                "<tspan x=\"{x:.2}\" dy=\"{dy:.2}\">{}",
-                escape_xml(line)
-            ));
-        }
-        text.push_str("</tspan>");
+            escape_xml(line)
+        };
+        text.push_str(&format!(
+            "<tspan x=\"{x:.2}\" dy=\"{dy:.2}\">{}</tspan>",
+            rendered
+        ));
     }
 
     text.push_str("</text>");
@@ -275,20 +273,18 @@ fn text_block_svg_left(
         fill
     ));
 
+    let line_height = theme.font_size * config.label_line_height;
     for (idx, line) in label.lines.iter().enumerate() {
-        if idx == 0 {
-            text.push_str(&format!(
-                "<tspan x=\"{x:.2}\" dy=\"0\">{}",
-                escape_xml(line)
-            ));
+        let dy = if idx == 0 { 0.0 } else { line_height };
+        let rendered = if is_divider_line(line) {
+            String::new()
         } else {
-            let dy = theme.font_size * config.label_line_height;
-            text.push_str(&format!(
-                "<tspan x=\"{x:.2}\" dy=\"{dy:.2}\">{}",
-                escape_xml(line)
-            ));
-        }
-        text.push_str("</tspan>");
+            escape_xml(line)
+        };
+        text.push_str(&format!(
+            "<tspan x=\"{x:.2}\" dy=\"{dy:.2}\">{}</tspan>",
+            rendered
+        ));
     }
 
     text.push_str("</text>");
@@ -371,6 +367,41 @@ fn compute_edge_label_positions(
     }
 
     positions
+}
+
+fn is_divider_line(line: &str) -> bool {
+    line.trim() == "---"
+}
+
+fn divider_lines_svg(node: &crate::layout::NodeLayout, theme: &Theme, config: &LayoutConfig) -> String {
+    if !node.label.lines.iter().any(|line| is_divider_line(line)) {
+        return String::new();
+    }
+
+    let line_height = theme.font_size * config.label_line_height;
+    let total_height = node.label.lines.len() as f32 * line_height;
+    let start_y = node.y + node.height / 2.0 - total_height / 2.0 + theme.font_size;
+    let stroke = node
+        .style
+        .stroke
+        .as_ref()
+        .unwrap_or(&theme.primary_border_color);
+    let x1 = node.x + 6.0;
+    let x2 = node.x + node.width - 6.0;
+
+    let mut svg = String::new();
+    for (idx, line) in node.label.lines.iter().enumerate() {
+        if !is_divider_line(line) {
+            continue;
+        }
+        let baseline_y = start_y + idx as f32 * line_height;
+        let y = baseline_y - theme.font_size * 0.35;
+        svg.push_str(&format!(
+            "<line x1=\"{x1:.2}\" y1=\"{y:.2}\" x2=\"{x2:.2}\" y2=\"{y:.2}\" stroke=\"{stroke}\" stroke-width=\"1.0\"/>",
+        ));
+    }
+
+    svg
 }
 
 #[derive(Debug, Clone, Copy)]
