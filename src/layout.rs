@@ -1331,6 +1331,7 @@ fn merge_node_style(target: &mut crate::ir::NodeStyle, source: &crate::ir::NodeS
 fn shape_size(shape: crate::ir::NodeShape, label: &TextBlock, config: &LayoutConfig) -> (f32, f32) {
     let mut width = label.width + config.node_padding_x * 2.0;
     let mut height = label.height + config.node_padding_y * 2.0;
+    let label_empty = label.lines.len() == 1 && label.lines[0].trim().is_empty();
 
     match shape {
         crate::ir::NodeShape::Diamond => {
@@ -1338,7 +1339,11 @@ fn shape_size(shape: crate::ir::NodeShape, label: &TextBlock, config: &LayoutCon
             height *= 1.4;
         }
         crate::ir::NodeShape::Circle | crate::ir::NodeShape::DoubleCircle => {
-            let size = width.max(height);
+            let size = if label_empty {
+                (config.node_padding_y * 2.0).max(16.0)
+            } else {
+                width.max(height)
+            };
             width = size;
             height = size;
         }

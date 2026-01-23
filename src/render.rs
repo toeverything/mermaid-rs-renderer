@@ -599,6 +599,7 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
         .as_ref()
         .map(|value| format!(" stroke-dasharray=\"{}\"", value))
         .unwrap_or_default();
+    let join = " stroke-linejoin=\"round\" stroke-linecap=\"round\"";
     let x = node.x;
     let y = node.y;
     let w = node.width;
@@ -619,7 +620,7 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
                 cy
             );
             format!(
-                "<polygon points=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}/>",
+                "<polygon points=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",
                 points,
                 fill,
                 stroke,
@@ -627,31 +628,55 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
             )
         }
         crate::ir::NodeShape::Circle | crate::ir::NodeShape::DoubleCircle => {
+            let label_empty = node.label.lines.len() == 1 && node.label.lines[0].trim().is_empty();
+            let (circle_fill, circle_stroke) = if label_empty {
+                if node.shape == crate::ir::NodeShape::Circle {
+                    (theme.primary_text_color.as_str(), theme.primary_text_color.as_str())
+                } else {
+                    (theme.background.as_str(), theme.primary_text_color.as_str())
+                }
+            } else {
+                (fill.as_str(), stroke.as_str())
+            };
+            let stroke_width = node
+                .style
+                .stroke_width
+                .unwrap_or(if label_empty { 2.0 } else { 1.4 });
             let cx = x + w / 2.0;
             let cy = y + h / 2.0;
             let r = (w.min(h)) / 2.0;
             let mut svg = format!(
-                "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}/>",
+                "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",
                 cx,
                 cy,
                 r,
-                fill,
-                stroke,
-                node.style.stroke_width.unwrap_or(1.4)
+                circle_fill,
+                circle_stroke,
+                stroke_width
             );
             if node.shape == crate::ir::NodeShape::DoubleCircle {
                 let r2 = r - 4.0;
                 if r2 > 0.0 {
+                    let inner_fill = if label_empty {
+                        theme.primary_text_color.as_str()
+                    } else {
+                        "none"
+                    };
+                    let inner_stroke = if label_empty {
+                        theme.primary_text_color.as_str()
+                    } else {
+                        circle_stroke
+                    };
                     svg.push_str(&format!(
-                        "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"none\" stroke=\"{}\" stroke-width=\"1.0\"/>",
-                        cx, cy, r2, stroke
+                        "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1.0\"{join}/>",
+                        cx, cy, r2, inner_fill, inner_stroke
                     ));
                 }
             }
             svg
         }
         crate::ir::NodeShape::Stadium => format!(
-            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"{:.2}\" ry=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}/>",
+            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"{:.2}\" ry=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",
             x,
             y,
             w,
@@ -663,7 +688,7 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
             node.style.stroke_width.unwrap_or(1.4)
         ),
         crate::ir::NodeShape::RoundRect => format!(
-            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"10\" ry=\"10\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}/>",
+            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"10\" ry=\"10\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",
             x,
             y,
             w,
@@ -673,7 +698,7 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
             node.style.stroke_width.unwrap_or(1.4)
         ),
         crate::ir::NodeShape::Cylinder => format!(
-            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"12\" ry=\"12\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}/>",
+            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"12\" ry=\"12\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",
             x,
             y,
             w,
@@ -702,7 +727,7 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
                 y_mid
             );
             format!(
-                "<polygon points=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}/>",
+                "<polygon points=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",
                 points,
                 fill,
                 stroke,
@@ -731,7 +756,7 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
                 p1.0, p1.1, p2.0, p2.1, p3.0, p3.1, p4.0, p4.1
             );
             format!(
-                "<polygon points=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}/>",
+                "<polygon points=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",
                 points,
                 fill,
                 stroke,
@@ -760,7 +785,7 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
                 p1.0, p1.1, p2.0, p2.1, p3.0, p3.1, p4.0, p4.1
             );
             format!(
-                "<polygon points=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}/>",
+                "<polygon points=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",
                 points,
                 fill,
                 stroke,
@@ -768,7 +793,7 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
             )
         }
         _ => format!(
-            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"6\" ry=\"6\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}/>",
+            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"6\" ry=\"6\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",
             x,
             y,
             w,
