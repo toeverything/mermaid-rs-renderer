@@ -10,6 +10,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
     let width = layout.width.max(200.0);
     let height = layout.height.max(200.0);
     let is_sequence = !layout.sequence_footboxes.is_empty();
+    let is_state = layout.kind == crate::ir::DiagramKind::State;
 
     svg.push_str(&format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" viewBox=\"0 0 {width} {height}\">",
@@ -59,58 +60,113 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
     svg.push_str("</defs>");
 
     for subgraph in &layout.subgraphs {
-        let sub_fill = subgraph
-            .style
-            .fill
-            .as_ref()
-            .unwrap_or(&theme.cluster_background);
-        let sub_stroke = subgraph
-            .style
-            .stroke
-            .as_ref()
-            .unwrap_or(&theme.cluster_border);
-        let sub_dash = subgraph
-            .style
-            .stroke_dasharray
-            .as_ref()
-            .map(|value| format!(" stroke-dasharray=\"{}\"", value))
-            .unwrap_or_default();
-        let sub_stroke_width = subgraph.style.stroke_width.unwrap_or(1.2);
         let label_empty = subgraph.label.trim().is_empty();
-        let invisible = label_empty
-            && sub_fill.as_str() == "none"
-            && sub_stroke.as_str() == "none"
-            && sub_stroke_width <= 0.0;
-        if !invisible {
+        if is_state {
+            let sub_fill = subgraph
+                .style
+                .fill
+                .as_ref()
+                .unwrap_or(&theme.primary_color);
+            let sub_stroke = subgraph
+                .style
+                .stroke
+                .as_ref()
+                .unwrap_or(&theme.primary_border_color);
+            let sub_stroke_width = subgraph.style.stroke_width.unwrap_or(1.0);
+            let invisible = label_empty
+                && sub_fill.as_str() == "none"
+                && sub_stroke.as_str() == "none"
+                && sub_stroke_width <= 0.0;
+            if invisible {
+                continue;
+            }
             svg.push_str(&format!(
-                "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"10\" ry=\"10\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{} />",
+                "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"5\" ry=\"5\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"/>",
                 subgraph.x,
                 subgraph.y,
                 subgraph.width,
                 subgraph.height,
                 sub_fill,
                 sub_stroke,
-                sub_stroke_width,
-                sub_dash
+                sub_stroke_width
             ));
-        }
-        if !label_empty {
-            let label_x = subgraph.x + subgraph.width / 2.0;
-            let label_y = subgraph.y + 12.0 + subgraph.label_block.height / 2.0;
-            let label_color = subgraph
+            let header_h = (theme.font_size * 1.4).max(subgraph.label_block.height + 4.0);
+            let inner_y = subgraph.y + header_h;
+            let inner_h = (subgraph.height - header_h).max(0.0);
+            svg.push_str(&format!(
+                "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" stroke=\"none\"/>",
+                subgraph.x,
+                inner_y,
+                subgraph.width,
+                inner_h,
+                theme.background
+            ));
+            if !label_empty {
+                let label_x = subgraph.x + 12.0;
+                let label_y = subgraph.y + header_h / 2.0;
+                svg.push_str(&text_block_svg_anchor(
+                    label_x,
+                    label_y,
+                    &subgraph.label_block,
+                    theme,
+                    config,
+                    "start",
+                    subgraph.style.text_color.as_deref(),
+                ));
+            }
+        } else {
+            let sub_fill = subgraph
                 .style
-                .text_color
+                .fill
                 .as_ref()
-                .unwrap_or(&theme.primary_text_color);
-            svg.push_str(&text_block_svg(
-                label_x,
-                label_y,
-                &subgraph.label_block,
-                theme,
-                config,
-                false,
-                Some(label_color),
-            ));
+                .unwrap_or(&theme.cluster_background);
+            let sub_stroke = subgraph
+                .style
+                .stroke
+                .as_ref()
+                .unwrap_or(&theme.cluster_border);
+            let sub_dash = subgraph
+                .style
+                .stroke_dasharray
+                .as_ref()
+                .map(|value| format!(" stroke-dasharray=\"{}\"", value))
+                .unwrap_or_default();
+            let sub_stroke_width = subgraph.style.stroke_width.unwrap_or(1.2);
+            let invisible = label_empty
+                && sub_fill.as_str() == "none"
+                && sub_stroke.as_str() == "none"
+                && sub_stroke_width <= 0.0;
+            if !invisible {
+                svg.push_str(&format!(
+                    "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"10\" ry=\"10\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{} />",
+                    subgraph.x,
+                    subgraph.y,
+                    subgraph.width,
+                    subgraph.height,
+                    sub_fill,
+                    sub_stroke,
+                    sub_stroke_width,
+                    sub_dash
+                ));
+            }
+            if !label_empty {
+                let label_x = subgraph.x + subgraph.width / 2.0;
+                let label_y = subgraph.y + 12.0 + subgraph.label_block.height / 2.0;
+                let label_color = subgraph
+                    .style
+                    .text_color
+                    .as_ref()
+                    .unwrap_or(&theme.primary_text_color);
+                svg.push_str(&text_block_svg(
+                    label_x,
+                    label_y,
+                    &subgraph.label_block,
+                    theme,
+                    config,
+                    false,
+                    Some(label_color),
+                ));
+            }
         }
     }
 
@@ -340,25 +396,30 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             svg.push_str(&divider_lines_svg(node, theme, config));
             let center_x = node.x + node.width / 2.0;
             let center_y = node.y + node.height / 2.0;
-            let label_svg = if node
-                .label
-                .lines
-                .iter()
-                .any(|line| is_divider_line(line))
-            {
-                text_block_svg_class(node, theme, config, node.style.text_color.as_deref())
-            } else {
-                text_block_svg(
-                    center_x,
-                    center_y,
-                    &node.label,
-                    theme,
-                    config,
-                    false,
-                    node.style.text_color.as_deref(),
-                )
-            };
-            svg.push_str(&label_svg);
+            let hide_label = node.label.lines.iter().all(|line| line.trim().is_empty())
+                || node.id.starts_with("__start_")
+                || node.id.starts_with("__end_");
+            if !hide_label {
+                let label_svg = if node
+                    .label
+                    .lines
+                    .iter()
+                    .any(|line| is_divider_line(line))
+                {
+                    text_block_svg_class(node, theme, config, node.style.text_color.as_deref())
+                } else {
+                    text_block_svg(
+                        center_x,
+                        center_y,
+                        &node.label,
+                        theme,
+                        config,
+                        false,
+                        node.style.text_color.as_deref(),
+                    )
+                };
+                svg.push_str(&label_svg);
+            }
         }
 
         for footbox in &layout.sequence_footboxes {
@@ -366,25 +427,30 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             svg.push_str(&divider_lines_svg(footbox, theme, config));
             let center_x = footbox.x + footbox.width / 2.0;
             let center_y = footbox.y + footbox.height / 2.0;
-            let label_svg = if footbox
-                .label
-                .lines
-                .iter()
-                .any(|line| is_divider_line(line))
-            {
-                text_block_svg_class(footbox, theme, config, footbox.style.text_color.as_deref())
-            } else {
-                text_block_svg(
-                    center_x,
-                    center_y,
-                    &footbox.label,
-                    theme,
-                    config,
-                    false,
-                    footbox.style.text_color.as_deref(),
-                )
-            };
-            svg.push_str(&label_svg);
+            let hide_label = footbox.label.lines.iter().all(|line| line.trim().is_empty())
+                || footbox.id.starts_with("__start_")
+                || footbox.id.starts_with("__end_");
+            if !hide_label {
+                let label_svg = if footbox
+                    .label
+                    .lines
+                    .iter()
+                    .any(|line| is_divider_line(line))
+                {
+                    text_block_svg_class(footbox, theme, config, footbox.style.text_color.as_deref())
+                } else {
+                    text_block_svg(
+                        center_x,
+                        center_y,
+                        &footbox.label,
+                        theme,
+                        config,
+                        false,
+                        footbox.style.text_color.as_deref(),
+                    )
+                };
+                svg.push_str(&label_svg);
+            }
         }
     } else {
         for node in layout.nodes.values() {
@@ -402,15 +468,20 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             ));
             let center_x = node.x + node.width / 2.0;
             let center_y = node.y + node.height / 2.0;
-            svg.push_str(&text_block_svg(
-                center_x,
-                center_y,
-                &node.label,
-                theme,
-                config,
-                false,
-                node.style.text_color.as_deref(),
-            ));
+            let hide_label = node.label.lines.iter().all(|line| line.trim().is_empty())
+                || node.id.starts_with("__start_")
+                || node.id.starts_with("__end_");
+            if !hide_label {
+                svg.push_str(&text_block_svg(
+                    center_x,
+                    center_y,
+                    &node.label,
+                    theme,
+                    config,
+                    false,
+                    node.style.text_color.as_deref(),
+                ));
+            }
         }
         for footbox in &layout.sequence_footboxes {
             svg.push_str(&format!(
@@ -424,15 +495,20 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             ));
             let center_x = footbox.x + footbox.width / 2.0;
             let center_y = footbox.y + footbox.height / 2.0;
-            svg.push_str(&text_block_svg(
-                center_x,
-                center_y,
-                &footbox.label,
-                theme,
-                config,
-                false,
-                footbox.style.text_color.as_deref(),
-            ));
+            let hide_label = footbox.label.lines.iter().all(|line| line.trim().is_empty())
+                || footbox.id.starts_with("__start_")
+                || footbox.id.starts_with("__end_");
+            if !hide_label {
+                svg.push_str(&text_block_svg(
+                    center_x,
+                    center_y,
+                    &footbox.label,
+                    theme,
+                    config,
+                    false,
+                    footbox.style.text_color.as_deref(),
+                ));
+            }
         }
     }
 
@@ -465,6 +541,46 @@ fn text_block_svg(
     let start_y = y - total_height / 2.0 + theme.font_size;
     let mut text = String::new();
     let anchor = "middle";
+    let default_fill = theme.primary_text_color.as_str();
+    let fill = override_color.unwrap_or(default_fill);
+
+    text.push_str(&format!(
+        "<text x=\"{x:.2}\" y=\"{start_y:.2}\" text-anchor=\"{anchor}\" font-family=\"{}\" font-size=\"{}\" fill=\"{}\">",
+        theme.font_family,
+        theme.font_size,
+        fill
+    ));
+
+    let line_height = theme.font_size * config.label_line_height;
+    for (idx, line) in label.lines.iter().enumerate() {
+        let dy = if idx == 0 { 0.0 } else { line_height };
+        let rendered = if is_divider_line(line) {
+            String::new()
+        } else {
+            escape_xml(line)
+        };
+        text.push_str(&format!(
+            "<tspan x=\"{x:.2}\" dy=\"{dy:.2}\">{}</tspan>",
+            rendered
+        ));
+    }
+
+    text.push_str("</text>");
+    text
+}
+
+fn text_block_svg_anchor(
+    x: f32,
+    y: f32,
+    label: &TextBlock,
+    theme: &Theme,
+    config: &LayoutConfig,
+    anchor: &str,
+    override_color: Option<&str>,
+) -> String {
+    let total_height = label.lines.len() as f32 * theme.font_size * config.label_line_height;
+    let start_y = y - total_height / 2.0 + theme.font_size;
+    let mut text = String::new();
     let default_fill = theme.primary_text_color.as_str();
     let fill = override_color.unwrap_or(default_fill);
 
@@ -964,8 +1080,17 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
             )
         }
         crate::ir::NodeShape::Circle | crate::ir::NodeShape::DoubleCircle => {
-            let label_empty = node.label.lines.len() == 1 && node.label.lines[0].trim().is_empty();
-            let (circle_fill, circle_stroke) = if label_empty {
+            let label_empty = node.label.lines.iter().all(|line| line.trim().is_empty());
+            let is_state_start = node.id.starts_with("__start_");
+            let is_state_end = node.id.starts_with("__end_");
+            let (circle_fill, circle_stroke) = if is_state_start {
+                (theme.line_color.as_str(), theme.line_color.as_str())
+            } else if is_state_end {
+                (
+                    theme.primary_border_color.as_str(),
+                    theme.primary_border_color.as_str(),
+                )
+            } else if label_empty {
                 if node.shape == crate::ir::NodeShape::Circle {
                     (theme.primary_text_color.as_str(), theme.primary_text_color.as_str())
                 } else {
@@ -975,7 +1100,7 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
                 (fill.as_str(), stroke.as_str())
             };
             let stroke_width = node.style.stroke_width.unwrap_or(if label_empty {
-                2.0
+                1.4
             } else {
                 1.4
             });
@@ -994,17 +1119,17 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
             if node.shape == crate::ir::NodeShape::DoubleCircle {
                 let r2 = r - 4.0;
                 if r2 > 0.0 {
-                    let inner_fill = if label_empty {
+                    let inner_fill = if label_empty || is_state_end {
                         theme.background.as_str()
                     } else {
                         "none"
                     };
-                    let inner_stroke = if label_empty {
+                    let inner_stroke = if label_empty || is_state_end {
                         theme.background.as_str()
                     } else {
                         circle_stroke
                     };
-                    let inner_stroke_width = if label_empty { 1.2 } else { 1.0 };
+                    let inner_stroke_width = if label_empty || is_state_end { 1.2 } else { 1.0 };
                     svg.push_str(&format!(
                         "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{join}/>",
                         cx, cy, r2, inner_fill, inner_stroke, inner_stroke_width

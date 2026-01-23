@@ -81,6 +81,7 @@ pub struct SequenceFrameLayout {
 
 #[derive(Debug, Clone)]
 pub struct Layout {
+    pub kind: crate::ir::DiagramKind,
     pub nodes: BTreeMap<String, NodeLayout>,
     pub edges: Vec<EdgeLayout>,
     pub subgraphs: Vec<SubgraphLayout>,
@@ -213,9 +214,15 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     }
 
     if !graph.subgraphs.is_empty() {
-        apply_subgraph_direction_overrides(graph, &mut nodes, config);
+        if graph.kind != crate::ir::DiagramKind::State {
+            apply_subgraph_direction_overrides(graph, &mut nodes, config);
+        } else {
+            apply_state_subgraph_layouts(graph, &mut nodes, config);
+        }
         apply_orthogonal_region_bands(graph, &mut nodes, config);
-        apply_subgraph_bands(graph, &mut nodes, config);
+        if graph.kind != crate::ir::DiagramKind::State {
+            apply_subgraph_bands(graph, &mut nodes, config);
+        }
     }
 
     let mut subgraphs = build_subgraph_layouts(graph, &nodes, theme, config);
@@ -286,6 +293,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     let (width, height) = bounds_from_layout(&nodes, &subgraphs);
 
     Layout {
+        kind: graph.kind,
         nodes,
         edges,
         subgraphs,
@@ -570,6 +578,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
     height = height.max(lifeline_end + footbox_height + 40.0);
 
     Layout {
+        kind: graph.kind,
         nodes,
         edges,
         subgraphs,
@@ -1052,6 +1061,31 @@ fn apply_subgraph_direction_overrides(
         if matches!(direction, Direction::RightLeft | Direction::BottomTop) {
             mirror_subgraph_nodes(&sub.nodes, nodes, direction);
         }
+    }
+}
+
+fn apply_state_subgraph_layouts(
+    graph: &Graph,
+    nodes: &mut BTreeMap<String, NodeLayout>,
+    config: &LayoutConfig,
+) {
+    for sub in &graph.subgraphs {
+        if sub.nodes.len() <= 1 {
+            continue;
+        }
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        for node_id in &sub.nodes {
+            if let Some(node) = nodes.get(node_id) {
+                min_x = min_x.min(node.x);
+                min_y = min_y.min(node.y);
+            }
+        }
+        if min_x == f32::MAX {
+            continue;
+        }
+        let ranks = compute_ranks_subset(&sub.nodes, &graph.edges);
+        assign_positions(&sub.nodes, &ranks, graph.direction, config, nodes, min_x, min_y);
     }
 }
 
@@ -1725,7 +1759,12 @@ fn build_subgraph_layouts(
 
         let style = resolve_subgraph_style(sub, graph);
         let mut label_block = measure_label(&sub.label, theme, config);
-        let padding = if is_region { 0.0 } else { 24.0 };
+        let base_padding = if graph.kind == crate::ir::DiagramKind::State {
+            16.0
+        } else {
+            24.0
+        };
+        let padding = if is_region { 0.0 } else { base_padding };
         let label_empty = sub.label.trim().is_empty();
         if label_empty {
             label_block.width = 0.0;
@@ -1735,7 +1774,11 @@ fn build_subgraph_layouts(
         let top_padding = if label_empty {
             padding
         } else {
-            padding + label_height + 8.0
+            if graph.kind == crate::ir::DiagramKind::State {
+                (label_height + theme.font_size * 0.4).max(18.0)
+            } else {
+                padding + label_height + 8.0
+            }
         };
 
         subgraphs.push(SubgraphLayout {
@@ -1830,7 +1873,7 @@ fn shape_size(shape: crate::ir::NodeShape, label: &TextBlock, config: &LayoutCon
         }
         crate::ir::NodeShape::Circle | crate::ir::NodeShape::DoubleCircle => {
             let size = if label_empty {
-                (config.node_padding_y * 2.0).max(16.0)
+                (config.node_padding_y * 1.4).max(14.0)
             } else {
                 width.max(height)
             };
