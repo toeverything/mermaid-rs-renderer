@@ -37,11 +37,11 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
     for color in &colors {
         let idx = color_ids.get(color).copied().unwrap_or(0);
         svg.push_str(&format!(
-            "<marker id=\"arrow-{idx}\" viewBox=\"0 0 10 10\" refX=\"10\" refY=\"5\" markerWidth=\"6\" markerHeight=\"6\" orient=\"auto-start-reverse\"><path d=\"M 0 0 L 10 5 L 0 10 z\" fill=\"{}\"/></marker>",
+            "<marker id=\"arrow-{idx}\" viewBox=\"0 0 10 10\" refX=\"10\" refY=\"5\" markerWidth=\"8\" markerHeight=\"8\" orient=\"auto-start-reverse\"><path d=\"M 0 0 L 10 5 L 0 10 z\" fill=\"{}\"/></marker>",
             color
         ));
         svg.push_str(&format!(
-            "<marker id=\"arrow-start-{idx}\" viewBox=\"0 0 10 10\" refX=\"0\" refY=\"5\" markerWidth=\"6\" markerHeight=\"6\" orient=\"auto\"><path d=\"M 10 0 L 0 5 L 10 10 z\" fill=\"{}\"/></marker>",
+            "<marker id=\"arrow-start-{idx}\" viewBox=\"0 0 10 10\" refX=\"0\" refY=\"5\" markerWidth=\"8\" markerHeight=\"8\" orient=\"auto\"><path d=\"M 10 0 L 0 5 L 10 10 z\" fill=\"{}\"/></marker>",
             color
         ));
     }
@@ -63,7 +63,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             .stroke_dasharray
             .as_ref()
             .map(|value| format!(" stroke-dasharray=\"{}\"", value))
-            .unwrap_or_else(|| " stroke-dasharray=\"6 4\"".to_string());
+            .unwrap_or_default();
         let sub_stroke_width = subgraph.style.stroke_width.unwrap_or(1.2);
         svg.push_str(&format!(
             "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"10\" ry=\"10\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{} />",
@@ -76,20 +76,21 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             sub_stroke_width,
             sub_dash
         ));
-        let label_x = subgraph.x + 12.0;
-        let label_y = subgraph.y + 6.0;
+        let label_x = subgraph.x + subgraph.width / 2.0;
+        let label_y = subgraph.y + 12.0 + subgraph.label_block.height / 2.0;
         let label_color = subgraph
             .style
             .text_color
             .as_ref()
             .unwrap_or(&theme.primary_text_color);
-        svg.push_str(&text_block_svg_left(
+        svg.push_str(&text_block_svg(
             label_x,
             label_y,
             &subgraph.label_block,
             theme,
             config,
-            label_color,
+            false,
+            Some(label_color),
         ));
     }
 
@@ -168,8 +169,9 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             let rect_w = label.width + 12.0;
             let rect_h = label.height + 8.0;
             svg.push_str(&format!(
-                "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"6\" ry=\"6\" fill=\"{}\" fill-opacity=\"0.85\" stroke=\"none\"/>",
-                theme.edge_label_background
+                "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"6\" ry=\"6\" fill=\"{}\" fill-opacity=\"0.85\" stroke=\"{}\" stroke-opacity=\"0.35\" stroke-width=\"0.8\"/>",
+                theme.edge_label_background,
+                theme.primary_border_color
             ));
             svg.push_str(&text_block_svg(
                 x,
@@ -243,41 +245,6 @@ fn text_block_svg(
 
     text.push_str(&format!(
         "<text x=\"{x:.2}\" y=\"{start_y:.2}\" text-anchor=\"{anchor}\" font-family=\"{}\" font-size=\"{}\" fill=\"{}\">",
-        theme.font_family,
-        theme.font_size,
-        fill
-    ));
-
-    let line_height = theme.font_size * config.label_line_height;
-    for (idx, line) in label.lines.iter().enumerate() {
-        let dy = if idx == 0 { 0.0 } else { line_height };
-        let rendered = if is_divider_line(line) {
-            String::new()
-        } else {
-            escape_xml(line)
-        };
-        text.push_str(&format!(
-            "<tspan x=\"{x:.2}\" dy=\"{dy:.2}\">{}</tspan>",
-            rendered
-        ));
-    }
-
-    text.push_str("</text>");
-    text
-}
-
-fn text_block_svg_left(
-    x: f32,
-    y: f32,
-    label: &TextBlock,
-    theme: &Theme,
-    config: &LayoutConfig,
-    fill: &str,
-) -> String {
-    let start_y = y + theme.font_size;
-    let mut text = String::new();
-    text.push_str(&format!(
-        "<text x=\"{x:.2}\" y=\"{start_y:.2}\" text-anchor=\"start\" font-family=\"{}\" font-size=\"{}\" fill=\"{}\">",
         theme.font_family,
         theme.font_size,
         fill

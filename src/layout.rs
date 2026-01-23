@@ -643,8 +643,17 @@ fn apply_subgraph_direction_overrides(
     config: &LayoutConfig,
 ) {
     for sub in &graph.subgraphs {
-        let Some(direction) = sub.direction else {
-            continue;
+        let direction = match sub.direction {
+            Some(direction) => direction,
+            None => {
+                if sub.nodes.len() <= 1 {
+                    continue;
+                }
+                match graph.direction {
+                    Direction::TopDown | Direction::BottomTop => Direction::LeftRight,
+                    Direction::LeftRight | Direction::RightLeft => Direction::TopDown,
+                }
+            }
         };
         if sub.nodes.is_empty() {
             continue;
