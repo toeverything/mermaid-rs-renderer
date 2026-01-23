@@ -44,6 +44,25 @@ cargo install --path .
 cargo install mermaid-rs-renderer
 ```
 
+Homebrew (macOS/Linux):
+```bash
+brew tap 1jehuang/mmdr
+brew install mmdr
+```
+
+Scoop (Windows):
+```powershell
+scoop bucket add mmdr https://github.com/1jehuang/scoop-mmdr
+scoop install mmdr
+```
+
+AUR (Arch):
+```bash
+# Pending publication; PKGBUILD lives at https://github.com/1jehuang/aur-mmdr
+# Once published, install via:
+yay -S mmdr-bin
+```
+
 ## Config
 We accept a subset of Mermaid `themeVariables` in a JSON config file. Example:
 
