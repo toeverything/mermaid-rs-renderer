@@ -58,8 +58,6 @@ scoop install mmdr
 
 AUR (Arch):
 ```bash
-# Pending publication; PKGBUILD lives at https://github.com/1jehuang/aur-mmdr
-# Once published, install via:
 yay -S mmdr-bin
 ```
 
@@ -95,6 +93,18 @@ We accept a subset of Mermaid `themeVariables` in a JSON config file. Example:
 cargo test
 cargo run -- -i docs/diagrams/architecture.mmd -o /tmp/arch.svg -e svg
 ```
+
+## Release checklist
+
+- Bump version in `Cargo.toml`
+- `cargo test`
+- Tag and push the release (`vX.Y.Z`), ensure GitHub release artifacts are built
+- `cargo publish` to crates.io
+- Update package managers with new version + SHA256 from release assets:
+  - Homebrew: `homebrew-mmdr` formula
+  - Scoop: `scoop-mmdr` bucket JSON
+  - AUR: `mmdr-bin` PKGBUILD
+- Refresh README benchmarks if perf changed materially
 
 ## Benchmarks
 
