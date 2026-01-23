@@ -21,6 +21,7 @@ pub struct NodeLayout {
     pub label: TextBlock,
     pub shape: crate::ir::NodeShape,
     pub style: crate::ir::NodeStyle,
+    pub anchor_subgraph: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -108,6 +109,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
                 label,
                 shape: node.shape,
                 style,
+                anchor_subgraph: None,
             },
         );
     }
@@ -172,6 +174,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     }
 
     let mut subgraphs = build_subgraph_layouts(graph, &nodes, theme, config);
+    apply_subgraph_anchors(graph, &subgraphs, &mut nodes);
     let obstacles = build_obstacles(&nodes, &subgraphs);
     let pair_counts = build_edge_pair_counts(&graph.edges);
     let mut pair_seen: HashMap<(String, String), usize> = HashMap::new();
@@ -187,8 +190,20 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         } else {
             0.0
         };
-        let from = nodes.get(&edge.from).expect("from node missing");
-        let to = nodes.get(&edge.to).expect("to node missing");
+        let from_layout = nodes.get(&edge.from).expect("from node missing");
+        let to_layout = nodes.get(&edge.to).expect("to node missing");
+        let temp_from = from_layout.anchor_subgraph.and_then(|idx| {
+            subgraphs
+                .get(idx)
+                .map(|sub| anchor_layout_for_edge(from_layout, sub, graph.direction, true))
+        });
+        let temp_to = to_layout.anchor_subgraph.and_then(|idx| {
+            subgraphs
+                .get(idx)
+                .map(|sub| anchor_layout_for_edge(to_layout, sub, graph.direction, false))
+        });
+        let from = temp_from.as_ref().unwrap_or(from_layout);
+        let to = temp_to.as_ref().unwrap_or(to_layout);
         let label = edge.label.as_ref().map(|l| measure_label(l, theme, config));
         let override_style = resolve_edge_style(idx, graph);
 
@@ -264,6 +279,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
                 label,
                 shape: node.shape,
                 style: resolve_node_style(id.as_str(), graph),
+                anchor_subgraph: None,
             },
         );
         cursor_x += width + config.rank_spacing;
@@ -696,6 +712,82 @@ fn apply_subgraph_direction_overrides(
     }
 }
 
+fn apply_subgraph_anchors(
+    graph: &Graph,
+    subgraphs: &[SubgraphLayout],
+    nodes: &mut BTreeMap<String, NodeLayout>,
+) {
+    if subgraphs.is_empty() {
+        return;
+    }
+
+    let mut label_to_index: HashMap<&str, usize> = HashMap::new();
+    for (idx, sub) in subgraphs.iter().enumerate() {
+        label_to_index.insert(sub.label.as_str(), idx);
+    }
+
+    for sub in &graph.subgraphs {
+        let Some(&layout_idx) = label_to_index.get(sub.label.as_str()) else {
+            continue;
+        };
+        let layout = &subgraphs[layout_idx];
+        let mut anchor_ids: HashSet<&str> = HashSet::new();
+        if let Some(id) = &sub.id {
+            anchor_ids.insert(id.as_str());
+        }
+        anchor_ids.insert(sub.label.as_str());
+
+        for anchor_id in anchor_ids {
+            if sub.nodes.iter().any(|node_id| node_id == anchor_id) {
+                continue;
+            }
+            let Some(node) = nodes.get_mut(anchor_id) else {
+                continue;
+            };
+            node.anchor_subgraph = Some(layout_idx);
+            let size = 2.0;
+            node.width = size;
+            node.height = size;
+            node.x = layout.x + layout.width / 2.0 - size / 2.0;
+            node.y = layout.y + layout.height / 2.0 - size / 2.0;
+        }
+    }
+}
+
+fn anchor_layout_for_edge(
+    anchor: &NodeLayout,
+    subgraph: &SubgraphLayout,
+    direction: Direction,
+    is_from: bool,
+) -> NodeLayout {
+    let size = 2.0;
+    let mut node = anchor.clone();
+    node.width = size;
+    node.height = size;
+
+    if is_horizontal(direction) {
+        let x = if is_from {
+            subgraph.x + subgraph.width - size
+        } else {
+            subgraph.x
+        };
+        let y = subgraph.y + subgraph.height / 2.0 - size / 2.0;
+        node.x = x;
+        node.y = y;
+    } else {
+        let x = subgraph.x + subgraph.width / 2.0 - size / 2.0;
+        let y = if is_from {
+            subgraph.y + subgraph.height - size
+        } else {
+            subgraph.y
+        };
+        node.x = x;
+        node.y = y;
+    }
+
+    node
+}
+
 fn mirror_subgraph_nodes(
     node_ids: &[String],
     nodes: &mut BTreeMap<String, NodeLayout>,
@@ -1047,6 +1139,9 @@ fn build_obstacles(
 ) -> Vec<Obstacle> {
     let mut obstacles = Vec::new();
     for node in nodes.values() {
+        if node.anchor_subgraph.is_some() {
+            continue;
+        }
         obstacles.push(Obstacle {
             id: node.id.clone(),
             x: node.x - 6.0,
@@ -1057,8 +1152,13 @@ fn build_obstacles(
         });
     }
 
-    for sub in subgraphs {
-        let members: HashSet<String> = sub.nodes.iter().cloned().collect();
+    for (idx, sub) in subgraphs.iter().enumerate() {
+        let mut members: HashSet<String> = sub.nodes.iter().cloned().collect();
+        for node in nodes.values() {
+            if node.anchor_subgraph == Some(idx) {
+                members.insert(node.id.clone());
+            }
+        }
         let pad = 6.0;
         obstacles.push(Obstacle {
             id: format!("subgraph:{}", sub.label),

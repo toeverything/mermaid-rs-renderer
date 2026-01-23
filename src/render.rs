@@ -186,6 +186,9 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
     }
 
     for node in layout.nodes.values() {
+        if node.anchor_subgraph.is_some() {
+            continue;
+        }
         svg.push_str(&shape_svg(node, theme));
         svg.push_str(&divider_lines_svg(node, theme, config));
         let center_x = node.x + node.width / 2.0;
@@ -398,6 +401,9 @@ fn compute_edge_label_positions(
     let edge_obstacles = build_edge_obstacles(edges, 6.0);
 
     for node in nodes.values() {
+        if node.anchor_subgraph.is_some() {
+            continue;
+        }
         occupied.push((
             node.x - 6.0,
             node.y - 6.0,
