@@ -17,6 +17,23 @@ pub struct Theme {
 }
 
 impl Theme {
+    pub fn mermaid_default() -> Self {
+        Self {
+            font_family: "\"trebuchet ms\", verdana, arial, sans-serif".to_string(),
+            font_size: 16.0,
+            primary_color: "#ECECFF".to_string(),
+            primary_text_color: "#333333".to_string(),
+            primary_border_color: "#9370DB".to_string(),
+            line_color: "#333333".to_string(),
+            secondary_color: "#FFFFDE".to_string(),
+            tertiary_color: "#ECECFF".to_string(),
+            edge_label_background: "#E8E8E8".to_string(),
+            cluster_background: "#FFFFDE".to_string(),
+            cluster_border: "#AAAA33".to_string(),
+            background: "#FFFFFF".to_string(),
+        }
+    }
+
     pub fn modern() -> Self {
         Self {
             font_family: "Inter, Segoe UI, system-ui, -apple-system, sans-serif".to_string(),

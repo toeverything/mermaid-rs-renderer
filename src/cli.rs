@@ -307,6 +307,16 @@ sequenceDiagram
 }
 
 fn merge_init_config(mut config: Config, init: serde_json::Value) -> Config {
+    if let Some(theme_name) = init.get("theme").and_then(|v| v.as_str()) {
+        if theme_name == "modern" {
+            config.theme = crate::theme::Theme::modern();
+        } else if theme_name == "base"
+            || theme_name == "default"
+            || theme_name == "mermaid"
+        {
+            config.theme = crate::theme::Theme::mermaid_default();
+        }
+    }
     if let Some(theme_vars) = init.get("themeVariables") {
         if let Some(val) = theme_vars.get("primaryColor").and_then(|v| v.as_str()) {
             config.theme.primary_color = val.to_string();

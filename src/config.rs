@@ -105,6 +105,17 @@ pub fn load_config(path: Option<&Path>) -> anyhow::Result<Config> {
     let contents = std::fs::read_to_string(path)?;
     let parsed: ConfigFile = serde_json::from_str(&contents)?;
 
+    if let Some(theme_name) = parsed.theme.as_deref() {
+        if theme_name == "modern" {
+            config.theme = Theme::modern();
+        } else if theme_name == "base"
+            || theme_name == "default"
+            || theme_name == "mermaid"
+        {
+            config.theme = Theme::mermaid_default();
+        }
+    }
+
     if let Some(vars) = parsed.theme_variables {
         if let Some(v) = vars.font_family {
             config.theme.font_family = v;
@@ -151,12 +162,6 @@ pub fn load_config(path: Option<&Path>) -> anyhow::Result<Config> {
         if let Some(v) = flow.rank_spacing {
             config.layout.rank_spacing = v;
         }
-    }
-
-    if let Some(theme_name) = parsed.theme
-        && theme_name == "modern"
-    {
-        config.theme = Theme::modern();
     }
 
     config.render.background = config.theme.background.clone();
