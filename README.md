@@ -1,6 +1,19 @@
 # mermaid-rs-renderer
 
-A fast Mermaid renderer in Rust (flowchart + basic class/state/sequence).
+A fast native Mermaid diagram renderer written in Rust. No browser, no Puppeteer, no Node.js required.
+
+**~500-1000x faster than mermaid-cli** for typical diagrams (2-6ms vs 2-3 seconds).
+
+![Architecture comparison](docs/diagrams/comparison.png)
+
+## Why?
+
+The official `mermaid-cli` spawns a headless Chromium browser via Puppeteer for every diagram, adding ~2-3 seconds of overhead. This makes it painful for:
+- CI/CD pipelines rendering many diagrams
+- Real-time previews in editors
+- Batch documentation generation
+
+`mmdr` parses Mermaid syntax natively and renders directly to SVG, then optionally rasterizes via `resvg`. No browser needed.
 
 ## Status
 - Supports `flowchart` / `graph` with `TD/TB/LR/BT/RL` and subgraph `direction`
@@ -93,18 +106,6 @@ We accept a subset of Mermaid `themeVariables` in a JSON config file. Example:
 cargo test
 cargo run -- -i docs/diagrams/architecture.mmd -o /tmp/arch.svg -e svg
 ```
-
-## Release checklist
-
-- Bump version in `Cargo.toml`
-- `cargo test`
-- Tag and push the release (`vX.Y.Z`), ensure GitHub release artifacts are built
-- `cargo publish` to crates.io
-- Update package managers with new version + SHA256 from release assets:
-  - Homebrew: `homebrew-mmdr` formula
-  - Scoop: `scoop-mmdr` bucket JSON
-  - AUR: `mmdr-bin` PKGBUILD
-- Refresh README benchmarks if perf changed materially
 
 ## Benchmarks
 
