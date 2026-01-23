@@ -757,12 +757,23 @@ fn compute_ranks(graph: &Graph) -> HashMap<String, usize> {
         }
     }
 
+    let order_index: HashMap<String, usize> = order
+        .iter()
+        .enumerate()
+        .map(|(idx, id)| (id.clone(), idx))
+        .collect();
+
     let mut ranks: HashMap<String, usize> = HashMap::new();
     for node in &order {
         let rank = *ranks.get(node).unwrap_or(&0);
         ranks.entry(node.clone()).or_insert(rank);
         if let Some(nexts) = adj.get(node) {
+            let from_idx = *order_index.get(node).unwrap_or(&0);
             for next in nexts {
+                let to_idx = *order_index.get(next).unwrap_or(&from_idx);
+                if to_idx <= from_idx {
+                    continue;
+                }
                 let entry = ranks.entry(next.clone()).or_insert(0);
                 *entry = (*entry).max(rank + 1);
             }
@@ -834,7 +845,7 @@ fn apply_subgraph_bands(
             let b_primary = if b.0 == 0 { 0 } else { 1 };
             a_primary
                 .cmp(&b_primary)
-                .then_with(|| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
+                .then_with(|| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
         });
     } else {
         groups.sort_by(|a, b| {
@@ -842,24 +853,12 @@ fn apply_subgraph_bands(
             let b_primary = if b.0 == 0 { 0 } else { 1 };
             a_primary
                 .cmp(&b_primary)
-                .then_with(|| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                .then_with(|| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
         });
     }
 
     let spacing = config.rank_spacing * 0.8;
     if is_horizontal(graph.direction) {
-        let mut cursor = 0.0;
-        for (group_idx, _min_x, min_y, _max_x, max_y) in groups {
-            let height = max_y - min_y;
-            let offset = cursor - min_y;
-            for node_id in group_nodes[group_idx].iter() {
-                if let Some(node) = nodes.get_mut(node_id) {
-                    node.y += offset;
-                }
-            }
-            cursor += height + spacing;
-        }
-    } else {
         let mut cursor = 0.0;
         for (group_idx, min_x, _min_y, max_x, _max_y) in groups {
             let width = max_x - min_x;
@@ -870,6 +869,18 @@ fn apply_subgraph_bands(
                 }
             }
             cursor += width + spacing;
+        }
+    } else {
+        let mut cursor = 0.0;
+        for (group_idx, _min_x, min_y, _max_x, max_y) in groups {
+            let height = max_y - min_y;
+            let offset = cursor - min_y;
+            for node_id in group_nodes[group_idx].iter() {
+                if let Some(node) = nodes.get_mut(node_id) {
+                    node.y += offset;
+                }
+            }
+            cursor += height + spacing;
         }
     }
 }
@@ -1251,12 +1262,23 @@ fn compute_ranks_subset(node_ids: &[String], edges: &[crate::ir::Edge]) -> HashM
         }
     }
 
+    let order_index: HashMap<String, usize> = order
+        .iter()
+        .enumerate()
+        .map(|(idx, id)| (id.clone(), idx))
+        .collect();
+
     let mut ranks: HashMap<String, usize> = HashMap::new();
     for node in &order {
         let rank = *ranks.get(node).unwrap_or(&0);
         ranks.entry(node.clone()).or_insert(rank);
         if let Some(nexts) = adj.get(node) {
+            let from_idx = *order_index.get(node).unwrap_or(&0);
             for next in nexts {
+                let to_idx = *order_index.get(next).unwrap_or(&from_idx);
+                if to_idx <= from_idx {
+                    continue;
+                }
                 let entry = ranks.entry(next.clone()).or_insert(0);
                 *entry = (*entry).max(rank + 1);
             }
