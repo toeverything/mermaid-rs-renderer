@@ -53,9 +53,30 @@ pub struct SubgraphLayout {
 
 #[derive(Debug, Clone)]
 pub struct Lifeline {
+    pub id: String,
     pub x: f32,
     pub y1: f32,
     pub y2: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct SequenceLabel {
+    pub x: f32,
+    pub y: f32,
+    pub text: TextBlock,
+}
+
+#[derive(Debug, Clone)]
+pub struct SequenceFrameLayout {
+    pub kind: crate::ir::SequenceFrameKind,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub label_box: (f32, f32, f32, f32),
+    pub label: SequenceLabel,
+    pub section_labels: Vec<SequenceLabel>,
+    pub dividers: Vec<f32>,
 }
 
 #[derive(Debug, Clone)]
@@ -64,6 +85,8 @@ pub struct Layout {
     pub edges: Vec<EdgeLayout>,
     pub subgraphs: Vec<SubgraphLayout>,
     pub lifelines: Vec<Lifeline>,
+    pub sequence_footboxes: Vec<NodeLayout>,
+    pub sequence_frames: Vec<SequenceFrameLayout>,
     pub width: f32,
     pub height: f32,
 }
@@ -82,6 +105,15 @@ fn is_horizontal(direction: Direction) -> bool {
     matches!(direction, Direction::LeftRight | Direction::RightLeft)
 }
 
+fn is_region_subgraph(sub: &crate::ir::Subgraph) -> bool {
+    sub.label.trim().is_empty()
+        && sub
+            .id
+            .as_deref()
+            .map(|id| id.starts_with("__region_"))
+            .unwrap_or(false)
+}
+
 pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
     match graph.kind {
         crate::ir::DiagramKind::Sequence => compute_sequence_layout(graph, theme, config),
@@ -96,7 +128,19 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
 
     for node in graph.nodes.values() {
         let label = measure_label(&node.label, theme, config);
-        let (width, height) = shape_size(node.shape, &label, config);
+        let label_empty = label.lines.len() == 1 && label.lines[0].trim().is_empty();
+        let (mut width, mut height) = shape_size(node.shape, &label, config);
+        if graph.kind == crate::ir::DiagramKind::State
+            && label_empty
+            && matches!(
+                node.shape,
+                crate::ir::NodeShape::Circle | crate::ir::NodeShape::DoubleCircle
+            )
+        {
+            let size = (config.node_padding_y * 1.4).max(12.0);
+            width = size;
+            height = size;
+        }
         let style = resolve_node_style(node.id.as_str(), graph);
         nodes.insert(
             node.id.clone(),
@@ -170,6 +214,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
 
     if !graph.subgraphs.is_empty() {
         apply_subgraph_direction_overrides(graph, &mut nodes, config);
+        apply_orthogonal_region_bands(graph, &mut nodes, config);
         apply_subgraph_bands(graph, &mut nodes, config);
     }
 
@@ -245,6 +290,8 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         edges,
         subgraphs,
         lifelines: Vec::new(),
+        sequence_footboxes: Vec::new(),
+        sequence_frames: Vec::new(),
         width,
         height,
     }
@@ -262,41 +309,67 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         }
     }
 
-    let mut cursor_x = 0.0;
-    let mut max_node_height: f32 = 0.0;
+    let mut label_blocks: HashMap<String, TextBlock> = HashMap::new();
+    let mut max_label_width: f32 = 0.0;
+    let mut max_label_height: f32 = 0.0;
     for id in &participants {
         let node = graph.nodes.get(id).expect("participant missing");
         let label = measure_label(&node.label, theme, config);
-        let (width, height) = shape_size(node.shape, &label, config);
+        max_label_width = max_label_width.max(label.width);
+        max_label_height = max_label_height.max(label.height);
+        label_blocks.insert(id.clone(), label);
+    }
+
+    let actor_width = (max_label_width + theme.font_size * 2.5).max(150.0);
+    let actor_height = (max_label_height + theme.font_size * 2.5).max(65.0);
+    let actor_gap = (theme.font_size * 3.1).max(40.0);
+
+    let mut cursor_x = 0.0;
+    for id in &participants {
+        let label = label_blocks
+            .get(id)
+            .cloned()
+            .unwrap_or_else(|| TextBlock {
+                lines: vec![id.clone()],
+                width: 0.0,
+                height: 0.0,
+            });
         nodes.insert(
             id.clone(),
             NodeLayout {
                 id: id.clone(),
                 x: cursor_x,
                 y: 0.0,
-                width,
-                height,
+                width: actor_width,
+                height: actor_height,
                 label,
-                shape: node.shape,
+                shape: crate::ir::NodeShape::RoundRect,
                 style: resolve_node_style(id.as_str(), graph),
                 anchor_subgraph: None,
             },
         );
-        cursor_x += width + config.rank_spacing;
-        max_node_height = max_node_height.max(height);
+        cursor_x += actor_width + actor_gap;
     }
 
-    let mut message_cursor = max_node_height + config.node_spacing * 1.2;
+    let base_spacing = (theme.font_size * 2.8).max(24.0);
+    let mut extra_before = vec![0.0; graph.edges.len()];
+    for frame in &graph.sequence_frames {
+        if frame.start_idx < extra_before.len() {
+            extra_before[frame.start_idx] += base_spacing;
+        }
+        for section in frame.sections.iter().skip(1) {
+            if section.start_idx < extra_before.len() {
+                extra_before[section.start_idx] += base_spacing;
+            }
+        }
+    }
+
+    let mut message_cursor = actor_height + theme.font_size * 2.9;
     let mut message_ys = Vec::new();
-    for edge in &graph.edges {
-        let label_block = edge.label.as_ref().map(|l| measure_label(l, theme, config));
-        let label_height = label_block
-            .as_ref()
-            .map(|b| b.height)
-            .unwrap_or(theme.font_size);
-        let spacing = (label_height + 24.0).max(24.0);
+    for idx in 0..graph.edges.len() {
+        message_cursor += extra_before[idx];
         message_ys.push(message_cursor);
-        message_cursor += spacing;
+        message_cursor += base_spacing;
     }
 
     for (idx, edge) in graph.edges.iter().enumerate() {
@@ -315,7 +388,15 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
             vec![(from_x, y), (to_x, y)]
         };
 
-        let override_style = resolve_edge_style(idx, graph);
+        let mut override_style = resolve_edge_style(idx, graph);
+        if edge.style == crate::ir::EdgeStyle::Dotted {
+            if override_style.dasharray.is_none() {
+                override_style.dasharray = Some("3 3".to_string());
+            }
+            if override_style.stroke_width.is_none() {
+                override_style.stroke_width = Some(1.4);
+            }
+        }
         edges.push(EdgeLayout {
             from: edge.from.clone(),
             to: edge.to.clone(),
@@ -331,27 +412,170 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         });
     }
 
-    let lifeline_start = max_node_height + config.node_spacing * 0.4;
-    let lifeline_end = message_cursor + config.node_spacing * 0.4;
+    let mut sequence_frames = Vec::new();
+    if !graph.sequence_frames.is_empty() && !message_ys.is_empty() {
+        let mut frames = graph.sequence_frames.clone();
+        frames.sort_by(|a, b| {
+            a.start_idx
+                .cmp(&b.start_idx)
+                .then_with(|| b.end_idx.cmp(&a.end_idx))
+        });
+        for frame in frames {
+            if frame.start_idx >= frame.end_idx || frame.start_idx >= message_ys.len() {
+                continue;
+            }
+            let mut xs = Vec::new();
+            for edge in graph
+                .edges
+                .iter()
+                .skip(frame.start_idx)
+                .take(frame.end_idx.saturating_sub(frame.start_idx))
+            {
+                if let Some(node) = nodes.get(&edge.from) {
+                    xs.push(node.x + node.width / 2.0);
+                }
+                if let Some(node) = nodes.get(&edge.to) {
+                    xs.push(node.x + node.width / 2.0);
+                }
+            }
+            if xs.is_empty() {
+                for node in nodes.values() {
+                    xs.push(node.x + node.width / 2.0);
+                }
+            }
+            let (min_x, max_x) = xs.iter().fold((f32::INFINITY, f32::NEG_INFINITY), |acc, x| {
+                (acc.0.min(*x), acc.1.max(*x))
+            });
+            if !min_x.is_finite() || !max_x.is_finite() {
+                continue;
+            }
+            let frame_pad_x = theme.font_size * 0.7;
+            let frame_x = min_x - frame_pad_x;
+            let frame_width = (max_x - min_x) + frame_pad_x * 2.0;
+
+            let first_y = message_ys
+                .get(frame.start_idx)
+                .copied()
+                .unwrap_or(message_cursor);
+            let last_y = message_ys
+                .get(frame.end_idx.saturating_sub(1))
+                .copied()
+                .unwrap_or(first_y);
+            let header_offset = theme.font_size * 0.6;
+            let top_offset = (2.0 * base_spacing - header_offset).max(base_spacing);
+            let bottom_offset = header_offset;
+            let frame_y = first_y - top_offset;
+            let frame_height = (last_y - first_y).max(0.0) + top_offset + bottom_offset;
+
+            let frame_label_text = match frame.kind {
+                crate::ir::SequenceFrameKind::Alt => "alt",
+                crate::ir::SequenceFrameKind::Opt => "opt",
+                crate::ir::SequenceFrameKind::Loop => "loop",
+                crate::ir::SequenceFrameKind::Par => "par",
+                crate::ir::SequenceFrameKind::Rect => "rect",
+            };
+            let label_block = measure_label(frame_label_text, theme, config);
+            let label_box_w = (label_block.width + theme.font_size * 2.0).max(theme.font_size * 3.0);
+            let label_box_h = theme.font_size * 1.25;
+            let label_box_x = frame_x;
+            let label_box_y = frame_y;
+            let label = SequenceLabel {
+                x: label_box_x + label_box_w / 2.0,
+                y: label_box_y + label_box_h / 2.0,
+                text: label_block,
+            };
+
+            let mut dividers = Vec::new();
+            let divider_offset = theme.font_size * 0.9;
+            for window in frame.sections.windows(2) {
+                let prev_end = window[0].end_idx;
+                let base_y = message_ys
+                    .get(prev_end.saturating_sub(1))
+                    .copied()
+                    .unwrap_or(first_y);
+                dividers.push(base_y + divider_offset);
+            }
+
+            let mut section_labels = Vec::new();
+            let label_offset = theme.font_size * 1.1;
+            for (section_idx, section) in frame.sections.iter().enumerate() {
+                if let Some(label) = &section.label {
+                    let display = format!("[{}]", label);
+                    let block = measure_label(&display, theme, config);
+                    let label_y = if section_idx == 0 {
+                        frame_y + label_offset
+                    } else {
+                        dividers
+                            .get(section_idx - 1)
+                            .copied()
+                            .unwrap_or(frame_y + label_offset)
+                            + label_offset
+                    };
+                    section_labels.push(SequenceLabel {
+                        x: frame_x + frame_width / 2.0,
+                        y: label_y,
+                        text: block,
+                    });
+                }
+            }
+
+            sequence_frames.push(SequenceFrameLayout {
+                kind: frame.kind,
+                x: frame_x,
+                y: frame_y,
+                width: frame_width,
+                height: frame_height,
+                label_box: (label_box_x, label_box_y, label_box_w, label_box_h),
+                label,
+                section_labels,
+                dividers,
+            });
+        }
+    }
+
+    let lifeline_start = actor_height;
+    let last_message_y = message_ys
+        .last()
+        .copied()
+        .unwrap_or(lifeline_start + base_spacing);
+    let footbox_gap = (theme.font_size * 1.25).max(16.0);
+    let lifeline_end = last_message_y + footbox_gap;
     let lifelines = participants
         .iter()
         .filter_map(|id| nodes.get(id))
         .map(|node| Lifeline {
+            id: node.id.clone(),
             x: node.x + node.width / 2.0,
             y1: lifeline_start,
             y2: lifeline_end,
         })
         .collect::<Vec<_>>();
 
+    let sequence_footboxes = participants
+        .iter()
+        .filter_map(|id| nodes.get(id))
+        .map(|node| {
+            let mut foot = node.clone();
+            foot.y = lifeline_end;
+            foot
+        })
+        .collect::<Vec<_>>();
+
     let (mut width, mut height) = bounds_from_layout(&nodes, &subgraphs);
     width = width.max(cursor_x + 40.0);
-    height = height.max(lifeline_end + 40.0);
+    let footbox_height = sequence_footboxes
+        .iter()
+        .map(|node| node.height)
+        .fold(0.0, f32::max);
+    height = height.max(lifeline_end + footbox_height + 40.0);
 
     Layout {
         nodes,
         edges,
         subgraphs,
         lifelines,
+        sequence_footboxes,
+        sequence_frames,
         width,
         height,
     }
@@ -641,6 +865,122 @@ fn apply_subgraph_bands(
     }
 }
 
+fn apply_orthogonal_region_bands(
+    graph: &Graph,
+    nodes: &mut BTreeMap<String, NodeLayout>,
+    config: &LayoutConfig,
+) {
+    let mut region_indices = Vec::new();
+    for (idx, sub) in graph.subgraphs.iter().enumerate() {
+        if is_region_subgraph(sub) {
+            region_indices.push(idx);
+        }
+    }
+    if region_indices.is_empty() {
+        return;
+    }
+
+    let sets: Vec<HashSet<String>> = graph
+        .subgraphs
+        .iter()
+        .map(|sub| sub.nodes.iter().cloned().collect())
+        .collect();
+
+    let mut parent_map: HashMap<usize, Vec<usize>> = HashMap::new();
+    for region_idx in region_indices {
+        let region_set = &sets[region_idx];
+        let mut parent: Option<usize> = None;
+        for (idx, set) in sets.iter().enumerate() {
+            if idx == region_idx {
+                continue;
+            }
+            if set.len() <= region_set.len() {
+                continue;
+            }
+            if !region_set.is_subset(set) {
+                continue;
+            }
+            if is_region_subgraph(&graph.subgraphs[idx]) {
+                continue;
+            }
+            match parent {
+                None => parent = Some(idx),
+                Some(current) => {
+                    if set.len() < sets[current].len() {
+                        parent = Some(idx);
+                    }
+                }
+            }
+        }
+        if let Some(parent_idx) = parent {
+            parent_map.entry(parent_idx).or_default().push(region_idx);
+        }
+    }
+
+    let spacing = config.rank_spacing * 0.6;
+    let stack_along_x = is_horizontal(graph.direction);
+
+    for region_list in parent_map.values() {
+        let mut region_boxes: Vec<(usize, f32, f32, f32, f32)> = Vec::new();
+        for &region_idx in region_list {
+            let mut min_x = f32::MAX;
+            let mut min_y = f32::MAX;
+            let mut max_x = f32::MIN;
+            let mut max_y = f32::MIN;
+            for node_id in &graph.subgraphs[region_idx].nodes {
+                if let Some(node) = nodes.get(node_id) {
+                    min_x = min_x.min(node.x);
+                    min_y = min_y.min(node.y);
+                    max_x = max_x.max(node.x + node.width);
+                    max_y = max_y.max(node.y + node.height);
+                }
+            }
+            if min_x != f32::MAX {
+                region_boxes.push((region_idx, min_x, min_y, max_x, max_y));
+            }
+        }
+        if region_boxes.len() <= 1 {
+            continue;
+        }
+
+        if stack_along_x {
+            region_boxes.sort_by(|a, b| {
+                a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            let mut cursor = region_boxes
+                .first()
+                .map(|entry| entry.1)
+                .unwrap_or(0.0);
+            for (region_idx, min_x, _min_y, max_x, _max_y) in region_boxes {
+                let offset = cursor - min_x;
+                for node_id in &graph.subgraphs[region_idx].nodes {
+                    if let Some(node) = nodes.get_mut(node_id) {
+                        node.x += offset;
+                    }
+                }
+                cursor += (max_x - min_x) + spacing;
+            }
+        } else {
+            region_boxes.sort_by(|a, b| {
+                a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            let mut cursor = region_boxes
+                .first()
+                .map(|entry| entry.2)
+                .unwrap_or(0.0);
+            for (region_idx, _min_x, min_y, _max_x, max_y) in region_boxes {
+                let offset = cursor - min_y;
+                for node_id in &graph.subgraphs[region_idx].nodes {
+                    if let Some(node) = nodes.get_mut(node_id) {
+                        node.y += offset;
+                    }
+                }
+                cursor += (max_y - min_y) + spacing;
+            }
+        }
+    }
+}
+
 fn top_level_subgraph_indices(graph: &Graph) -> Vec<usize> {
     let mut sets: Vec<HashSet<String>> = Vec::new();
     for sub in &graph.subgraphs {
@@ -672,6 +1012,9 @@ fn apply_subgraph_direction_overrides(
     config: &LayoutConfig,
 ) {
     for sub in &graph.subgraphs {
+        if is_region_subgraph(sub) {
+            continue;
+        }
         let direction = match sub.direction {
             Some(direction) => direction,
             None => {
@@ -956,6 +1299,12 @@ fn bounds_without_padding(
         max_y = max_y.max(node.y + node.height);
     }
     for sub in subgraphs {
+        let invisible_region = sub.label.trim().is_empty()
+            && sub.style.stroke.as_deref() == Some("none")
+            && sub.style.fill.as_deref() == Some("none");
+        if invisible_region {
+            continue;
+        }
         max_x = max_x.max(sub.x + sub.width);
         max_y = max_y.max(sub.y + sub.height);
     }
@@ -1153,6 +1502,12 @@ fn build_obstacles(
     }
 
     for (idx, sub) in subgraphs.iter().enumerate() {
+        let invisible_region = sub.label.trim().is_empty()
+            && sub.style.stroke.as_deref() == Some("none")
+            && sub.style.fill.as_deref() == Some("none");
+        if invisible_region {
+            continue;
+        }
         let mut members: HashSet<String> = sub.nodes.iter().cloned().collect();
         for node in nodes.values() {
             if node.anchor_subgraph == Some(idx) {
@@ -1349,6 +1704,7 @@ fn build_subgraph_layouts(
 ) -> Vec<SubgraphLayout> {
     let mut subgraphs = Vec::new();
     for sub in &graph.subgraphs {
+        let is_region = is_region_subgraph(sub);
         let mut min_x = f32::MAX;
         let mut min_y = f32::MAX;
         let mut max_x = f32::MIN;
@@ -1368,10 +1724,19 @@ fn build_subgraph_layouts(
         }
 
         let style = resolve_subgraph_style(sub, graph);
-        let label_block = measure_label(&sub.label, theme, config);
-        let padding = 24.0;
-        let label_height = label_block.height;
-        let top_padding = padding + label_height + 8.0;
+        let mut label_block = measure_label(&sub.label, theme, config);
+        let padding = if is_region { 0.0 } else { 24.0 };
+        let label_empty = sub.label.trim().is_empty();
+        if label_empty {
+            label_block.width = 0.0;
+            label_block.height = 0.0;
+        }
+        let label_height = if label_empty { 0.0 } else { label_block.height };
+        let top_padding = if label_empty {
+            padding
+        } else {
+            padding + label_height + 8.0
+        };
 
         subgraphs.push(SubgraphLayout {
             label: sub.label.clone(),
@@ -1398,6 +1763,9 @@ fn build_subgraph_layouts(
         for &i in &order {
             for &j in &order {
                 if i == j {
+                    continue;
+                }
+                if is_region_subgraph(&graph.subgraphs[j]) {
                     continue;
                 }
                 if sets[j].len() >= sets[i].len() {

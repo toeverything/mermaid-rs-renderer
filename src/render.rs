@@ -9,6 +9,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
     let mut svg = String::new();
     let width = layout.width.max(200.0);
     let height = layout.height.max(200.0);
+    let is_sequence = !layout.sequence_footboxes.is_empty();
 
     svg.push_str(&format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" viewBox=\"0 0 {width} {height}\">",
@@ -44,6 +45,16 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             "<marker id=\"arrow-start-{idx}\" viewBox=\"0 0 10 10\" refX=\"0\" refY=\"5\" markerWidth=\"8\" markerHeight=\"8\" orient=\"auto\"><path d=\"M 10 0 L 0 5 L 10 10 z\" fill=\"{}\"/></marker>",
             color
         ));
+        if is_sequence {
+            svg.push_str(&format!(
+                "<marker id=\"arrow-seq-{idx}\" viewBox=\"0 0 10 10\" refX=\"9\" refY=\"5\" markerWidth=\"12\" markerHeight=\"12\" orient=\"auto-start-reverse\"><path d=\"M 0 0 L 10 5 L 0 10 z\" fill=\"{}\"/></marker>",
+                color
+            ));
+            svg.push_str(&format!(
+                "<marker id=\"arrow-start-seq-{idx}\" viewBox=\"0 0 10 10\" refX=\"1\" refY=\"5\" markerWidth=\"12\" markerHeight=\"12\" orient=\"auto\"><path d=\"M 10 0 L 0 5 L 10 10 z\" fill=\"{}\"/></marker>",
+                color
+            ));
+        }
     }
     svg.push_str("</defs>");
 
@@ -65,143 +76,333 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             .map(|value| format!(" stroke-dasharray=\"{}\"", value))
             .unwrap_or_default();
         let sub_stroke_width = subgraph.style.stroke_width.unwrap_or(1.2);
+        let label_empty = subgraph.label.trim().is_empty();
+        let invisible = label_empty
+            && sub_fill.as_str() == "none"
+            && sub_stroke.as_str() == "none"
+            && sub_stroke_width <= 0.0;
+        if !invisible {
+            svg.push_str(&format!(
+                "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"10\" ry=\"10\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{} />",
+                subgraph.x,
+                subgraph.y,
+                subgraph.width,
+                subgraph.height,
+                sub_fill,
+                sub_stroke,
+                sub_stroke_width,
+                sub_dash
+            ));
+        }
+        if !label_empty {
+            let label_x = subgraph.x + subgraph.width / 2.0;
+            let label_y = subgraph.y + 12.0 + subgraph.label_block.height / 2.0;
+            let label_color = subgraph
+                .style
+                .text_color
+                .as_ref()
+                .unwrap_or(&theme.primary_text_color);
+            svg.push_str(&text_block_svg(
+                label_x,
+                label_y,
+                &subgraph.label_block,
+                theme,
+                config,
+                false,
+                Some(label_color),
+            ));
+        }
+    }
+
+    for frame in &layout.sequence_frames {
+        let stroke = theme.primary_border_color.as_str();
         svg.push_str(&format!(
-            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"10\" ry=\"10\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{} />",
-            subgraph.x,
-            subgraph.y,
-            subgraph.width,
-            subgraph.height,
-            sub_fill,
-            sub_stroke,
-            sub_stroke_width,
-            sub_dash
+            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"none\" stroke=\"{}\" stroke-width=\"2.0\" stroke-dasharray=\"2 2\"/>",
+            frame.x, frame.y, frame.width, frame.height, stroke
         ));
-        let label_x = subgraph.x + subgraph.width / 2.0;
-        let label_y = subgraph.y + 12.0 + subgraph.label_block.height / 2.0;
-        let label_color = subgraph
-            .style
-            .text_color
-            .as_ref()
-            .unwrap_or(&theme.primary_text_color);
+        for divider_y in &frame.dividers {
+            svg.push_str(&format!(
+                "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" stroke-width=\"1.4\" stroke-dasharray=\"3 3\"/>",
+                frame.x,
+                divider_y,
+                frame.x + frame.width,
+                divider_y,
+                stroke
+            ));
+        }
+        let (box_x, box_y, box_w, box_h) = frame.label_box;
+        let notch_x = box_x + box_w * 0.8;
+        let notch_y = box_y + box_h;
+        let mid_y = box_y + box_h * 0.65;
+        svg.push_str(&format!(
+            "<polygon points=\"{box_x:.2},{box_y:.2} {end_x:.2},{box_y:.2} {end_x:.2},{mid_y:.2} {notch_x:.2},{notch_y:.2} {box_x:.2},{notch_y:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1.1\"/>",
+            theme.primary_color,
+            stroke,
+            end_x = box_x + box_w,
+            mid_y = mid_y,
+            notch_x = notch_x,
+            notch_y = notch_y
+        ));
         svg.push_str(&text_block_svg(
-            label_x,
-            label_y,
-            &subgraph.label_block,
+            frame.label.x,
+            frame.label.y,
+            &frame.label.text,
             theme,
             config,
             false,
-            Some(label_color),
+            None,
         ));
+        for label in &frame.section_labels {
+            svg.push_str(&text_block_svg(
+                label.x,
+                label.y,
+                &label.text,
+                theme,
+                config,
+                false,
+                None,
+            ));
+        }
     }
 
     for lifeline in &layout.lifelines {
         svg.push_str(&format!(
-            "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" stroke-width=\"1.1\" stroke-dasharray=\"4 6\" opacity=\"0.6\" stroke-linecap=\"round\"/>",
+            "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" stroke-width=\"0.5\"/>",
             lifeline.x,
             lifeline.y1,
             lifeline.x,
             lifeline.y2,
-            theme.line_color
+            theme.primary_border_color
         ));
     }
 
-    let label_positions =
-        compute_edge_label_positions(&layout.edges, &layout.nodes, &layout.subgraphs);
+    if is_sequence {
+        for edge in &layout.edges {
+            let d = points_to_path(&edge.points);
+            let mut stroke = theme.line_color.clone();
+            if let Some(color) = &edge.override_style.stroke {
+                stroke = color.clone();
+            }
+            let marker_id = color_ids.get(&stroke).copied().unwrap_or(0);
+            let marker_end = if edge.arrow_end {
+                format!("marker-end=\"url(#arrow-seq-{marker_id})\"")
+            } else {
+                String::new()
+            };
+            let marker_start = if edge.arrow_start {
+                format!("marker-start=\"url(#arrow-start-seq-{marker_id})\"")
+            } else {
+                String::new()
+            };
 
-    for (idx, edge) in layout.edges.iter().enumerate() {
-        let d = points_to_path(&edge.points);
-        let mut stroke = theme.line_color.clone();
-        let (mut dash, mut stroke_width) = match edge.style {
-            crate::ir::EdgeStyle::Solid => (String::new(), 1.4),
-            crate::ir::EdgeStyle::Dotted => ("stroke-dasharray=\"3 5\"".to_string(), 1.2),
-            crate::ir::EdgeStyle::Thick => (String::new(), 2.6),
-        };
-
-        if let Some(color) = &edge.override_style.stroke {
-            stroke = color.clone();
-        }
-        let marker_id = color_ids.get(&stroke).copied().unwrap_or(0);
-        let marker_end = if edge.arrow_end {
-            format!("marker-end=\"url(#arrow-{marker_id})\"")
-        } else {
-            String::new()
-        };
-        let marker_start = if edge.arrow_start {
-            format!("marker-start=\"url(#arrow-start-{marker_id})\"")
-        } else {
-            String::new()
-        };
-        if let Some(width) = edge.override_style.stroke_width {
-            stroke_width = width;
-        }
-        if let Some(dash_override) = &edge.override_style.dasharray {
-            dash = format!("stroke-dasharray=\"{}\"", dash_override);
-        }
-        svg.push_str(&format!(
-            "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" {} {} {} stroke-linecap=\"round\" stroke-linejoin=\"round\" />",
-            d, stroke, stroke_width, marker_end, marker_start, dash
-        ));
-
-        if let Some(point) = edge.points.first().copied()
-            && let Some(decoration) = edge.start_decoration
-        {
-            svg.push_str(&edge_decoration_svg(
-                point,
-                decoration,
-                &stroke,
-                stroke_width,
-            ));
-        }
-        if let Some(point) = edge.points.last().copied()
-            && let Some(decoration) = edge.end_decoration
-        {
-            svg.push_str(&edge_decoration_svg(
-                point,
-                decoration,
-                &stroke,
-                stroke_width,
-            ));
-        }
-
-        if let Some((x, y, label)) = label_positions.get(&idx).and_then(|v| v.clone()) {
-            let rect_x = x - label.width / 2.0 - 6.0;
-            let rect_y = y - label.height / 2.0 - 4.0;
-            let rect_w = label.width + 12.0;
-            let rect_h = label.height + 8.0;
+            let mut dash = String::new();
+            if edge.style == crate::ir::EdgeStyle::Dotted {
+                dash = "stroke-dasharray=\"3 3\"".to_string();
+            }
+            if let Some(dash_override) = &edge.override_style.dasharray {
+                dash = format!("stroke-dasharray=\"{}\"", dash_override);
+            }
+            let stroke_width = edge.override_style.stroke_width.unwrap_or(2.0);
             svg.push_str(&format!(
-                "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"6\" ry=\"6\" fill=\"{}\" fill-opacity=\"0.85\" stroke=\"{}\" stroke-opacity=\"0.35\" stroke-width=\"0.8\"/>",
-                theme.edge_label_background,
+                "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" {} {} {} />",
+                d, stroke, stroke_width, marker_end, marker_start, dash
+            ));
+
+            if let Some(point) = edge.points.first().copied()
+                && let Some(decoration) = edge.start_decoration
+            {
+                svg.push_str(&edge_decoration_svg(
+                    point,
+                    decoration,
+                    &stroke,
+                    stroke_width,
+                ));
+            }
+            if let Some(point) = edge.points.last().copied()
+                && let Some(decoration) = edge.end_decoration
+            {
+                svg.push_str(&edge_decoration_svg(
+                    point,
+                    decoration,
+                    &stroke,
+                    stroke_width,
+                ));
+            }
+
+            if let Some(label) = edge.label.as_ref() {
+                let start = edge.points.first().copied().unwrap_or((0.0, 0.0));
+                let end = edge.points.last().copied().unwrap_or(start);
+                let mid_x = (start.0 + end.0) / 2.0;
+                let line_y = start.1;
+                let label_y = line_y - theme.font_size * 0.95;
+                let label_text = label.lines.join("\n");
+                svg.push_str(&text_line_svg(
+                    mid_x,
+                    label_y,
+                    label_text.trim(),
+                    theme,
+                    edge.override_style
+                        .label_color
+                        .as_deref()
+                        .unwrap_or(theme.primary_text_color.as_str()),
+                    "middle",
+                ));
+            }
+        }
+    } else {
+        let label_positions =
+            compute_edge_label_positions(&layout.edges, &layout.nodes, &layout.subgraphs);
+
+        for (idx, edge) in layout.edges.iter().enumerate() {
+            let d = points_to_path(&edge.points);
+            let mut stroke = theme.line_color.clone();
+            let (mut dash, mut stroke_width) = match edge.style {
+                crate::ir::EdgeStyle::Solid => (String::new(), 1.4),
+                crate::ir::EdgeStyle::Dotted => ("stroke-dasharray=\"3 5\"".to_string(), 1.2),
+                crate::ir::EdgeStyle::Thick => (String::new(), 2.6),
+            };
+
+            if let Some(color) = &edge.override_style.stroke {
+                stroke = color.clone();
+            }
+            let marker_id = color_ids.get(&stroke).copied().unwrap_or(0);
+            let marker_end = if edge.arrow_end {
+                format!("marker-end=\"url(#arrow-{marker_id})\"")
+            } else {
+                String::new()
+            };
+            let marker_start = if edge.arrow_start {
+                format!("marker-start=\"url(#arrow-start-{marker_id})\"")
+            } else {
+                String::new()
+            };
+            if let Some(width) = edge.override_style.stroke_width {
+                stroke_width = width;
+            }
+            if let Some(dash_override) = &edge.override_style.dasharray {
+                dash = format!("stroke-dasharray=\"{}\"", dash_override);
+            }
+            svg.push_str(&format!(
+                "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" {} {} {} stroke-linecap=\"round\" stroke-linejoin=\"round\" />",
+                d, stroke, stroke_width, marker_end, marker_start, dash
+            ));
+
+            if let Some(point) = edge.points.first().copied()
+                && let Some(decoration) = edge.start_decoration
+            {
+                svg.push_str(&edge_decoration_svg(
+                    point,
+                    decoration,
+                    &stroke,
+                    stroke_width,
+                ));
+            }
+            if let Some(point) = edge.points.last().copied()
+                && let Some(decoration) = edge.end_decoration
+            {
+                svg.push_str(&edge_decoration_svg(
+                    point,
+                    decoration,
+                    &stroke,
+                    stroke_width,
+                ));
+            }
+
+            if let Some((x, y, label)) = label_positions.get(&idx).and_then(|v| v.clone()) {
+                let rect_x = x - label.width / 2.0 - 6.0;
+                let rect_y = y - label.height / 2.0 - 4.0;
+                let rect_w = label.width + 12.0;
+                let rect_h = label.height + 8.0;
+                svg.push_str(&format!(
+                    "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"6\" ry=\"6\" fill=\"{}\" fill-opacity=\"0.85\" stroke=\"{}\" stroke-opacity=\"0.35\" stroke-width=\"0.8\"/>",
+                    theme.edge_label_background,
+                    theme.primary_border_color
+                ));
+                svg.push_str(&text_block_svg(
+                    x,
+                    y,
+                    &label,
+                    theme,
+                    config,
+                    true,
+                    edge.override_style.label_color.as_deref(),
+                ));
+            }
+        }
+    }
+
+    if !is_sequence {
+        for node in layout.nodes.values() {
+            if node.anchor_subgraph.is_some() {
+                continue;
+            }
+            svg.push_str(&shape_svg(node, theme));
+            svg.push_str(&divider_lines_svg(node, theme, config));
+            let center_x = node.x + node.width / 2.0;
+            let center_y = node.y + node.height / 2.0;
+            let label_svg = if node
+                .label
+                .lines
+                .iter()
+                .any(|line| is_divider_line(line))
+            {
+                text_block_svg_class(node, theme, config, node.style.text_color.as_deref())
+            } else {
+                text_block_svg(
+                    center_x,
+                    center_y,
+                    &node.label,
+                    theme,
+                    config,
+                    false,
+                    node.style.text_color.as_deref(),
+                )
+            };
+            svg.push_str(&label_svg);
+        }
+
+        for footbox in &layout.sequence_footboxes {
+            svg.push_str(&shape_svg(footbox, theme));
+            svg.push_str(&divider_lines_svg(footbox, theme, config));
+            let center_x = footbox.x + footbox.width / 2.0;
+            let center_y = footbox.y + footbox.height / 2.0;
+            let label_svg = if footbox
+                .label
+                .lines
+                .iter()
+                .any(|line| is_divider_line(line))
+            {
+                text_block_svg_class(footbox, theme, config, footbox.style.text_color.as_deref())
+            } else {
+                text_block_svg(
+                    center_x,
+                    center_y,
+                    &footbox.label,
+                    theme,
+                    config,
+                    false,
+                    footbox.style.text_color.as_deref(),
+                )
+            };
+            svg.push_str(&label_svg);
+        }
+    } else {
+        for node in layout.nodes.values() {
+            if node.anchor_subgraph.is_some() {
+                continue;
+            }
+            svg.push_str(&format!(
+                "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"3\" ry=\"3\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1.0\"/>",
+                node.x,
+                node.y,
+                node.width,
+                node.height,
+                theme.primary_color,
                 theme.primary_border_color
             ));
+            let center_x = node.x + node.width / 2.0;
+            let center_y = node.y + node.height / 2.0;
             svg.push_str(&text_block_svg(
-                x,
-                y,
-                &label,
-                theme,
-                config,
-                true,
-                edge.override_style.label_color.as_deref(),
-            ));
-        }
-    }
-
-    for node in layout.nodes.values() {
-        if node.anchor_subgraph.is_some() {
-            continue;
-        }
-        svg.push_str(&shape_svg(node, theme));
-        svg.push_str(&divider_lines_svg(node, theme, config));
-        let center_x = node.x + node.width / 2.0;
-        let center_y = node.y + node.height / 2.0;
-        let label_svg = if node
-            .label
-            .lines
-            .iter()
-            .any(|line| is_divider_line(line))
-        {
-            text_block_svg_class(node, theme, config, node.style.text_color.as_deref())
-        } else {
-            text_block_svg(
                 center_x,
                 center_y,
                 &node.label,
@@ -209,9 +410,30 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 config,
                 false,
                 node.style.text_color.as_deref(),
-            )
-        };
-        svg.push_str(&label_svg);
+            ));
+        }
+        for footbox in &layout.sequence_footboxes {
+            svg.push_str(&format!(
+                "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"3\" ry=\"3\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1.0\"/>",
+                footbox.x,
+                footbox.y,
+                footbox.width,
+                footbox.height,
+                theme.primary_color,
+                theme.primary_border_color
+            ));
+            let center_x = footbox.x + footbox.width / 2.0;
+            let center_y = footbox.y + footbox.height / 2.0;
+            svg.push_str(&text_block_svg(
+                center_x,
+                center_y,
+                &footbox.label,
+                theme,
+                config,
+                false,
+                footbox.style.text_color.as_deref(),
+            ));
+        }
     }
 
     svg.push_str("</svg>");
@@ -269,6 +491,16 @@ fn text_block_svg(
 
     text.push_str("</text>");
     text
+}
+
+fn text_line_svg(x: f32, y: f32, text: &str, theme: &Theme, fill: &str, anchor: &str) -> String {
+    format!(
+        "<text x=\"{x:.2}\" y=\"{y:.2}\" text-anchor=\"{anchor}\" font-family=\"{}\" font-size=\"{}\" fill=\"{}\">{}</text>",
+        theme.font_family,
+        theme.font_size,
+        fill,
+        escape_xml(text)
+    )
 }
 
 fn text_block_svg_class(
@@ -737,15 +969,16 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
                 if node.shape == crate::ir::NodeShape::Circle {
                     (theme.primary_text_color.as_str(), theme.primary_text_color.as_str())
                 } else {
-                    (theme.background.as_str(), theme.primary_text_color.as_str())
+                    (theme.primary_border_color.as_str(), theme.background.as_str())
                 }
             } else {
                 (fill.as_str(), stroke.as_str())
             };
-            let stroke_width = node
-                .style
-                .stroke_width
-                .unwrap_or(if label_empty { 2.0 } else { 1.4 });
+            let stroke_width = node.style.stroke_width.unwrap_or(if label_empty {
+                2.0
+            } else {
+                1.4
+            });
             let cx = x + w / 2.0;
             let cy = y + h / 2.0;
             let r = (w.min(h)) / 2.0;
@@ -762,18 +995,19 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
                 let r2 = r - 4.0;
                 if r2 > 0.0 {
                     let inner_fill = if label_empty {
-                        theme.primary_text_color.as_str()
+                        theme.background.as_str()
                     } else {
                         "none"
                     };
                     let inner_stroke = if label_empty {
-                        theme.primary_text_color.as_str()
+                        theme.background.as_str()
                     } else {
                         circle_stroke
                     };
+                    let inner_stroke_width = if label_empty { 1.2 } else { 1.0 };
                     svg.push_str(&format!(
-                        "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1.0\"{join}/>",
-                        cx, cy, r2, inner_fill, inner_stroke
+                        "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{join}/>",
+                        cx, cy, r2, inner_fill, inner_stroke, inner_stroke_width
                     ));
                 }
             }

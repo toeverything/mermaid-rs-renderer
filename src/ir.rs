@@ -16,6 +16,30 @@ pub enum DiagramKind {
     Sequence,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SequenceFrameKind {
+    Alt,
+    Opt,
+    Loop,
+    Par,
+    Rect,
+}
+
+#[derive(Debug, Clone)]
+pub struct SequenceFrameSection {
+    pub label: Option<String>,
+    pub start_idx: usize,
+    pub end_idx: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct SequenceFrame {
+    pub kind: SequenceFrameKind,
+    pub sections: Vec<SequenceFrameSection>,
+    pub start_idx: usize,
+    pub end_idx: usize,
+}
+
 impl Direction {
     pub fn from_token(token: &str) -> Option<Self> {
         let upper = token.to_ascii_uppercase();
@@ -79,6 +103,7 @@ pub struct Graph {
     pub edges: Vec<Edge>,
     pub subgraphs: Vec<Subgraph>,
     pub sequence_participants: Vec<String>,
+    pub sequence_frames: Vec<SequenceFrame>,
     pub class_defs: HashMap<String, NodeStyle>,
     pub node_classes: HashMap<String, Vec<String>>,
     pub node_styles: HashMap<String, NodeStyle>,
@@ -116,6 +141,7 @@ impl Graph {
             edges: Vec::new(),
             subgraphs: Vec::new(),
             sequence_participants: Vec::new(),
+            sequence_frames: Vec::new(),
             class_defs: HashMap::new(),
             node_classes: HashMap::new(),
             node_styles: HashMap::new(),

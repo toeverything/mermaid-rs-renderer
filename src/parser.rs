@@ -1,8 +1,8 @@
-use crate::ir::{DiagramKind, Direction, Graph, Subgraph};
+use crate::ir::{DiagramKind, Direction, Graph, NodeStyle, Subgraph};
 use anyhow::Result;
 use once_cell::sync::Lazy;
 use regex::Regex;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 type NodeTokenParts = (
     String,
@@ -396,6 +396,9 @@ fn parse_state_alias_line(line: &str) -> Option<(String, String)> {
     if !trimmed.starts_with("state ") {
         return None;
     }
+    if trimmed.contains('{') {
+        return None;
+    }
     let rest = trimmed.trim_start_matches("state ").trim();
     if !rest.starts_with('"') {
         return None;
@@ -477,6 +480,9 @@ fn parse_state_simple(line: &str) -> Option<String> {
     if !trimmed.starts_with("state ") {
         return None;
     }
+    if trimmed.contains('{') {
+        return None;
+    }
     let mut rest = trimmed.trim_start_matches("state ").trim();
     if rest.to_ascii_lowercase().contains(" as ") {
         return None;
@@ -488,6 +494,50 @@ fn parse_state_simple(line: &str) -> Option<String> {
         return None;
     }
     Some(strip_quotes(rest))
+}
+
+fn parse_state_container_header(line: &str) -> Option<(Option<String>, String, String)> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with("state ") {
+        return None;
+    }
+    let brace_idx = trimmed.find('{')?;
+    let head = trimmed[..brace_idx].trim();
+    let tail = trimmed[brace_idx + 1..].trim().to_string();
+
+    let rest = head.trim_start_matches("state ").trim();
+    if rest.is_empty() {
+        return None;
+    }
+
+    if rest.starts_with('"') {
+        let end_quote = rest[1..].find('"')? + 1;
+        let label = rest[1..end_quote].to_string();
+        let remaining = rest[end_quote + 1..].trim();
+        if remaining.to_ascii_lowercase().starts_with("as ") {
+            let id = remaining[3..].trim();
+            if id.is_empty() {
+                return None;
+            }
+            return Some((Some(id.to_string()), label, tail));
+        }
+        return Some((None, label, tail));
+    }
+
+    let lower = rest.to_ascii_lowercase();
+    if let Some(as_idx) = lower.find(" as ") {
+        let id_part = rest[..as_idx].trim();
+        let label_part = rest[as_idx + 4..].trim();
+        if id_part.is_empty() || label_part.is_empty() {
+            return None;
+        }
+        let id = strip_quotes(id_part);
+        let label = strip_quotes(label_part);
+        return Some((Some(id), label, tail));
+    }
+
+    let id = strip_quotes(rest);
+    Some((Some(id.clone()), id, tail))
 }
 
 fn parse_sequence_participant(line: &str) -> Option<(String, Option<String>)> {
@@ -713,58 +763,187 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
 
     let mut labels: HashMap<String, String> = HashMap::new();
     let mut special_counter: usize = 0;
+    let mut subgraph_stack: Vec<usize> = Vec::new();
+    let mut region_counter: usize = 0;
 
-    for raw_line in lines {
-        let line = raw_line.trim();
-        if line.is_empty() {
-            continue;
+    #[derive(Debug)]
+    struct CompositeContext {
+        subgraph_idx: usize,
+        regions: Vec<Vec<String>>,
+        current_region: usize,
+        has_separator: bool,
+    }
+
+    let mut composite_stack: Vec<CompositeContext> = Vec::new();
+    let mut pending: VecDeque<String> = lines.into();
+
+    let record_region_node = |stack: &mut [CompositeContext], node_id: &str| {
+        for ctx in stack.iter_mut() {
+            if ctx
+                .regions
+                .iter()
+                .any(|region| region.iter().any(|id| id == node_id))
+            {
+                continue;
+            }
+            let region = &mut ctx.regions[ctx.current_region];
+            region.push(node_id.to_string());
         }
-        let lower = line.to_ascii_lowercase();
-        if lower.starts_with("statediagram") {
-            continue;
+    };
+
+    let finalize_regions = |ctx: CompositeContext,
+                            graph: &mut Graph,
+                            region_counter: &mut usize| {
+        if !ctx.has_separator {
+            return;
         }
-
-        if let Some((id, label)) = parse_state_alias_line(line) {
-            labels.insert(id.clone(), label);
-            graph.ensure_node(
-                &id,
-                labels.get(&id).cloned(),
-                Some(crate::ir::NodeShape::RoundRect),
-            );
-            continue;
+        let mut regions: Vec<Vec<String>> = ctx
+            .regions
+            .into_iter()
+            .filter(|region| !region.is_empty())
+            .collect();
+        if regions.len() <= 1 {
+            return;
         }
-
-        if let Some((left, meta, right, label)) = parse_state_transition(line) {
-            let (left_id, left_shape, left_label_override) =
-                normalize_state_token(&left, true, &mut special_counter);
-            let (right_id, right_shape, right_label_override) =
-                normalize_state_token(&right, false, &mut special_counter);
-
-            let left_label = left_label_override.or_else(|| labels.get(&left_id).cloned());
-            let right_label = right_label_override.or_else(|| labels.get(&right_id).cloned());
-            graph.ensure_node(&left_id, left_label, Some(left_shape));
-            graph.ensure_node(&right_id, right_label, Some(right_shape));
-            graph.edges.push(crate::ir::Edge {
-                from: left_id,
-                to: right_id,
-                label,
-                directed: meta.directed,
-                arrow_start: meta.arrow_start,
-                arrow_end: meta.arrow_end,
-                start_decoration: meta.start_decoration,
-                end_decoration: meta.end_decoration,
-                style: meta.style,
+        for region_nodes in regions.drain(..) {
+            let id = format!("__region_{}__", *region_counter);
+            *region_counter += 1;
+            graph.subgraphs.push(Subgraph {
+                id: Some(id.clone()),
+                label: String::new(),
+                nodes: region_nodes,
+                direction: None,
             });
-            continue;
-        }
-
-        if let Some(id) = parse_state_simple(line) {
-            graph.ensure_node(
-                &id,
-                labels.get(&id).cloned(),
-                Some(crate::ir::NodeShape::RoundRect),
+            graph.subgraph_styles.insert(
+                id,
+                NodeStyle {
+                    fill: Some("none".to_string()),
+                    stroke: Some("none".to_string()),
+                    text_color: None,
+                    stroke_width: Some(0.0),
+                    stroke_dasharray: None,
+                },
             );
-            continue;
+        }
+    };
+    while let Some(raw_line) = pending.pop_front() {
+        for raw_statement in split_statements(&raw_line) {
+            let line = raw_statement.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let lower = line.to_ascii_lowercase();
+            if lower.starts_with("statediagram") {
+                continue;
+            }
+
+            if line == "}" {
+                if let Some(ctx) = composite_stack.pop() {
+                    if let Some(idx) = subgraph_stack.pop() {
+                        if idx != ctx.subgraph_idx {
+                            subgraph_stack.push(idx);
+                        }
+                    }
+                    finalize_regions(ctx, &mut graph, &mut region_counter);
+                }
+                continue;
+            }
+
+            if line == "--" {
+                if let Some(ctx) = composite_stack.last_mut() {
+                    ctx.has_separator = true;
+                    ctx.regions.push(Vec::new());
+                    ctx.current_region = ctx.regions.len().saturating_sub(1);
+                }
+                continue;
+            }
+
+            if let Some((id, label, tail)) = parse_state_container_header(line) {
+                if let Some(id) = id.clone() {
+                    labels.insert(id.clone(), label.clone());
+                }
+                graph.subgraphs.push(Subgraph {
+                    id: id.clone(),
+                    label: label.clone(),
+                    nodes: Vec::new(),
+                    direction: None,
+                });
+                subgraph_stack.push(graph.subgraphs.len() - 1);
+                composite_stack.push(CompositeContext {
+                    subgraph_idx: graph.subgraphs.len() - 1,
+                    regions: vec![Vec::new()],
+                    current_region: 0,
+                    has_separator: false,
+                });
+
+                if !tail.is_empty() {
+                    if let Some(close_idx) = tail.find('}') {
+                        let body = tail[..close_idx].trim();
+                        let after = tail[close_idx + 1..].trim();
+                        if !after.is_empty() {
+                            pending.push_front(after.to_string());
+                        }
+                        pending.push_front("}".to_string());
+                        if !body.is_empty() {
+                            pending.push_front(body.to_string());
+                        }
+                    } else {
+                        pending.push_front(tail);
+                    }
+                }
+                continue;
+            }
+
+            if let Some((id, label)) = parse_state_alias_line(line) {
+                labels.insert(id.clone(), label);
+                graph.ensure_node(
+                    &id,
+                    labels.get(&id).cloned(),
+                    Some(crate::ir::NodeShape::RoundRect),
+                );
+                add_node_to_subgraphs(&mut graph, &subgraph_stack, &id);
+                record_region_node(&mut composite_stack, &id);
+                continue;
+            }
+
+            if let Some((left, meta, right, label)) = parse_state_transition(line) {
+                let (left_id, left_shape, left_label_override) =
+                    normalize_state_token(&left, true, &mut special_counter);
+                let (right_id, right_shape, right_label_override) =
+                    normalize_state_token(&right, false, &mut special_counter);
+
+                let left_label = left_label_override.or_else(|| labels.get(&left_id).cloned());
+                let right_label = right_label_override.or_else(|| labels.get(&right_id).cloned());
+                graph.ensure_node(&left_id, left_label, Some(left_shape));
+                graph.ensure_node(&right_id, right_label, Some(right_shape));
+                add_node_to_subgraphs(&mut graph, &subgraph_stack, &left_id);
+                add_node_to_subgraphs(&mut graph, &subgraph_stack, &right_id);
+                record_region_node(&mut composite_stack, &left_id);
+                record_region_node(&mut composite_stack, &right_id);
+                graph.edges.push(crate::ir::Edge {
+                    from: left_id,
+                    to: right_id,
+                    label,
+                    directed: meta.directed,
+                    arrow_start: meta.arrow_start,
+                    arrow_end: meta.arrow_end,
+                    start_decoration: meta.start_decoration,
+                    end_decoration: meta.end_decoration,
+                    style: meta.style,
+                });
+                continue;
+            }
+
+            if let Some(id) = parse_state_simple(line) {
+                graph.ensure_node(
+                    &id,
+                    labels.get(&id).cloned(),
+                    Some(crate::ir::NodeShape::RoundRect),
+                );
+                add_node_to_subgraphs(&mut graph, &subgraph_stack, &id);
+                record_region_node(&mut composite_stack, &id);
+                continue;
+            }
         }
     }
 
@@ -779,6 +958,8 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
 
     let mut labels: HashMap<String, String> = HashMap::new();
     let mut order: Vec<String> = Vec::new();
+    let mut open_frames: Vec<crate::ir::SequenceFrame> = Vec::new();
+    let mut frames: Vec<crate::ir::SequenceFrame> = Vec::new();
 
     for raw_line in lines {
         let line = raw_line.trim();
@@ -801,6 +982,81 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
                 labels.get(&id).cloned(),
                 Some(crate::ir::NodeShape::RoundRect),
             );
+            continue;
+        }
+
+        if lower == "alt"
+            || lower.starts_with("alt ")
+            || lower == "opt"
+            || lower.starts_with("opt ")
+            || lower == "loop"
+            || lower.starts_with("loop ")
+            || lower == "par"
+            || lower.starts_with("par ")
+            || lower == "rect"
+            || lower.starts_with("rect ")
+        {
+            let (kind, offset) = if lower.starts_with("opt") {
+                (crate::ir::SequenceFrameKind::Opt, 3)
+            } else if lower.starts_with("loop") {
+                (crate::ir::SequenceFrameKind::Loop, 4)
+            } else if lower.starts_with("par") {
+                (crate::ir::SequenceFrameKind::Par, 3)
+            } else if lower.starts_with("rect") {
+                (crate::ir::SequenceFrameKind::Rect, 4)
+            } else {
+                (crate::ir::SequenceFrameKind::Alt, 3)
+            };
+            let label = line.get(offset..).map(str::trim).unwrap_or_default();
+            let label = if label.is_empty() {
+                None
+            } else {
+                Some(strip_quotes(label))
+            };
+            let start_idx = graph.edges.len();
+            open_frames.push(crate::ir::SequenceFrame {
+                kind,
+                sections: vec![crate::ir::SequenceFrameSection {
+                    label,
+                    start_idx,
+                    end_idx: start_idx,
+                }],
+                start_idx,
+                end_idx: start_idx,
+            });
+            continue;
+        }
+
+        if lower == "else" || lower.starts_with("else ") {
+            if let Some(frame) = open_frames.last_mut() {
+                let split_idx = graph.edges.len();
+                if let Some(last) = frame.sections.last_mut() {
+                    last.end_idx = split_idx;
+                }
+                let label = line.get(4..).map(str::trim).unwrap_or_default();
+                let label = if label.is_empty() {
+                    None
+                } else {
+                    Some(strip_quotes(label))
+                };
+                frame.sections.push(crate::ir::SequenceFrameSection {
+                    label,
+                    start_idx: split_idx,
+                    end_idx: split_idx,
+                });
+            }
+            continue;
+        }
+
+        if lower == "end" {
+            if let Some(mut frame) = open_frames.pop() {
+                let end_idx = graph.edges.len();
+                if let Some(last) = frame.sections.last_mut() {
+                    last.end_idx = end_idx;
+                }
+                frame.end_idx = end_idx;
+                frames.push(frame);
+            }
             continue;
         }
 
@@ -843,7 +1099,17 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
         }
     }
 
+    while let Some(mut frame) = open_frames.pop() {
+        let end_idx = graph.edges.len();
+        if let Some(last) = frame.sections.last_mut() {
+            last.end_idx = end_idx;
+        }
+        frame.end_idx = end_idx;
+        frames.push(frame);
+    }
+
     graph.sequence_participants = order;
+    graph.sequence_frames = frames;
     Ok(ParseOutput { graph, init_config })
 }
 
@@ -1723,6 +1989,23 @@ mod tests {
         assert_eq!(parsed.graph.sequence_participants[1], "Bob");
         assert_eq!(parsed.graph.edges.len(), 2);
         assert_eq!(parsed.graph.edges[1].style, crate::ir::EdgeStyle::Dotted);
+    }
+
+    #[test]
+    fn parse_sequence_alt_sections() {
+        let input = "sequenceDiagram\nA->>B: req\nalt ok\nB-->>A: yes\nelse bad\nB-->>A: no\nend";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::Sequence);
+        assert_eq!(parsed.graph.edges.len(), 3);
+        assert_eq!(parsed.graph.sequence_frames.len(), 1);
+        let frame = &parsed.graph.sequence_frames[0];
+        assert_eq!(frame.sections.len(), 2);
+        assert_eq!(frame.sections[0].label.as_deref(), Some("ok"));
+        assert_eq!(frame.sections[0].start_idx, 1);
+        assert_eq!(frame.sections[0].end_idx, 2);
+        assert_eq!(frame.sections[1].label.as_deref(), Some("bad"));
+        assert_eq!(frame.sections[1].start_idx, 2);
+        assert_eq!(frame.sections[1].end_idx, 3);
     }
 
     #[test]
