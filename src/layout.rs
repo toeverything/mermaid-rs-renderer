@@ -578,10 +578,23 @@ fn apply_subgraph_bands(
     }
 
     // Order groups by their current position to minimize crossing shifts.
+    // Keep the non-subgraph group first to bias subgraphs after the main flow.
     if is_horizontal(graph.direction) {
-        groups.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
+        groups.sort_by(|a, b| {
+            let a_primary = if a.0 == 0 { 0 } else { 1 };
+            let b_primary = if b.0 == 0 { 0 } else { 1 };
+            a_primary
+                .cmp(&b_primary)
+                .then_with(|| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
+        });
     } else {
-        groups.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        groups.sort_by(|a, b| {
+            let a_primary = if a.0 == 0 { 0 } else { 1 };
+            let b_primary = if b.0 == 0 { 0 } else { 1 };
+            a_primary
+                .cmp(&b_primary)
+                .then_with(|| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        });
     }
 
     let spacing = config.rank_spacing * 0.8;
