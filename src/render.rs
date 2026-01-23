@@ -188,15 +188,25 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         svg.push_str(&divider_lines_svg(node, theme, config));
         let center_x = node.x + node.width / 2.0;
         let center_y = node.y + node.height / 2.0;
-        svg.push_str(&text_block_svg(
-            center_x,
-            center_y,
-            &node.label,
-            theme,
-            config,
-            false,
-            node.style.text_color.as_deref(),
-        ));
+        let label_svg = if node
+            .label
+            .lines
+            .iter()
+            .any(|line| is_divider_line(line))
+        {
+            text_block_svg_class(node, theme, config, node.style.text_color.as_deref())
+        } else {
+            text_block_svg(
+                center_x,
+                center_y,
+                &node.label,
+                theme,
+                config,
+                false,
+                node.style.text_color.as_deref(),
+            )
+        };
+        svg.push_str(&label_svg);
     }
 
     svg.push_str("</svg>");
@@ -287,6 +297,127 @@ fn text_block_svg_left(
         ));
     }
 
+    text.push_str("</text>");
+    text
+}
+
+fn text_block_svg_class(
+    node: &crate::layout::NodeLayout,
+    theme: &Theme,
+    config: &LayoutConfig,
+    override_color: Option<&str>,
+) -> String {
+    let line_height = theme.font_size * config.label_line_height;
+    let total_height = node.label.lines.len() as f32 * line_height;
+    let start_y = node.y + node.height / 2.0 - total_height / 2.0 + theme.font_size;
+    let center_x = node.x + node.width / 2.0;
+    let left_x = node.x + config.node_padding_x.max(10.0);
+    let fill = override_color.unwrap_or(theme.primary_text_color.as_str());
+
+    let Some(divider_idx) = node
+        .label
+        .lines
+        .iter()
+        .position(|line| is_divider_line(line))
+    else {
+        return text_block_svg(
+            center_x,
+            node.y + node.height / 2.0,
+            &node.label,
+            theme,
+            config,
+            false,
+            override_color,
+        );
+    };
+
+    let mut title_lines: Vec<(usize, &str)> = Vec::new();
+    for (idx, line) in node.label.lines.iter().enumerate().take(divider_idx) {
+        if !line.trim().is_empty() {
+            title_lines.push((idx, line.as_str()));
+        }
+    }
+    let mut member_lines: Vec<(usize, &str)> = Vec::new();
+    for (idx, line) in node
+        .label
+        .lines
+        .iter()
+        .enumerate()
+        .skip(divider_idx + 1)
+    {
+        if !line.trim().is_empty() {
+            member_lines.push((idx, line.as_str()));
+        }
+    }
+
+    let mut svg = String::new();
+    if !title_lines.is_empty() {
+        svg.push_str(&text_lines_svg(
+            &title_lines,
+            center_x,
+            start_y,
+            line_height,
+            "middle",
+            theme,
+            fill,
+            true,
+        ));
+    }
+    if !member_lines.is_empty() {
+        svg.push_str(&text_lines_svg(
+            &member_lines,
+            left_x,
+            start_y,
+            line_height,
+            "start",
+            theme,
+            fill,
+            false,
+        ));
+    }
+    svg
+}
+
+fn text_lines_svg(
+    lines: &[(usize, &str)],
+    x: f32,
+    start_y: f32,
+    line_height: f32,
+    anchor: &str,
+    theme: &Theme,
+    fill: &str,
+    bold_first: bool,
+) -> String {
+    let Some((first_idx, _)) = lines.first() else {
+        return String::new();
+    };
+    let first_y = start_y + *first_idx as f32 * line_height;
+    let mut text = String::new();
+    text.push_str(&format!(
+        "<text x=\"{x:.2}\" y=\"{first_y:.2}\" text-anchor=\"{anchor}\" font-family=\"{}\" font-size=\"{}\" fill=\"{}\">",
+        theme.font_family,
+        theme.font_size,
+        fill
+    ));
+
+    let mut prev_idx = *first_idx;
+    for (pos, (idx, line)) in lines.iter().enumerate() {
+        let dy = if pos == 0 {
+            0.0
+        } else {
+            (*idx - prev_idx) as f32 * line_height
+        };
+        let weight = if pos == 0 && bold_first {
+            " font-weight=\"600\""
+        } else {
+            ""
+        };
+        text.push_str(&format!(
+            "<tspan x=\"{x:.2}\" dy=\"{dy:.2}\"{weight}>{}</tspan>",
+            escape_xml(line)
+        ));
+        prev_idx = *idx;
+    }
     text.push_str("</text>");
     text
 }
