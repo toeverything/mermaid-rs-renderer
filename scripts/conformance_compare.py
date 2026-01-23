@@ -22,14 +22,28 @@ def run(cmd):
     return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
 
+def pick_rust_binary() -> Path:
+    primary = ROOT / "target" / "release" / "mmdr"
+    fallback = ROOT / "target" / "release" / "mermaid-rs-renderer"
+    if primary.exists():
+        return primary
+    if fallback.exists():
+        return fallback
+    return primary
+
+
 def render_rust(input_path: Path, output_path: Path, config_path: Path | None):
-    bin_path = ROOT / "target" / "release" / "mermaid-rs-renderer"
+    bin_path = pick_rust_binary()
     if not bin_path.exists():
         print("Building release binary...", file=sys.stderr)
-        res = run(["cargo", "build", "--release"])
+        if bin_path.name == "mmdr":
+            res = run(["cargo", "build", "--release", "--bin", "mmdr"])
+        else:
+            res = run(["cargo", "build", "--release"])
         if res.returncode != 0:
             print(res.stderr, file=sys.stderr)
             raise RuntimeError("cargo build failed")
+        bin_path = pick_rust_binary()
     cmd = [str(bin_path), "-i", str(input_path), "-o", str(output_path), "-e", "png"]
     if config_path and config_path.exists():
         cmd.extend(["-c", str(config_path)])
