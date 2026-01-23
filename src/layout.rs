@@ -1371,8 +1371,12 @@ fn shape_size(shape: crate::ir::NodeShape, label: &TextBlock, config: &LayoutCon
         crate::ir::NodeShape::Parallelogram
         | crate::ir::NodeShape::ParallelogramAlt
         | crate::ir::NodeShape::Trapezoid
-        | crate::ir::NodeShape::TrapezoidAlt => {
+        | crate::ir::NodeShape::TrapezoidAlt
+        | crate::ir::NodeShape::Asymmetric => {
             width *= 1.2;
+        }
+        crate::ir::NodeShape::Subroutine => {
+            width *= 1.1;
         }
         _ => {}
     }

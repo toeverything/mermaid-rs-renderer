@@ -795,16 +795,68 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
             stroke,
             node.style.stroke_width.unwrap_or(1.4)
         ),
-        crate::ir::NodeShape::Cylinder => format!(
-            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"12\" ry=\"12\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",
-            x,
-            y,
-            w,
-            h,
-            fill,
-            stroke,
-            node.style.stroke_width.unwrap_or(1.4)
-        ),
+        crate::ir::NodeShape::Cylinder => {
+            let stroke_width = node.style.stroke_width.unwrap_or(1.4);
+            let cx = x + w / 2.0;
+            let ry = (h * 0.12).clamp(6.0, 14.0);
+            let rx = w / 2.0;
+            let mut svg = String::new();
+            svg.push_str(&format!(
+                "<ellipse cx=\"{:.2}\" cy=\"{:.2}\" rx=\"{:.2}\" ry=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",
+                cx,
+                y + ry,
+                rx,
+                ry,
+                fill,
+                stroke,
+                stroke_width
+            ));
+            svg.push_str(&format!(
+                "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",
+                x,
+                y + ry,
+                w,
+                (h - 2.0 * ry).max(0.0),
+                fill,
+                stroke,
+                stroke_width
+            ));
+            svg.push_str(&format!(
+                "<ellipse cx=\"{:.2}\" cy=\"{:.2}\" rx=\"{:.2}\" ry=\"{:.2}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",
+                cx,
+                y + h - ry,
+                rx,
+                ry,
+                stroke,
+                stroke_width
+            ));
+            svg
+        }
+        crate::ir::NodeShape::Subroutine => {
+            let stroke_width = node.style.stroke_width.unwrap_or(1.4);
+            let inset = 6.0;
+            let mut svg = format!(
+                "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"6\" ry=\"6\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",
+                x,
+                y,
+                w,
+                h,
+                fill,
+                stroke,
+                stroke_width
+            );
+            let y1 = y + 2.0;
+            let y2 = y + h - 2.0;
+            let x1 = x + inset;
+            let x2 = x + w - inset;
+            svg.push_str(&format!(
+                "<line x1=\"{x1:.2}\" y1=\"{y1:.2}\" x2=\"{x1:.2}\" y2=\"{y2:.2}\" stroke=\"{stroke}\" stroke-width=\"{stroke_width}\"{join}/>"
+            ));
+            svg.push_str(&format!(
+                "<line x1=\"{x2:.2}\" y1=\"{y1:.2}\" x2=\"{x2:.2}\" y2=\"{y2:.2}\" stroke=\"{stroke}\" stroke-width=\"{stroke_width}\"{join}/>"
+            ));
+            svg
+        }
         crate::ir::NodeShape::Hexagon => {
             let x1 = x + w * 0.25;
             let x2 = x + w * 0.75;
@@ -881,6 +933,29 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
             let points = format!(
                 "{:.2},{:.2} {:.2},{:.2} {:.2},{:.2} {:.2},{:.2}",
                 p1.0, p1.1, p2.0, p2.1, p3.0, p3.1, p4.0, p4.1
+            );
+            format!(
+                "<polygon points=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",
+                points,
+                fill,
+                stroke,
+                node.style.stroke_width.unwrap_or(1.4)
+            )
+        }
+        crate::ir::NodeShape::Asymmetric => {
+            let slant = w * 0.22;
+            let points = format!(
+                "{:.2},{:.2} {:.2},{:.2} {:.2},{:.2} {:.2},{:.2} {:.2},{:.2}",
+                x,
+                y,
+                x + w - slant,
+                y,
+                x + w,
+                y + h / 2.0,
+                x + w - slant,
+                y + h,
+                x,
+                y + h
             );
             format!(
                 "<polygon points=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",

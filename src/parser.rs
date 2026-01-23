@@ -679,9 +679,25 @@ fn parse_class_diagram(input: &str) -> Result<ParseOutput> {
         if let Some(items) = members.get(id)
             && !items.is_empty()
         {
-            lines.push("---".to_string());
+            let mut attrs = Vec::new();
+            let mut methods = Vec::new();
             for entry in items {
-                lines.push(entry.trim().to_string());
+                let trimmed = entry.trim();
+                if trimmed.contains('(') && trimmed.contains(')') {
+                    methods.push(trimmed.to_string());
+                } else {
+                    attrs.push(trimmed.to_string());
+                }
+            }
+            lines.push("---".to_string());
+            if !attrs.is_empty() {
+                lines.extend(attrs);
+                if !methods.is_empty() {
+                    lines.push("---".to_string());
+                    lines.extend(methods);
+                }
+            } else {
+                lines.extend(methods);
             }
         }
         node.label = lines.join("\n");
@@ -1315,12 +1331,41 @@ fn parse_node_token(
 ) {
     let (base, classes) = split_inline_classes(token);
     let trimmed = base.trim();
+    if let Some((id, label, shape)) = split_asymmetric_label(trimmed) {
+        return (id, Some(label), Some(shape), classes);
+    }
     if let Some((id, label, shape)) = split_id_label(trimmed) {
         return (id.to_string(), Some(label), Some(shape), classes);
     }
 
     let id = trimmed.split_whitespace().next().unwrap_or("").to_string();
     (id, None, None, classes)
+}
+
+fn split_asymmetric_label(token: &str) -> Option<(String, String, crate::ir::NodeShape)> {
+    let trimmed = token.trim();
+    if trimmed.contains('[') {
+        return None;
+    }
+    let Some(pos) = trimmed.find('>') else {
+        return None;
+    };
+    if !trimmed.ends_with(']') {
+        return None;
+    }
+    let id = trimmed[..pos].trim();
+    if id.is_empty() {
+        return None;
+    }
+    let label = trimmed[pos + 1..trimmed.len() - 1].trim();
+    if label.is_empty() {
+        return None;
+    }
+    Some((
+        id.to_string(),
+        strip_quotes(label),
+        crate::ir::NodeShape::Asymmetric,
+    ))
 }
 
 fn split_inline_classes(token: &str) -> (String, Vec<String>) {
@@ -1423,6 +1468,12 @@ fn parse_shape_from_brackets(raw: &str) -> (String, crate::ir::NodeShape) {
 
 fn parse_shape_from_parens(raw: &str) -> (String, crate::ir::NodeShape) {
     let trimmed = raw.trim();
+    if trimmed.starts_with("(((") && trimmed.ends_with(")))") {
+        return (
+            strip_quotes(&trimmed[3..trimmed.len() - 3]),
+            crate::ir::NodeShape::DoubleCircle,
+        );
+    }
     if trimmed.starts_with("((") && trimmed.ends_with("))") {
         return (
             strip_quotes(&trimmed[2..trimmed.len() - 2]),
