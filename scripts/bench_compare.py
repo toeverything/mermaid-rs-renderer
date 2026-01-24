@@ -28,6 +28,9 @@ CASES = [
     ("flowchart_small", FIXTURES / "flowchart_small.mmd"),
     ("flowchart_medium", FIXTURES / "flowchart_medium.mmd"),
     ("flowchart_large", FIXTURES / "flowchart_large.mmd"),
+    ("class_medium", FIXTURES / "class_medium.mmd"),
+    ("state_medium", FIXTURES / "state_medium.mmd"),
+    ("sequence_medium", FIXTURES / "sequence_medium.mmd"),
 ]
 
 
