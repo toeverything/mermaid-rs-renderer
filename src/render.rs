@@ -48,11 +48,13 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         ));
         if is_sequence {
             svg.push_str(&format!(
-                "<marker id=\"arrow-seq-{idx}\" viewBox=\"-1 0 12 10\" refX=\"7.9\" refY=\"5\" markerUnits=\"userSpaceOnUse\" markerWidth=\"12\" markerHeight=\"12\" orient=\"auto-start-reverse\"><path d=\"M 0 0 L 10 5 L 0 10\" fill=\"none\" stroke=\"{}\" stroke-linejoin=\"round\"/></marker>",
+                "<marker id=\"arrow-seq-{idx}\" viewBox=\"-1 0 12 10\" refX=\"7.9\" refY=\"5\" markerUnits=\"userSpaceOnUse\" markerWidth=\"12\" markerHeight=\"12\" orient=\"auto-start-reverse\"><path d=\"M -1 0 L 10 5 L 0 10 z\" fill=\"{}\" stroke=\"{}\"/></marker>",
+                color,
                 color
             ));
             svg.push_str(&format!(
-                "<marker id=\"arrow-start-seq-{idx}\" viewBox=\"-1 0 12 10\" refX=\"2.1\" refY=\"5\" markerUnits=\"userSpaceOnUse\" markerWidth=\"12\" markerHeight=\"12\" orient=\"auto\"><path d=\"M 10 0 L 0 5 L 10 10\" fill=\"none\" stroke=\"{}\" stroke-linejoin=\"round\"/></marker>",
+                "<marker id=\"arrow-start-seq-{idx}\" viewBox=\"-1 0 12 10\" refX=\"2.1\" refY=\"5\" markerUnits=\"userSpaceOnUse\" markerWidth=\"12\" markerHeight=\"12\" orient=\"auto\"><path d=\"M 11 0 L 0 5 L 11 10 z\" fill=\"{}\" stroke=\"{}\"/></marker>",
+                color,
                 color
             ));
         }
@@ -223,7 +225,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
 
     for lifeline in &layout.lifelines {
         svg.push_str(&format!(
-            "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" stroke-width=\"1.0\" stroke-dasharray=\"4 4\"/>",
+            "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" stroke-width=\"0.5\"/>",
             lifeline.x,
             lifeline.y1,
             lifeline.x,
@@ -233,8 +235,8 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
     }
 
     for note in &layout.sequence_notes {
-        let fill = theme.secondary_color.as_str();
-        let stroke = theme.primary_border_color.as_str();
+        let fill = theme.cluster_background.as_str();
+        let stroke = theme.cluster_border.as_str();
         let fold = (theme.font_size * 0.8)
             .max(8.0)
             .min(note.width.min(note.height) * 0.3);
@@ -1183,6 +1185,16 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
             fill,
             stroke,
             node.style.stroke_width.unwrap_or(1.4)
+        ),
+        crate::ir::NodeShape::ActorBox => format!(
+            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"3\" ry=\"3\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",
+            x,
+            y,
+            w,
+            h,
+            fill,
+            stroke,
+            node.style.stroke_width.unwrap_or(1.0)
         ),
         crate::ir::NodeShape::Diamond => {
             let cx = x + w / 2.0;

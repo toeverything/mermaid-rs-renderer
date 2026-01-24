@@ -138,6 +138,7 @@ pub enum NodeShape {
     Stadium,
     Subroutine,
     Cylinder,
+    ActorBox,
     Circle,
     DoubleCircle,
     Diamond,

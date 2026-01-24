@@ -844,7 +844,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
                 width: actor_width,
                 height: actor_height,
                 label,
-                shape: crate::ir::NodeShape::Rectangle,
+                shape: crate::ir::NodeShape::ActorBox,
                 style: resolve_node_style(id.as_str(), graph),
                 anchor_subgraph: None,
                 hidden: false,
