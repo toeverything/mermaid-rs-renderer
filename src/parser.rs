@@ -668,13 +668,24 @@ fn parse_state_container_header(line: &str) -> Option<(Option<String>, String, S
     Some((Some(id.clone()), id, tail))
 }
 
-fn parse_sequence_participant(line: &str) -> Option<(String, Option<String>)> {
+fn parse_sequence_participant(
+    line: &str,
+) -> Option<(String, Option<String>, crate::ir::NodeShape)> {
     let lowered = line.to_ascii_lowercase();
-    let keywords = ["participant ", "actor ", "entity "];
+    let keywords = [
+        ("participant ", crate::ir::NodeShape::ActorBox),
+        ("actor ", crate::ir::NodeShape::ActorBox),
+        ("boundary ", crate::ir::NodeShape::ActorBox),
+        ("control ", crate::ir::NodeShape::ActorBox),
+        ("entity ", crate::ir::NodeShape::ActorBox),
+        ("database ", crate::ir::NodeShape::Cylinder),
+    ];
     let mut rest = None;
-    for keyword in keywords {
+    let mut shape = crate::ir::NodeShape::ActorBox;
+    for (keyword, keyword_shape) in keywords {
         if lowered.starts_with(keyword) {
             rest = Some(line[keyword.len()..].trim());
+            shape = keyword_shape;
             break;
         }
     }
@@ -691,15 +702,33 @@ fn parse_sequence_participant(line: &str) -> Option<(String, Option<String>)> {
             return None;
         }
         let label = strip_quotes(label_part);
-        return Some((id_part.to_string(), Some(label)));
+        return Some((id_part.to_string(), Some(label), shape));
     }
 
     if rest.starts_with('"') && rest.ends_with('"') {
         let label = strip_quotes(rest);
-        return Some((label.clone(), Some(label)));
+        return Some((label.clone(), Some(label), shape));
     }
 
-    Some((strip_quotes(rest), None))
+    Some((strip_quotes(rest), None, shape))
+}
+
+fn ensure_sequence_node(
+    graph: &mut Graph,
+    labels: &HashMap<String, String>,
+    id: &str,
+    shape: Option<crate::ir::NodeShape>,
+) {
+    let label = labels.get(id).cloned();
+    if let Some(shape) = shape {
+        graph.ensure_node(id, label, Some(shape));
+        return;
+    }
+    if graph.nodes.contains_key(id) {
+        graph.ensure_node(id, label, None);
+    } else {
+        graph.ensure_node(id, label, Some(crate::ir::NodeShape::ActorBox));
+    }
 }
 
 fn parse_sequence_message(
@@ -1182,18 +1211,14 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
         if lower.starts_with("sequencediagram") {
             continue;
         }
-        if let Some((id, label)) = parse_sequence_participant(line) {
+        if let Some((id, label, shape)) = parse_sequence_participant(line) {
             if !order.contains(&id) {
                 order.push(id.clone());
             }
             if let Some(label) = label.clone() {
                 labels.insert(id.clone(), label);
             }
-            graph.ensure_node(
-                &id,
-                labels.get(&id).cloned(),
-                Some(crate::ir::NodeShape::RoundRect),
-            );
+            ensure_sequence_node(&mut graph, &labels, &id, Some(shape));
             continue;
         }
 
@@ -1331,11 +1356,7 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
                 if !order.contains(id) {
                     order.push(id.clone());
                 }
-                graph.ensure_node(
-                    id,
-                    labels.get(id).cloned(),
-                    Some(crate::ir::NodeShape::RoundRect),
-                );
+                ensure_sequence_node(&mut graph, &labels, id, None);
             }
             graph.sequence_notes.push(crate::ir::SequenceNote {
                 position,
@@ -1353,11 +1374,7 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
                 if !order.contains(&id) {
                     order.push(id.clone());
                 }
-                graph.ensure_node(
-                    &id,
-                    labels.get(&id).cloned(),
-                    Some(crate::ir::NodeShape::RoundRect),
-                );
+                ensure_sequence_node(&mut graph, &labels, &id, None);
                 graph.sequence_activations.push(crate::ir::SequenceActivation {
                     participant: id,
                     index: graph.edges.len(),
@@ -1373,11 +1390,7 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
                 if !order.contains(&id) {
                     order.push(id.clone());
                 }
-                graph.ensure_node(
-                    &id,
-                    labels.get(&id).cloned(),
-                    Some(crate::ir::NodeShape::RoundRect),
-                );
+                ensure_sequence_node(&mut graph, &labels, &id, None);
                 graph.sequence_activations.push(crate::ir::SequenceActivation {
                     participant: id,
                     index: graph.edges.len(),
@@ -1407,16 +1420,8 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
             if !order.contains(&to) {
                 order.push(to.clone());
             }
-            graph.ensure_node(
-                &from,
-                labels.get(&from).cloned(),
-                Some(crate::ir::NodeShape::RoundRect),
-            );
-            graph.ensure_node(
-                &to,
-                labels.get(&to).cloned(),
-                Some(crate::ir::NodeShape::RoundRect),
-            );
+            ensure_sequence_node(&mut graph, &labels, &from, None);
+            ensure_sequence_node(&mut graph, &labels, &to, None);
             graph.edges.push(crate::ir::Edge {
                 from,
                 to,
@@ -2446,6 +2451,14 @@ mod tests {
         assert_eq!(parsed.graph.sequence_participants[1], "Bob");
         assert_eq!(parsed.graph.edges.len(), 2);
         assert_eq!(parsed.graph.edges[1].style, crate::ir::EdgeStyle::Dotted);
+    }
+
+    #[test]
+    fn parse_sequence_database_participant() {
+        let input = "sequenceDiagram\ndatabase DB\nDB->>DB: ping";
+        let parsed = parse_mermaid(input).unwrap();
+        let node = parsed.graph.nodes.get("DB").unwrap();
+        assert_eq!(node.shape, crate::ir::NodeShape::Cylinder);
     }
 
     #[test]

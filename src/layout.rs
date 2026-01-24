@@ -1031,6 +1031,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
 
     let mut cursor_x = 0.0;
     for id in &participants {
+        let node = graph.nodes.get(id).expect("participant missing");
         let label = label_blocks.get(id).cloned().unwrap_or_else(|| TextBlock {
             lines: vec![id.clone()],
             width: 0.0,
@@ -1045,7 +1046,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
                 width: actor_width,
                 height: actor_height,
                 label,
-                shape: crate::ir::NodeShape::ActorBox,
+                shape: node.shape,
                 style: resolve_node_style(id.as_str(), graph),
                 link: graph.node_links.get(id).cloned(),
                 anchor_subgraph: None,
