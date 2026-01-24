@@ -330,6 +330,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     decoration,
                     &stroke,
                     stroke_width,
+                    true,
                 ));
             }
             if let Some(point) = edge.points.last().copied()
@@ -342,6 +343,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     decoration,
                     &stroke,
                     stroke_width,
+                    false,
                 ));
             }
 
@@ -445,6 +447,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     decoration,
                     &stroke,
                     stroke_width,
+                    true,
                 ));
             }
             if let Some(point) = edge.points.last().copied()
@@ -457,6 +460,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     decoration,
                     &stroke,
                     stroke_width,
+                    false,
                 ));
             }
 
@@ -1097,8 +1101,17 @@ fn edge_decoration_svg(
     decoration: crate::ir::EdgeDecoration,
     stroke: &str,
     stroke_width: f32,
+    at_start: bool,
 ) -> String {
     let (x, y) = point;
+    let mut angle = angle_deg;
+    if matches!(
+        decoration,
+        crate::ir::EdgeDecoration::Diamond | crate::ir::EdgeDecoration::DiamondFilled
+    ) && !at_start
+    {
+        angle += 180.0;
+    }
     let join = " stroke-linejoin=\"round\" stroke-linecap=\"round\"";
     let shape = match decoration {
         crate::ir::EdgeDecoration::Circle => format!(
@@ -1110,14 +1123,14 @@ fn edge_decoration_svg(
             stroke, stroke_width
         ),
         crate::ir::EdgeDecoration::Diamond => {
-            let points = "6,0 0,4 -6,0 0,-4";
+            let points = "0,0 9,6 18,0 9,-6";
             format!(
                 "<polygon points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"{join}/>",
                 points, stroke, stroke_width
             )
         }
         crate::ir::EdgeDecoration::DiamondFilled => {
-            let points = "6,0 0,4 -6,0 0,-4";
+            let points = "0,0 9,6 18,0 9,-6";
             format!(
                 "<polygon points=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{join}/>",
                 points, stroke, stroke, stroke_width
@@ -1125,7 +1138,7 @@ fn edge_decoration_svg(
         }
     };
     format!(
-        "<g transform=\"translate({x:.2} {y:.2}) rotate({angle_deg:.2})\">{shape}</g>"
+        "<g transform=\"translate({x:.2} {y:.2}) rotate({angle:.2})\">{shape}</g>"
     )
 }
 
