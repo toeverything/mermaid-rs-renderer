@@ -14,9 +14,19 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
     let is_sequence = !layout.sequence_footboxes.is_empty();
     let is_state = layout.kind == crate::ir::DiagramKind::State;
     let is_class = layout.kind == crate::ir::DiagramKind::Class;
+    let has_links = layout
+        .nodes
+        .values()
+        .any(|node| node.link.is_some())
+        || layout.sequence_footboxes.iter().any(|node| node.link.is_some());
 
     svg.push_str(&format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" viewBox=\"0 0 {width} {height}\">",
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"{} width=\"{width}\" height=\"{height}\" viewBox=\"0 0 {width} {height}\">",
+        if has_links {
+            " xmlns:xlink=\"http://www.w3.org/1999/xlink\""
+        } else {
+            ""
+        }
     ));
 
     svg.push_str(&format!(
@@ -535,6 +545,12 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             if node.anchor_subgraph.is_some() {
                 continue;
             }
+            if let Some(link) = node.link.as_ref() {
+                svg.push_str(&format!("<a {}>", link_attrs(link)));
+                if let Some(title) = link.title.as_deref() {
+                    svg.push_str(&format!("<title>{}</title>", escape_xml(title)));
+                }
+            }
             svg.push_str(&shape_svg(node, theme));
             svg.push_str(&divider_lines_svg(node, theme, config));
             let center_x = node.x + node.width / 2.0;
@@ -558,9 +574,18 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 };
                 svg.push_str(&label_svg);
             }
+            if node.link.is_some() {
+                svg.push_str("</a>");
+            }
         }
 
         for footbox in &layout.sequence_footboxes {
+            if let Some(link) = footbox.link.as_ref() {
+                svg.push_str(&format!("<a {}>", link_attrs(link)));
+                if let Some(title) = link.title.as_deref() {
+                    svg.push_str(&format!("<title>{}</title>", escape_xml(title)));
+                }
+            }
             svg.push_str(&shape_svg(footbox, theme));
             svg.push_str(&divider_lines_svg(footbox, theme, config));
             let center_x = footbox.x + footbox.width / 2.0;
@@ -593,6 +618,9 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 };
                 svg.push_str(&label_svg);
             }
+            if footbox.link.is_some() {
+                svg.push_str("</a>");
+            }
         }
     } else {
         for node in layout.nodes.values() {
@@ -601,6 +629,12 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             }
             if node.anchor_subgraph.is_some() {
                 continue;
+            }
+            if let Some(link) = node.link.as_ref() {
+                svg.push_str(&format!("<a {}>", link_attrs(link)));
+                if let Some(title) = link.title.as_deref() {
+                    svg.push_str(&format!("<title>{}</title>", escape_xml(title)));
+                }
             }
             svg.push_str(&format!(
                 "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"3\" ry=\"3\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1.0\"/>",
@@ -627,8 +661,17 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     node.style.text_color.as_deref(),
                 ));
             }
+            if node.link.is_some() {
+                svg.push_str("</a>");
+            }
         }
         for footbox in &layout.sequence_footboxes {
+            if let Some(link) = footbox.link.as_ref() {
+                svg.push_str(&format!("<a {}>", link_attrs(link)));
+                if let Some(title) = link.title.as_deref() {
+                    svg.push_str(&format!("<title>{}</title>", escape_xml(title)));
+                }
+            }
             svg.push_str(&format!(
                 "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"3\" ry=\"3\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1.0\"/>",
                 footbox.x,
@@ -657,6 +700,9 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     false,
                     footbox.style.text_color.as_deref(),
                 ));
+            }
+            if footbox.link.is_some() {
+                svg.push_str("</a>");
             }
         }
     }
@@ -1126,6 +1172,19 @@ fn escape_xml(input: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&apos;")
+}
+
+fn link_attrs(link: &crate::ir::NodeLink) -> String {
+    let url = escape_xml(&link.url);
+    let mut attrs = format!("href=\"{}\" xlink:href=\"{}\"", url, url);
+    if let Some(target) = link.target.as_deref() {
+        let target = escape_xml(target);
+        attrs.push_str(&format!(" target=\"{}\"", target));
+        if target == "_blank" {
+            attrs.push_str(" rel=\"noopener noreferrer\"");
+        }
+    }
+    attrs
 }
 
 fn edge_decoration_svg(

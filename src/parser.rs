@@ -186,9 +186,12 @@ fn parse_flowchart(input: &str) -> Result<ParseOutput> {
                 continue;
             }
 
-            if line.starts_with("click ")
-                || line.starts_with("link ")
-                || line.starts_with("accTitle")
+            if let Some((id, link)) = parse_click_line(&line) {
+                graph.node_links.insert(id, link);
+                continue;
+            }
+
+            if line.starts_with("accTitle")
                 || line.starts_with("accDescr")
                 || line.starts_with("title ")
             {
@@ -1748,6 +1751,102 @@ fn parse_link_style_line(line: &str, graph: &mut Graph) {
     }
 }
 
+fn tokenize_quoted(input: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for ch in input.chars() {
+        if escaped {
+            current.push(ch);
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if let Some(q) = quote {
+            if ch == q {
+                quote = None;
+            } else {
+                current.push(ch);
+            }
+            continue;
+        }
+        if ch == '"' || ch == '\'' {
+            quote = Some(ch);
+            continue;
+        }
+        if ch.is_whitespace() {
+            if !current.is_empty() {
+                tokens.push(current);
+                current = String::new();
+            }
+            continue;
+        }
+        current.push(ch);
+    }
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+    tokens
+}
+
+fn parse_click_line(line: &str) -> Option<(String, crate::ir::NodeLink)> {
+    let trimmed = line.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let keyword_len = if lower.starts_with("click ") {
+        5
+    } else if lower.starts_with("link ") {
+        4
+    } else {
+        return None;
+    };
+    let rest = trimmed[keyword_len..].trim();
+    let tokens = tokenize_quoted(rest);
+    if tokens.len() < 2 {
+        return None;
+    }
+    let id = tokens[0].clone();
+    let mut idx = 1usize;
+    if tokens[idx].eq_ignore_ascii_case("call") {
+        return None;
+    }
+    if tokens[idx].eq_ignore_ascii_case("href") {
+        idx += 1;
+    }
+    let url = tokens.get(idx)?.clone();
+    idx += 1;
+    let mut title = None;
+    let mut target = None;
+    if let Some(token) = tokens.get(idx) {
+        if token.starts_with('_') {
+            target = Some(token.clone());
+            idx += 1;
+        } else {
+            title = Some(token.clone());
+            idx += 1;
+        }
+    }
+    if target.is_none() {
+        if let Some(token) = tokens.get(idx) {
+            if token.starts_with('_') {
+                target = Some(token.clone());
+            }
+        }
+    }
+
+    Some((
+        id,
+        crate::ir::NodeLink {
+            url,
+            title,
+            target,
+        },
+    ))
+}
+
 fn parse_node_style(input: &str) -> crate::ir::NodeStyle {
     let mut style = crate::ir::NodeStyle::default();
     for part in input.split(',') {
@@ -2256,11 +2355,15 @@ mod tests {
     }
 
     #[test]
-    fn ignores_click_directive() {
+    fn parses_click_directive() {
         let input = "flowchart LR\nA-->B\nclick A \"https://example.com\"";
         let parsed = parse_mermaid(input).unwrap();
         assert_eq!(parsed.graph.nodes.len(), 2);
         assert_eq!(parsed.graph.edges.len(), 1);
+        let link = parsed.graph.node_links.get("A").unwrap();
+        assert_eq!(link.url, "https://example.com");
+        assert!(link.title.is_none());
+        assert!(link.target.is_none());
     }
 
     #[test]

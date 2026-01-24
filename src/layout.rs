@@ -26,6 +26,7 @@ pub struct NodeLayout {
     pub label: TextBlock,
     pub shape: crate::ir::NodeShape,
     pub style: crate::ir::NodeStyle,
+    pub link: Option<crate::ir::NodeLink>,
     pub anchor_subgraph: Option<usize>,
     pub hidden: bool,
 }
@@ -246,6 +247,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
                 label,
                 shape: node.shape,
                 style,
+                link: graph.node_links.get(&node.id).cloned(),
                 anchor_subgraph: None,
                 hidden: false,
             },
@@ -1029,6 +1031,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
                 label,
                 shape: crate::ir::NodeShape::ActorBox,
                 style: resolve_node_style(id.as_str(), graph),
+                link: graph.node_links.get(id).cloned(),
                 anchor_subgraph: None,
                 hidden: false,
             },

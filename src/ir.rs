@@ -89,6 +89,13 @@ pub struct Node {
 }
 
 #[derive(Debug, Clone)]
+pub struct NodeLink {
+    pub url: String,
+    pub title: Option<String>,
+    pub target: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub struct Edge {
     pub from: String,
     pub to: String,
@@ -150,6 +157,7 @@ pub struct Graph {
     pub node_styles: HashMap<String, NodeStyle>,
     pub subgraph_styles: HashMap<String, NodeStyle>,
     pub subgraph_classes: HashMap<String, Vec<String>>,
+    pub node_links: HashMap<String, NodeLink>,
     pub edge_styles: HashMap<usize, EdgeStyleOverride>,
     pub edge_style_default: Option<EdgeStyleOverride>,
 }
@@ -193,6 +201,7 @@ impl Graph {
             node_styles: HashMap::new(),
             subgraph_styles: HashMap::new(),
             subgraph_classes: HashMap::new(),
+            node_links: HashMap::new(),
             edge_styles: HashMap::new(),
             edge_style_default: None,
         }
