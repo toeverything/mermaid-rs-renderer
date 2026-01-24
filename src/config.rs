@@ -17,9 +17,9 @@ impl Default for LayoutConfig {
         Self {
             node_spacing: 50.0,
             rank_spacing: 50.0,
-            node_padding_x: 16.0,
-            node_padding_y: 10.0,
-            label_line_height: 1.3,
+            node_padding_x: 30.0,
+            node_padding_y: 15.0,
+            label_line_height: 1.5,
             max_label_width_chars: 22,
         }
     }
@@ -108,10 +108,7 @@ pub fn load_config(path: Option<&Path>) -> anyhow::Result<Config> {
     if let Some(theme_name) = parsed.theme.as_deref() {
         if theme_name == "modern" {
             config.theme = Theme::modern();
-        } else if theme_name == "base"
-            || theme_name == "default"
-            || theme_name == "mermaid"
-        {
+        } else if theme_name == "base" || theme_name == "default" || theme_name == "mermaid" {
             config.theme = Theme::mermaid_default();
         }
     }

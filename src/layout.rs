@@ -1,7 +1,10 @@
 use crate::config::LayoutConfig;
 use crate::ir::{Direction, Graph};
 use crate::theme::Theme;
-use dagre_rust::{layout as dagre_layout, GraphConfig as DagreConfig, GraphEdge as DagreEdge, GraphNode as DagreNode};
+use dagre_rust::{
+    GraphConfig as DagreConfig, GraphEdge as DagreEdge, GraphNode as DagreNode,
+    layout as dagre_layout,
+};
 use graphlib_rust::{Graph as DagreGraph, GraphOption};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
@@ -186,8 +189,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         }
     }
 
-    let anchored_indices: HashSet<usize> =
-        anchor_info.values().map(|info| info.sub_idx).collect();
+    let anchored_indices: HashSet<usize> = anchor_info.values().map(|info| info.sub_idx).collect();
     let mut edge_redirects: HashMap<String, String> = HashMap::new();
     if !graph.subgraphs.is_empty() {
         for (idx, sub) in graph.subgraphs.iter().enumerate() {
@@ -224,8 +226,14 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     }
     let mut layout_set: HashSet<String> = layout_node_ids.iter().cloned().collect();
 
-    let used_dagre =
-        assign_positions_dagre(graph, &layout_node_ids, &layout_set, &mut nodes, config, &layout_edges);
+    let used_dagre = assign_positions_dagre(
+        graph,
+        &layout_node_ids,
+        &layout_set,
+        &mut nodes,
+        config,
+        &layout_edges,
+    );
     if !used_dagre {
         if anchor_info.is_empty() {
             anchor_info = apply_subgraph_anchor_sizes(graph, &mut nodes, theme, config);
@@ -368,13 +376,12 @@ fn assign_positions_dagre(
 
     // Enable compound mode for diagrams with subgraphs so dagre treats them as clusters
     let compound_enabled = !graph.subgraphs.is_empty();
-    let mut dagre_graph: DagreGraph<DagreConfig, DagreNode, DagreEdge> = DagreGraph::new(
-        Some(GraphOption {
+    let mut dagre_graph: DagreGraph<DagreConfig, DagreNode, DagreEdge> =
+        DagreGraph::new(Some(GraphOption {
             directed: Some(true),
             multigraph: Some(false),
             compound: Some(compound_enabled),
-        }),
-    );
+        }));
 
     let mut graph_config = DagreConfig::default();
     graph_config.rankdir = Some(dagre_rankdir(graph.direction).to_string());
@@ -473,11 +480,15 @@ fn assign_positions_dagre(
         let mut top_level_anchors: Vec<String> = Vec::new();
         for (idx, anchor) in &anchor_ids {
             let sub = &graph.subgraphs[*idx];
-            let is_nested = graph.subgraphs.iter().enumerate().any(|(other_idx, other)| {
-                other_idx != *idx
-                    && sub.nodes.iter().all(|n| other.nodes.contains(n))
-                    && other.nodes.len() > sub.nodes.len()
-            });
+            let is_nested = graph
+                .subgraphs
+                .iter()
+                .enumerate()
+                .any(|(other_idx, other)| {
+                    other_idx != *idx
+                        && sub.nodes.iter().all(|n| other.nodes.contains(n))
+                        && other.nodes.len() > sub.nodes.len()
+                });
             if !is_nested {
                 top_level_anchors.push(anchor.clone());
             }
@@ -535,13 +546,12 @@ fn assign_positions_dagre_subset(
         return false;
     }
 
-    let mut dagre_graph: DagreGraph<DagreConfig, DagreNode, DagreEdge> = DagreGraph::new(
-        Some(GraphOption {
+    let mut dagre_graph: DagreGraph<DagreConfig, DagreNode, DagreEdge> =
+        DagreGraph::new(Some(GraphOption {
             directed: Some(true),
             multigraph: Some(false),
             compound: Some(false),
-        }),
-    );
+        }));
 
     let mut graph_config = DagreConfig::default();
     graph_config.rankdir = Some(dagre_rankdir(direction).to_string());
@@ -707,8 +717,14 @@ fn assign_positions_manual(
     let mut incoming: HashMap<String, Vec<String>> = HashMap::new();
     let mut outgoing: HashMap<String, Vec<String>> = HashMap::new();
     for edge in &layout_edges {
-        incoming.entry(edge.to.clone()).or_default().push(edge.from.clone());
-        outgoing.entry(edge.from.clone()).or_default().push(edge.to.clone());
+        incoming
+            .entry(edge.to.clone())
+            .or_default()
+            .push(edge.from.clone());
+        outgoing
+            .entry(edge.from.clone())
+            .or_default()
+            .push(edge.to.clone());
     }
 
     let mut cross_pos: HashMap<String, f32> = HashMap::new();
@@ -763,8 +779,7 @@ fn assign_positions_manual(
             prev_center = Some(center);
             prev_half = half;
         }
-        let actual_mean =
-            assigned.iter().map(|(_, c, _)| *c).sum::<f32>() / assigned.len() as f32;
+        let actual_mean = assigned.iter().map(|(_, c, _)| *c).sum::<f32>() / assigned.len() as f32;
         let delta = desired_mean - actual_mean;
         for (node_id, center, _half) in assigned {
             let center = center + delta;
@@ -827,14 +842,11 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
 
     let mut cursor_x = 0.0;
     for id in &participants {
-        let label = label_blocks
-            .get(id)
-            .cloned()
-            .unwrap_or_else(|| TextBlock {
-                lines: vec![id.clone()],
-                width: 0.0,
-                height: 0.0,
-            });
+        let label = label_blocks.get(id).cloned().unwrap_or_else(|| TextBlock {
+            lines: vec![id.clone()],
+            width: 0.0,
+            height: 0.0,
+        });
         nodes.insert(
             id.clone(),
             NodeLayout {
@@ -900,10 +912,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
                     lifeline_xs.push(0.0);
                 }
                 let base_x = lifeline_xs[0];
-                let min_x = lifeline_xs
-                    .iter()
-                    .copied()
-                    .fold(f32::INFINITY, f32::min);
+                let min_x = lifeline_xs.iter().copied().fold(f32::INFINITY, f32::min);
                 let max_x = lifeline_xs
                     .iter()
                     .copied()
@@ -1008,9 +1017,11 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
                     xs.push(node.x + node.width / 2.0);
                 }
             }
-            let (min_x, max_x) = xs.iter().fold((f32::INFINITY, f32::NEG_INFINITY), |acc, x| {
-                (acc.0.min(*x), acc.1.max(*x))
-            });
+            let (min_x, max_x) = xs
+                .iter()
+                .fold((f32::INFINITY, f32::NEG_INFINITY), |acc, x| {
+                    (acc.0.min(*x), acc.1.max(*x))
+                });
             if !min_x.is_finite() || !max_x.is_finite() {
                 continue;
             }
@@ -1048,7 +1059,8 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
                 crate::ir::SequenceFrameKind::Rect => "rect",
             };
             let label_block = measure_label(frame_label_text, theme, config);
-            let label_box_w = (label_block.width + theme.font_size * 2.0).max(theme.font_size * 3.0);
+            let label_box_w =
+                (label_block.width + theme.font_size * 2.0).max(theme.font_size * 3.0);
             let label_box_h = theme.font_size * 1.25;
             let label_box_x = frame_x;
             let label_box_y = frame_y;
@@ -1540,13 +1552,8 @@ fn apply_orthogonal_region_bands(
         }
 
         if stack_along_x {
-            region_boxes.sort_by(|a, b| {
-                a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
-            });
-            let mut cursor = region_boxes
-                .first()
-                .map(|entry| entry.1)
-                .unwrap_or(0.0);
+            region_boxes.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+            let mut cursor = region_boxes.first().map(|entry| entry.1).unwrap_or(0.0);
             for (region_idx, min_x, _min_y, max_x, _max_y) in region_boxes {
                 let offset = cursor - min_x;
                 for node_id in &graph.subgraphs[region_idx].nodes {
@@ -1557,13 +1564,8 @@ fn apply_orthogonal_region_bands(
                 cursor += (max_x - min_x) + spacing;
             }
         } else {
-            region_boxes.sort_by(|a, b| {
-                a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal)
-            });
-            let mut cursor = region_boxes
-                .first()
-                .map(|entry| entry.2)
-                .unwrap_or(0.0);
+            region_boxes.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
+            let mut cursor = region_boxes.first().map(|entry| entry.2).unwrap_or(0.0);
             for (region_idx, _min_x, min_y, _max_x, max_y) in region_boxes {
                 let offset = cursor - min_y;
                 for node_id in &graph.subgraphs[region_idx].nodes {
@@ -1685,8 +1687,7 @@ fn apply_subgraph_direction_overrides(
             continue;
         }
         for node_id in &sub.nodes {
-            if let (Some(target), Some(source)) =
-                (nodes.get_mut(node_id), temp_nodes.get(node_id))
+            if let (Some(target), Some(source)) = (nodes.get_mut(node_id), temp_nodes.get(node_id))
             {
                 target.x = source.x - temp_min_x + min_x;
                 target.y = source.y - temp_min_y + min_y;
@@ -1836,7 +1837,11 @@ fn subgraph_padding(
     } else {
         24.0
     };
-    let padding = if is_region_subgraph(sub) { 0.0 } else { base_padding };
+    let padding = if is_region_subgraph(sub) {
+        0.0
+    } else {
+        base_padding
+    };
     let label_height = if label_empty { 0.0 } else { label_block.height };
     let top_padding = if label_empty {
         padding
@@ -2034,7 +2039,15 @@ fn apply_state_subgraph_layouts(
             continue;
         }
         let ranks = compute_ranks_subset(&sub.nodes, &graph.edges);
-        assign_positions(&sub.nodes, &ranks, graph.direction, config, nodes, min_x, min_y);
+        assign_positions(
+            &sub.nodes,
+            &ranks,
+            graph.direction,
+            config,
+            nodes,
+            min_x,
+            min_y,
+        );
     }
 }
 
@@ -2604,7 +2617,7 @@ fn measure_label(text: &str, theme: &Theme, config: &LayoutConfig) -> TextBlock 
     }
 
     let max_len = lines.iter().map(|l| l.chars().count()).max().unwrap_or(1);
-    let approx_char_width = theme.font_size * 0.6;
+    let approx_char_width = theme.font_size * 0.45;
     let width = max_len as f32 * approx_char_width;
     let height = lines.len() as f32 * theme.font_size * config.label_line_height;
 
@@ -2797,7 +2810,11 @@ fn separate_sibling_subgraphs(
             }
 
             // Calculate next offset based on this subgraph's extent
-            let extent = if is_horizontal { max_y - min_y } else { max_x - min_x };
+            let extent = if is_horizontal {
+                max_y - min_y
+            } else {
+                max_x - min_x
+            };
             let next_start = if is_horizontal { min_y } else { min_x };
             let current_end = next_start + extent + offset;
             offset = current_end + config.node_spacing * 2.0;
