@@ -7,6 +7,12 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+PATH_NUM_RE = re.compile(r"[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?")
+STATE_START_RE = re.compile(r".*_start-(\d+)$")
+STATE_END_RE = re.compile(r".*_end-(\d+)$")
+MMD_START_RE = re.compile(r"^__start_(\d+)__$")
+MMD_END_RE = re.compile(r"^__end_(\d+)__$")
+
 
 def strip_ns(tag: str) -> str:
     if '}' in tag:
@@ -88,6 +94,35 @@ def bbox_from_shapes(elem, tx, ty):
             if rx <= 0 or ry <= 0:
                 continue
             bbox = merge_bbox(bbox, (cx - rx, cy - ry, cx + rx, cy + ry))
+        elif tag == 'path':
+            d = child.attrib.get('d', '')
+            if not d:
+                continue
+            nums = PATH_NUM_RE.findall(d)
+            if len(nums) < 2:
+                continue
+            vals = []
+            for n in nums:
+                try:
+                    vals.append(float(n))
+                except ValueError:
+                    continue
+            xs = vals[0::2]
+            ys = vals[1::2]
+            if not xs or not ys:
+                continue
+            xs = [x + tx for x in xs]
+            ys = [y + ty for y in ys]
+            bbox = merge_bbox(bbox, (min(xs), min(ys), max(xs), max(ys)))
+        elif tag == 'line':
+            try:
+                x1 = float(child.attrib.get('x1', '0')) + tx
+                y1 = float(child.attrib.get('y1', '0')) + ty
+                x2 = float(child.attrib.get('x2', '0')) + tx
+                y2 = float(child.attrib.get('y2', '0')) + ty
+            except ValueError:
+                continue
+            bbox = merge_bbox(bbox, (min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)))
     return bbox
 
 
@@ -98,10 +133,20 @@ def normalize_mermaid_id(raw_id: str):
     return raw_id
 
 
+def extract_label_lines(elem):
+    lines = []
+    for el in elem.iter():
+        if el.text and el.text.strip():
+            lines.append(el.text.strip())
+    return lines
+
+
 def parse_mermaid_svg(path: Path):
     root = ET.fromstring(path.read_text())
     nodes = {}
+    nodes_by_label = {}
     clusters = {}
+    special_nodes = []
 
     for g in root.iter():
         if strip_ns(g.tag) != 'g':
@@ -129,22 +174,71 @@ def parse_mermaid_svg(path: Path):
                 except ValueError:
                     pass
             continue
-        if not gid:
+        if gid:
+            if 'node' not in cls or 'edge' in cls or 'label' in cls:
+                continue
+            tx, ty = parse_transform(g.attrib.get('transform', ''))
+            bbox = bbox_from_shapes(g, tx, ty)
+            if bbox is None:
+                continue
+            x1, y1, x2, y2 = bbox
+            node = {
+                'x': x1,
+                'y': y1,
+                'width': x2 - x1,
+                'height': y2 - y1,
+                'raw_id': gid,
+                'class': cls,
+            }
+            norm_id = normalize_mermaid_id(gid)
+            nodes[norm_id] = node
+            label_lines = extract_label_lines(g)
+            if label_lines:
+                label = label_lines[0]
+                nodes_by_label.setdefault(label, node)
+            if (match := STATE_START_RE.match(gid)):
+                special_nodes.append({
+                    'kind': 'start',
+                    'index': int(match.group(1)),
+                    'node': node,
+                })
+            elif (match := STATE_END_RE.match(gid)):
+                special_nodes.append({
+                    'kind': 'end',
+                    'index': int(match.group(1)),
+                    'node': node,
+                })
+
+    # Sequence diagrams use actor rects instead of node groups.
+    for rect in root.iter():
+        if strip_ns(rect.tag) != 'rect':
             continue
-        if 'node' not in cls or 'edge' in cls or 'label' in cls:
+        cls = rect.attrib.get('class', '')
+        if 'actor-top' not in cls:
             continue
-        tx, ty = parse_transform(g.attrib.get('transform', ''))
-        bbox = bbox_from_shapes(g, tx, ty)
-        if bbox is None:
+        name = rect.attrib.get('name')
+        if not name or name in nodes:
             continue
-        x1, y1, x2, y2 = bbox
-        nodes[normalize_mermaid_id(gid)] = {
-            'x': x1,
-            'y': y1,
-            'width': x2 - x1,
-            'height': y2 - y1,
+        try:
+            x = float(rect.attrib.get('x', '0'))
+            y = float(rect.attrib.get('y', '0'))
+            w = float(rect.attrib.get('width', '0'))
+            h = float(rect.attrib.get('height', '0'))
+        except ValueError:
+            continue
+        if w <= 0 or h <= 0:
+            continue
+        node = {
+            'x': x,
+            'y': y,
+            'width': w,
+            'height': h,
+            'raw_id': name,
+            'class': cls,
         }
-    return nodes, clusters
+        nodes[name] = node
+        nodes_by_label.setdefault(name, node)
+    return nodes, nodes_by_label, clusters, special_nodes
 
 
 def load_mmdr_layout(path: Path):
@@ -160,14 +254,42 @@ def load_mmdr_layout(path: Path):
     return nodes, subgraphs
 
 
-def compute_diffs(mmdr_nodes, mer_nodes):
+def _build_special_map(mmdr_nodes, mer_specials):
+    if not mer_specials:
+        return {}
+    mmdr_starts = []
+    mmdr_ends = []
+    for node_id, node in mmdr_nodes.items():
+        if (match := MMD_START_RE.match(node_id)):
+            mmdr_starts.append((int(match.group(1)), node_id, node))
+        elif (match := MMD_END_RE.match(node_id)):
+            mmdr_ends.append((int(match.group(1)), node_id, node))
+
+    mer_starts = [s for s in mer_specials if s['kind'] == 'start']
+    mer_ends = [s for s in mer_specials if s['kind'] == 'end']
+
+    special_map = {}
+    for (_, node_id, _), mer in zip(sorted(mmdr_starts), sorted(mer_starts, key=lambda s: s['index'])):
+        special_map[node_id] = mer['node']
+    for (_, node_id, _), mer in zip(sorted(mmdr_ends), sorted(mer_ends, key=lambda s: s['index'])):
+        special_map[node_id] = mer['node']
+    return special_map
+
+
+def compute_diffs(mmdr_nodes, mer_nodes, mer_labels, mer_specials):
     diffs = []
     missing = []
+    special_map = _build_special_map(mmdr_nodes, mer_specials)
     for node_id, node in mmdr_nodes.items():
-        if node_id not in mer_nodes:
+        if node_id in special_map:
+            mer = special_map[node_id]
+        elif node_id in mer_nodes:
+            mer = mer_nodes[node_id]
+        elif node_id in mer_labels:
+            mer = mer_labels[node_id]
+        else:
             missing.append(node_id)
             continue
-        mer = mer_nodes[node_id]
         mx = node['x'] + node['width'] / 2.0
         my = node['y'] + node['height'] / 2.0
         ox = mer['x'] + mer['width'] / 2.0
@@ -215,9 +337,9 @@ def main():
     args = parser.parse_args()
 
     mmdr_nodes, mmdr_subgraphs = load_mmdr_layout(Path(args.mmdr_layout))
-    mer_nodes, mer_clusters = parse_mermaid_svg(Path(args.mermaid_svg))
+    mer_nodes, mer_labels, mer_clusters, mer_specials = parse_mermaid_svg(Path(args.mermaid_svg))
 
-    diffs, missing = compute_diffs(mmdr_nodes, mer_nodes)
+    diffs, missing = compute_diffs(mmdr_nodes, mer_nodes, mer_labels, mer_specials)
     summary = summarize_diffs(diffs)
     report = {
         'summary': summary,
