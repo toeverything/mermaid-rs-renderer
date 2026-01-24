@@ -83,6 +83,18 @@ pub struct SequenceFrameLayout {
 }
 
 #[derive(Debug, Clone)]
+pub struct SequenceNoteLayout {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub label: TextBlock,
+    pub position: crate::ir::SequenceNotePosition,
+    pub participants: Vec<String>,
+    pub index: usize,
+}
+
+#[derive(Debug, Clone)]
 pub struct Layout {
     pub kind: crate::ir::DiagramKind,
     pub nodes: BTreeMap<String, NodeLayout>,
@@ -91,6 +103,7 @@ pub struct Layout {
     pub lifelines: Vec<Lifeline>,
     pub sequence_footboxes: Vec<NodeLayout>,
     pub sequence_frames: Vec<SequenceFrameLayout>,
+    pub sequence_notes: Vec<SequenceNoteLayout>,
     pub width: f32,
     pub height: f32,
 }
@@ -335,6 +348,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         lifelines: Vec::new(),
         sequence_footboxes: Vec::new(),
         sequence_frames: Vec::new(),
+        sequence_notes: Vec::new(),
         width,
         height,
     }
@@ -840,6 +854,10 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
     }
 
     let base_spacing = (theme.font_size * 2.8).max(24.0);
+    let note_gap_y = (theme.font_size * 0.7).max(8.0);
+    let note_gap_x = (theme.font_size * 0.8).max(10.0);
+    let note_padding_x = (theme.font_size * 0.9).max(10.0);
+    let note_padding_y = (theme.font_size * 0.6).max(6.0);
     let mut extra_before = vec![0.0; graph.edges.len()];
     let frame_end_pad = base_spacing * 0.25;
     for frame in &graph.sequence_frames {
@@ -856,12 +874,70 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         }
     }
 
+    let mut notes_by_index = vec![Vec::new(); graph.edges.len().saturating_add(1)];
+    for note in &graph.sequence_notes {
+        let idx = note.index.min(graph.edges.len());
+        notes_by_index[idx].push(note);
+    }
+
     let mut message_cursor = actor_height + theme.font_size * 2.9;
     let mut message_ys = Vec::new();
-    for idx in 0..graph.edges.len() {
-        message_cursor += extra_before[idx];
-        message_ys.push(message_cursor);
-        message_cursor += base_spacing;
+    let mut sequence_notes = Vec::new();
+    for idx in 0..=graph.edges.len() {
+        if let Some(bucket) = notes_by_index.get(idx) {
+            for note in bucket {
+                message_cursor += note_gap_y;
+                let label = measure_label(&note.label, theme, config);
+                let mut width = label.width + note_padding_x * 2.0;
+                let height = label.height + note_padding_y * 2.0;
+                let mut lifeline_xs = note
+                    .participants
+                    .iter()
+                    .filter_map(|id| nodes.get(id))
+                    .map(|node| node.x + node.width / 2.0)
+                    .collect::<Vec<_>>();
+                if lifeline_xs.is_empty() {
+                    lifeline_xs.push(0.0);
+                }
+                let base_x = lifeline_xs[0];
+                let min_x = lifeline_xs
+                    .iter()
+                    .copied()
+                    .fold(f32::INFINITY, f32::min);
+                let max_x = lifeline_xs
+                    .iter()
+                    .copied()
+                    .fold(f32::NEG_INFINITY, f32::max);
+                if note.position == crate::ir::SequenceNotePosition::Over
+                    && note.participants.len() > 1
+                {
+                    let span = (max_x - min_x).abs();
+                    width = width.max(span + note_gap_x * 2.0);
+                }
+                let x = match note.position {
+                    crate::ir::SequenceNotePosition::LeftOf => base_x - note_gap_x - width,
+                    crate::ir::SequenceNotePosition::RightOf => base_x + note_gap_x,
+                    crate::ir::SequenceNotePosition::Over => (min_x + max_x) / 2.0 - width / 2.0,
+                };
+                let y = message_cursor;
+                sequence_notes.push(SequenceNoteLayout {
+                    x,
+                    y,
+                    width,
+                    height,
+                    label,
+                    position: note.position,
+                    participants: note.participants.clone(),
+                    index: note.index,
+                });
+                message_cursor += height + note_gap_y;
+            }
+        }
+        if idx < graph.edges.len() {
+            message_cursor += extra_before[idx];
+            message_ys.push(message_cursor);
+            message_cursor += base_spacing;
+        }
     }
 
     for (idx, edge) in graph.edges.iter().enumerate() {
@@ -950,11 +1026,19 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
                 .get(frame.end_idx.saturating_sub(1))
                 .copied()
                 .unwrap_or(first_y);
+            let mut min_y = first_y;
+            let mut max_y = last_y;
+            for note in &sequence_notes {
+                if note.index >= frame.start_idx && note.index <= frame.end_idx {
+                    min_y = min_y.min(note.y);
+                    max_y = max_y.max(note.y + note.height);
+                }
+            }
             let header_offset = theme.font_size * 0.6;
             let top_offset = (2.0 * base_spacing - header_offset).max(base_spacing);
             let bottom_offset = header_offset;
-            let frame_y = first_y - top_offset;
-            let frame_height = (last_y - first_y).max(0.0) + top_offset + bottom_offset;
+            let frame_y = min_y - top_offset;
+            let frame_height = (max_y - min_y).max(0.0) + top_offset + bottom_offset;
 
             let frame_label_text = match frame.kind {
                 crate::ir::SequenceFrameKind::Alt => "alt",
@@ -1023,13 +1107,16 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
     }
 
     let lifeline_start = actor_height;
-    let last_message_y = message_ys
+    let mut last_message_y = message_ys
         .last()
         .copied()
         .unwrap_or(lifeline_start + base_spacing);
+    for note in &sequence_notes {
+        last_message_y = last_message_y.max(note.y + note.height);
+    }
     let footbox_gap = (theme.font_size * 1.25).max(16.0);
     let lifeline_end = last_message_y + footbox_gap;
-    let lifelines = participants
+    let mut lifelines = participants
         .iter()
         .filter_map(|id| nodes.get(id))
         .map(|node| Lifeline {
@@ -1040,7 +1127,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         })
         .collect::<Vec<_>>();
 
-    let sequence_footboxes = participants
+    let mut sequence_footboxes = participants
         .iter()
         .filter_map(|id| nodes.get(id))
         .map(|node| {
@@ -1051,12 +1138,57 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         .collect::<Vec<_>>();
 
     let (mut width, mut height) = bounds_from_layout(&nodes, &subgraphs);
-    width = width.max(cursor_x + 40.0);
+    let mut max_x = width.max(cursor_x + 40.0) - 60.0;
+    let mut max_y = height - 60.0;
+    let mut min_x: f32 = 0.0;
+    for note in &sequence_notes {
+        min_x = min_x.min(note.x);
+        max_x = max_x.max(note.x + note.width);
+        max_y = max_y.max(note.y + note.height);
+    }
+    for frame in &sequence_frames {
+        min_x = min_x.min(frame.x);
+        max_x = max_x.max(frame.x + frame.width);
+        max_y = max_y.max(frame.y + frame.height);
+    }
+
+    let shift_x = if min_x < 0.0 { -min_x + 20.0 } else { 0.0 };
+    if shift_x > 0.0 {
+        for node in nodes.values_mut() {
+            node.x += shift_x;
+        }
+        for edge in &mut edges {
+            for point in &mut edge.points {
+                point.0 += shift_x;
+            }
+        }
+        for lifeline in &mut lifelines {
+            lifeline.x += shift_x;
+        }
+        for footbox in &mut sequence_footboxes {
+            footbox.x += shift_x;
+        }
+        for frame in &mut sequence_frames {
+            frame.x += shift_x;
+            frame.label_box.0 += shift_x;
+            frame.label.x += shift_x;
+            for label in &mut frame.section_labels {
+                label.x += shift_x;
+            }
+        }
+        for note in &mut sequence_notes {
+            note.x += shift_x;
+        }
+        max_x += shift_x;
+    }
+
     let footbox_height = sequence_footboxes
         .iter()
         .map(|node| node.height)
         .fold(0.0, f32::max);
-    height = height.max(lifeline_end + footbox_height + 40.0);
+    max_y = max_y.max(lifeline_end + footbox_height);
+    width = max_x + 60.0;
+    height = max_y + 60.0;
 
     Layout {
         kind: graph.kind,
@@ -1066,6 +1198,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         lifelines,
         sequence_footboxes,
         sequence_frames,
+        sequence_notes,
         width,
         height,
     }

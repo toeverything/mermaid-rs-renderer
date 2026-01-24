@@ -623,6 +623,43 @@ fn parse_sequence_message(
     None
 }
 
+fn parse_sequence_note(
+    line: &str,
+) -> Option<(crate::ir::SequenceNotePosition, Vec<String>, String)> {
+    let trimmed = line.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if !lower.starts_with("note ") {
+        return None;
+    }
+    let rest = trimmed[4..].trim();
+    let lower_rest = rest.to_ascii_lowercase();
+    let (position, targets_part) = if lower_rest.starts_with("left of ") {
+        (crate::ir::SequenceNotePosition::LeftOf, rest[8..].trim())
+    } else if lower_rest.starts_with("right of ") {
+        (crate::ir::SequenceNotePosition::RightOf, rest[9..].trim())
+    } else if lower_rest.starts_with("over ") {
+        (crate::ir::SequenceNotePosition::Over, rest[5..].trim())
+    } else {
+        return None;
+    };
+
+    let (targets, label) = targets_part.split_once(':')?;
+    let label = label.trim();
+    if label.is_empty() {
+        return None;
+    }
+    let participants = targets
+        .split(',')
+        .map(|part| strip_quotes(part.trim()))
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    if participants.is_empty() {
+        return None;
+    }
+
+    Some((position, participants, label.to_string()))
+}
+
 fn split_label(input: &str) -> (String, Option<String>) {
     if let Some((left, right)) = input.split_once(':') {
         let label = right.trim();
@@ -1090,8 +1127,27 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
             continue;
         }
 
-        if lower.starts_with("note ")
-            || lower.starts_with("activate ")
+        if let Some((position, participants, label)) = parse_sequence_note(line) {
+            for id in &participants {
+                if !order.contains(id) {
+                    order.push(id.clone());
+                }
+                graph.ensure_node(
+                    id,
+                    labels.get(id).cloned(),
+                    Some(crate::ir::NodeShape::RoundRect),
+                );
+            }
+            graph.sequence_notes.push(crate::ir::SequenceNote {
+                position,
+                participants,
+                label,
+                index: graph.edges.len(),
+            });
+            continue;
+        }
+
+        if lower.starts_with("activate ")
             || lower.starts_with("deactivate ")
             || lower.starts_with("autonumber")
         {
@@ -2036,6 +2092,21 @@ mod tests {
         assert_eq!(frame.sections[1].label.as_deref(), Some("bad"));
         assert_eq!(frame.sections[1].start_idx, 2);
         assert_eq!(frame.sections[1].end_idx, 3);
+    }
+
+    #[test]
+    fn parse_sequence_notes() {
+        let input = "sequenceDiagram\nparticipant Alice\nparticipant Bob\nAlice->>Bob: Hello\nNote over Alice,Bob: ping\nBob-->>Alice: Hi\nNote right of Bob: done";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.sequence_notes.len(), 2);
+        let first = &parsed.graph.sequence_notes[0];
+        assert_eq!(first.index, 1);
+        assert_eq!(first.label, "ping");
+        assert_eq!(first.position, crate::ir::SequenceNotePosition::Over);
+        let second = &parsed.graph.sequence_notes[1];
+        assert_eq!(second.index, 2);
+        assert_eq!(second.label, "done");
+        assert_eq!(second.position, crate::ir::SequenceNotePosition::RightOf);
     }
 
     #[test]

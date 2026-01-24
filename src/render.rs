@@ -232,6 +232,37 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         ));
     }
 
+    for note in &layout.sequence_notes {
+        let fill = theme.secondary_color.as_str();
+        let stroke = theme.primary_border_color.as_str();
+        let fold = (theme.font_size * 0.8)
+            .max(8.0)
+            .min(note.width.min(note.height) * 0.3);
+        let x = note.x;
+        let y = note.y;
+        let x2 = note.x + note.width;
+        let y2 = note.y + note.height;
+        let fold_x = x2 - fold;
+        let fold_y = y + fold;
+        svg.push_str(&format!(
+            "<path d=\"M {x:.2} {y:.2} L {fold_x:.2} {y:.2} L {x2:.2} {fold_y:.2} L {x2:.2} {y2:.2} L {x:.2} {y2:.2} Z\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"1.1\"/>"
+        ));
+        svg.push_str(&format!(
+            "<polyline points=\"{fold_x:.2},{y:.2} {fold_x:.2},{fold_y:.2} {x2:.2},{fold_y:.2}\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"1.0\"/>"
+        ));
+        let center_x = note.x + note.width / 2.0;
+        let center_y = note.y + note.height / 2.0;
+        svg.push_str(&text_block_svg(
+            center_x,
+            center_y,
+            &note.label,
+            theme,
+            config,
+            false,
+            Some(theme.primary_text_color.as_str()),
+        ));
+    }
+
     if is_sequence {
         for edge in &layout.edges {
             let d = points_to_path(&edge.points);

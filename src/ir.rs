@@ -25,6 +25,21 @@ pub enum SequenceFrameKind {
     Rect,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SequenceNotePosition {
+    LeftOf,
+    RightOf,
+    Over,
+}
+
+#[derive(Debug, Clone)]
+pub struct SequenceNote {
+    pub position: SequenceNotePosition,
+    pub participants: Vec<String>,
+    pub label: String,
+    pub index: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct SequenceFrameSection {
     pub label: Option<String>,
@@ -106,6 +121,7 @@ pub struct Graph {
     pub subgraphs: Vec<Subgraph>,
     pub sequence_participants: Vec<String>,
     pub sequence_frames: Vec<SequenceFrame>,
+    pub sequence_notes: Vec<SequenceNote>,
     pub class_defs: HashMap<String, NodeStyle>,
     pub node_classes: HashMap<String, Vec<String>>,
     pub node_styles: HashMap<String, NodeStyle>,
@@ -145,6 +161,7 @@ impl Graph {
             subgraphs: Vec::new(),
             sequence_participants: Vec::new(),
             sequence_frames: Vec::new(),
+            sequence_notes: Vec::new(),
             class_defs: HashMap::new(),
             node_classes: HashMap::new(),
             node_styles: HashMap::new(),
