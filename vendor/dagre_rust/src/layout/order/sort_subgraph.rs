@@ -32,10 +32,11 @@ pub fn sort_subgraph(
   };
   let mut subgraphs: OrderedHashMap<String, SubgraphResult> = OrderedHashMap::new();
 
-  if br.is_some() {
-    movable = movable.into_iter().filter(|w| {
-      w != &bl.clone().unwrap() && w != &br.clone().unwrap()
-    }).collect();
+  if let (Some(bl_), Some(br_)) = (bl.clone(), br.clone()) {
+    movable = movable
+      .into_iter()
+      .filter(|w| w != &bl_ && w != &br_)
+      .collect();
   }
 
   let mut barycenters = barycenter(g, &movable);
@@ -51,9 +52,7 @@ pub fn sort_subgraph(
   expand_subgraphs(&mut entries, &subgraphs);
 
   let mut result = sort(&entries, bias_right);
-  if bl.is_some() {
-    let bl_ = bl.clone().unwrap();
-    let br_ = br.clone().unwrap();
+  if let (Some(bl_), Some(br_)) = (bl.clone(), br.clone()) {
     result.vs = vec![vec![bl_.clone()], result.vs.clone(), vec![br_.clone()]].concat();
     let bl_preds = g.predecessors(&bl_).unwrap_or(vec![]);
     let br_preds = g.predecessors(&br_).unwrap_or(vec![]);

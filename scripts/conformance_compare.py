@@ -32,7 +32,12 @@ def pick_rust_binary() -> Path:
     return primary
 
 
-def render_rust(input_path: Path, output_path: Path, config_path: Path | None):
+def render_rust(
+    input_path: Path,
+    output_path: Path,
+    config_path: Path | None,
+    layout_out: Path | None = None,
+):
     bin_path = pick_rust_binary()
     if not bin_path.exists():
         print("Building release binary...", file=sys.stderr)
@@ -47,6 +52,8 @@ def render_rust(input_path: Path, output_path: Path, config_path: Path | None):
     cmd = [str(bin_path), "-i", str(input_path), "-o", str(output_path), "-e", "png"]
     if config_path and config_path.exists():
         cmd.extend(["-c", str(config_path)])
+    if layout_out is not None:
+        cmd.extend(["--dumpLayout", str(layout_out)])
     res = run(cmd)
     if res.returncode != 0:
         print(res.stderr, file=sys.stderr)
@@ -206,6 +213,11 @@ def main():
     parser.add_argument(
         "--diff-scale", type=float, default=4.0, help="Scale factor for diff visualization"
     )
+    parser.add_argument(
+        "--layout-diff",
+        action="store_true",
+        help="Generate layout diff report using SVG + layout JSON",
+    )
     args = parser.parse_args()
 
     input_path = Path(args.input)
@@ -233,9 +245,29 @@ def main():
         mmdc_out = work_dir / f"{file.stem}-mmdc.png"
         diff_out = work_dir / f"{file.stem}-diff.png"
         side_out = work_dir / f"{file.stem}-side.png"
+        layout_out = work_dir / f"{file.stem}-layout.json"
+        mmdc_svg = work_dir / f"{file.stem}-mmdc.svg"
+        layout_report = work_dir / f"{file.stem}-layout-report.json"
         print(f"Comparing {file}...")
-        render_rust(file, rust_out, Path(args.config))
+        render_rust(file, rust_out, Path(args.config), layout_out if args.layout_diff else None)
         render_mmdc(file, mmdc_out, Path(args.config))
+        if args.layout_diff:
+            render_mmdc(file, mmdc_svg, Path(args.config))
+            diff_cmd = [
+                sys.executable,
+                str(ROOT / "scripts" / "layout_diff.py"),
+                "--mmdr-layout",
+                str(layout_out),
+                "--mermaid-svg",
+                str(mmdc_svg),
+                "--output",
+                str(layout_report),
+            ]
+            diff_res = run(diff_cmd)
+            if diff_res.returncode != 0:
+                print(diff_res.stderr, file=sys.stderr)
+            else:
+                print(diff_res.stdout)
         mean, rms = diff_images(rust_out, mmdc_out)
         print(f"  mean diff: {mean:.2f}, rms diff: {rms:.2f}")
         save_diff_images(rust_out, mmdc_out, diff_out, side_out, args.diff_scale)

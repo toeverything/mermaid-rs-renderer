@@ -446,6 +446,9 @@ pub fn remove_border_nodes(g: &mut Graph<GraphConfig, GraphNode, GraphEdge>) {
       l_keys.sort();
       let mut r_keys: Vec<i32> = border_right.keys().cloned().collect();
       r_keys.sort();
+      if l_keys.is_empty() || r_keys.is_empty() {
+        continue;
+      }
       let l = g.node(border_left.get(&l_keys[l_keys.len() - 1]).unwrap()).cloned().unwrap();
       let r = g.node(border_right.get(&r_keys[r_keys.len() - 1]).unwrap()).cloned().unwrap();
 

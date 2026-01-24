@@ -1,5 +1,6 @@
 use crate::config::{Config, load_config};
 use crate::layout::compute_layout;
+use crate::layout_dump::write_layout_dump;
 use crate::parser::parse_mermaid;
 use crate::render::{render_svg, write_output_png, write_output_svg};
 use anyhow::Result;
@@ -45,6 +46,10 @@ pub struct Args {
     /// Rank spacing
     #[arg(long = "rankSpacing")]
     pub rank_spacing: Option<f32>,
+
+    /// Dump computed layout JSON (file or directory for markdown input)
+    #[arg(long = "dumpLayout")]
+    pub dump_layout: Option<PathBuf>,
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy)]
@@ -76,6 +81,12 @@ pub fn run() -> Result<()> {
         return Err(anyhow::anyhow!("No Mermaid diagrams found in input"));
     }
 
+    let layout_outputs = if args.dump_layout.is_some() {
+        Some(resolve_layout_outputs(args.dump_layout.as_deref(), diagrams.len())?)
+    } else {
+        None
+    };
+
     if diagrams.len() == 1 {
         let parsed = parse_mermaid(&diagrams[0])?;
         let mut config = base_config.clone();
@@ -83,6 +94,11 @@ pub fn run() -> Result<()> {
             config = merge_init_config(config, init_cfg);
         }
         let layout = compute_layout(&parsed.graph, &config.theme, &config.layout);
+        if let Some(outputs) = layout_outputs.as_ref() {
+            if let Some(path) = outputs.first() {
+                write_layout_dump(path, &layout, &parsed.graph)?;
+            }
+        }
         let svg = render_svg(&layout, &config.theme, &config.layout);
         match args.output_format {
             OutputFormat::Svg => {
@@ -106,6 +122,11 @@ pub fn run() -> Result<()> {
             config = merge_init_config(config, init_cfg);
         }
         let layout = compute_layout(&parsed.graph, &config.theme, &config.layout);
+        if let Some(outputs) = layout_outputs.as_ref() {
+            if let Some(path) = outputs.get(idx) {
+                write_layout_dump(path, &layout, &parsed.graph)?;
+            }
+        }
         let svg = render_svg(&layout, &config.theme, &config.layout);
         match args.output_format {
             OutputFormat::Svg => {
@@ -234,6 +255,30 @@ fn resolve_multi_outputs(
     let mut outputs = Vec::new();
     for idx in 0..count {
         outputs.push(parent.join(format!("{}-{}.{}", stem, idx + 1, ext)));
+    }
+    Ok(outputs)
+}
+
+fn resolve_layout_outputs(output: Option<&Path>, count: usize) -> Result<Vec<PathBuf>> {
+    let base = output.ok_or_else(|| anyhow::anyhow!("Dump layout path required"))?;
+    if base.is_dir() {
+        let mut outputs = Vec::new();
+        for idx in 0..count {
+            outputs.push(base.join(format!("diagram-{}.layout.json", idx + 1)));
+        }
+        return Ok(outputs);
+    }
+    if count == 1 {
+        return Ok(vec![base.to_path_buf()]);
+    }
+    let stem = base
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("diagram");
+    let parent = base.parent().unwrap_or_else(|| Path::new("."));
+    let mut outputs = Vec::new();
+    for idx in 0..count {
+        outputs.push(parent.join(format!("{}-{}.layout.json", stem, idx + 1)));
     }
     Ok(outputs)
 }
