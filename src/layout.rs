@@ -1,6 +1,8 @@
 use crate::config::LayoutConfig;
 use crate::ir::{Direction, Graph};
 use crate::theme::Theme;
+use dagre_rust::{layout as dagre_layout, GraphConfig as DagreConfig, GraphEdge as DagreEdge, GraphNode as DagreNode};
+use graphlib_rust::{Graph as DagreGraph, GraphOption};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
@@ -177,7 +179,213 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     layout_node_ids.sort_by_key(|id| graph.node_order.get(id).copied().unwrap_or(usize::MAX));
     layout_node_ids.retain(|id| !anchored_subgraph_nodes.contains(id));
     let layout_set: HashSet<String> = layout_node_ids.iter().cloned().collect();
-    let ranks = compute_ranks_subset(&layout_node_ids, &graph.edges);
+    let used_dagre =
+        assign_positions_dagre(graph, &layout_node_ids, &layout_set, &mut nodes, config);
+    if !used_dagre {
+        assign_positions_manual(graph, &layout_node_ids, &layout_set, &mut nodes, config);
+    }
+
+    let mut anchored_nodes: HashSet<String> = anchored_subgraph_nodes;
+    if !graph.subgraphs.is_empty() {
+        if !anchor_info.is_empty() {
+            if graph.kind != crate::ir::DiagramKind::State {
+                apply_subgraph_direction_overrides(graph, &mut nodes, config);
+            }
+            anchored_nodes =
+                align_subgraphs_to_anchor_nodes(graph, &anchor_info, &mut nodes, config);
+        }
+        if graph.kind == crate::ir::DiagramKind::State {
+            let anchored_indices: HashSet<usize> =
+                anchor_info.values().map(|info| info.sub_idx).collect();
+            apply_state_subgraph_layouts(graph, &mut nodes, config, &anchored_indices);
+        }
+        if !used_dagre {
+            apply_orthogonal_region_bands(graph, &mut nodes, config);
+        }
+        if graph.kind != crate::ir::DiagramKind::State {
+            apply_subgraph_bands(graph, &mut nodes, &anchored_nodes, &anchor_info, config);
+        }
+    }
+
+    let mut subgraphs = build_subgraph_layouts(graph, &nodes, theme, config);
+    apply_subgraph_anchors(graph, &subgraphs, &mut nodes);
+    let obstacles = build_obstacles(&nodes, &subgraphs);
+    let pair_counts = build_edge_pair_counts(&graph.edges);
+    let mut pair_seen: HashMap<(String, String), usize> = HashMap::new();
+    let mut edges = Vec::new();
+    for (idx, edge) in graph.edges.iter().enumerate() {
+        let key = edge_pair_key(edge);
+        let total = *pair_counts.get(&key).unwrap_or(&1) as f32;
+        let seen = pair_seen.entry(key).or_insert(0usize);
+        let idx_in_pair = *seen as f32;
+        *seen += 1;
+        let base_offset = if total > 1.0 {
+            (idx_in_pair - (total - 1.0) / 2.0) * (config.node_spacing * 0.35)
+        } else {
+            0.0
+        };
+        let from_layout = nodes.get(&edge.from).expect("from node missing");
+        let to_layout = nodes.get(&edge.to).expect("to node missing");
+        let temp_from = from_layout.anchor_subgraph.and_then(|idx| {
+            subgraphs
+                .get(idx)
+                .map(|sub| anchor_layout_for_edge(from_layout, sub, graph.direction, true))
+        });
+        let temp_to = to_layout.anchor_subgraph.and_then(|idx| {
+            subgraphs
+                .get(idx)
+                .map(|sub| anchor_layout_for_edge(to_layout, sub, graph.direction, false))
+        });
+        let from = temp_from.as_ref().unwrap_or(from_layout);
+        let to = temp_to.as_ref().unwrap_or(to_layout);
+        let label = edge.label.as_ref().map(|l| measure_label(l, theme, config));
+        let override_style = resolve_edge_style(idx, graph);
+
+        let route_ctx = RouteContext {
+            from_id: &edge.from,
+            to_id: &edge.to,
+            from,
+            to,
+            direction: graph.direction,
+            config,
+            obstacles: &obstacles,
+            base_offset,
+        };
+        let points = route_edge_with_avoidance(&route_ctx);
+        edges.push(EdgeLayout {
+            from: edge.from.clone(),
+            to: edge.to.clone(),
+            label,
+            points,
+            directed: edge.directed,
+            arrow_start: edge.arrow_start,
+            arrow_end: edge.arrow_end,
+            start_decoration: edge.start_decoration,
+            end_decoration: edge.end_decoration,
+            style: edge.style,
+            override_style,
+        });
+    }
+
+    if !used_dagre && matches!(graph.direction, Direction::RightLeft | Direction::BottomTop) {
+        apply_direction_mirror(graph.direction, &mut nodes, &mut edges, &mut subgraphs);
+    }
+
+    normalize_layout(&mut nodes, &mut edges, &mut subgraphs);
+    let (width, height) = bounds_from_layout(&nodes, &subgraphs);
+
+    Layout {
+        kind: graph.kind,
+        nodes,
+        edges,
+        subgraphs,
+        lifelines: Vec::new(),
+        sequence_footboxes: Vec::new(),
+        sequence_frames: Vec::new(),
+        width,
+        height,
+    }
+}
+
+fn assign_positions_dagre(
+    graph: &Graph,
+    layout_node_ids: &[String],
+    layout_set: &HashSet<String>,
+    nodes: &mut BTreeMap<String, NodeLayout>,
+    config: &LayoutConfig,
+) -> bool {
+    if layout_node_ids.is_empty() {
+        return false;
+    }
+
+    let mut dagre_graph: DagreGraph<DagreConfig, DagreNode, DagreEdge> = DagreGraph::new(
+        Some(GraphOption {
+            directed: Some(true),
+            multigraph: Some(true),
+            compound: Some(true),
+        }),
+    );
+
+    let mut graph_config = DagreConfig::default();
+    graph_config.rankdir = Some(dagre_rankdir(graph.direction).to_string());
+    graph_config.nodesep = Some(config.node_spacing);
+    graph_config.ranksep = Some(config.rank_spacing);
+    dagre_graph.set_graph(graph_config);
+
+    let subgraph_ids = dagre_subgraph_ids(graph, layout_set);
+    for id in subgraph_ids.iter().flatten() {
+        dagre_graph.set_node(id.clone(), Some(DagreNode::default()));
+    }
+
+    for node_id in layout_node_ids {
+        let Some(layout) = nodes.get(node_id) else {
+            continue;
+        };
+        let mut node = DagreNode::default();
+        node.width = layout.width;
+        node.height = layout.height;
+        if let Some(order) = graph.node_order.get(node_id) {
+            node.order = Some(*order);
+        }
+        dagre_graph.set_node(node_id.clone(), Some(node));
+    }
+
+    let parent_indices = subgraph_parent_indices(graph, &subgraph_ids);
+    for (idx, sub) in graph.subgraphs.iter().enumerate() {
+        let Some(sub_id) = subgraph_ids.get(idx).and_then(|id| id.clone()) else {
+            continue;
+        };
+        if let Some(parent_idx) = parent_indices.get(idx).and_then(|val| *val) {
+            if let Some(parent_id) = subgraph_ids.get(parent_idx).and_then(|id| id.clone()) {
+                let _ = dagre_graph.set_parent(&sub_id, Some(parent_id));
+            }
+        }
+        for node_id in &sub.nodes {
+            if layout_set.contains(node_id) {
+                let _ = dagre_graph.set_parent(node_id, Some(sub_id.clone()));
+            }
+        }
+    }
+
+    let ranks = compute_ranks_subset(layout_node_ids, &graph.edges);
+    for edge in &graph.edges {
+        if !layout_set.contains(&edge.from) || !layout_set.contains(&edge.to) {
+            continue;
+        }
+        let from_rank = ranks.get(&edge.from).copied().unwrap_or(0);
+        let to_rank = ranks.get(&edge.to).copied().unwrap_or(from_rank);
+        if to_rank <= from_rank {
+            continue;
+        }
+        let edge_label = DagreEdge::default();
+        let _ = dagre_graph.set_edge(&edge.from, &edge.to, Some(edge_label), None);
+    }
+
+    dagre_layout::layout(&mut dagre_graph);
+
+    let mut applied = false;
+    for node_id in layout_node_ids {
+        let Some(dagre_node) = dagre_graph.node(node_id) else {
+            continue;
+        };
+        if let Some(node) = nodes.get_mut(node_id) {
+            node.x = dagre_node.x - node.width / 2.0;
+            node.y = dagre_node.y - node.height / 2.0;
+            applied = true;
+        }
+    }
+
+    applied
+}
+
+fn assign_positions_manual(
+    graph: &Graph,
+    layout_node_ids: &[String],
+    layout_set: &HashSet<String>,
+    nodes: &mut BTreeMap<String, NodeLayout>,
+    config: &LayoutConfig,
+) {
+    let ranks = compute_ranks_subset(layout_node_ids, &graph.edges);
     let mut max_rank = 0usize;
     for rank in ranks.values() {
         max_rank = max_rank.max(*rank);
@@ -190,7 +398,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         .cloned()
         .collect();
     let mut rank_nodes: Vec<Vec<String>> = vec![Vec::new(); max_rank + 1];
-    for node_id in &layout_node_ids {
+    for node_id in layout_node_ids {
         let rank = *ranks.get(node_id).unwrap_or(&0);
         if let Some(bucket) = rank_nodes.get_mut(rank) {
             bucket.push(node_id.clone());
@@ -257,7 +465,6 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     order_rank_nodes(&mut rank_nodes, &expanded_edges, &order_map);
 
     let mut main_cursor = 0.0;
-    let mut rank_main: Vec<f32> = vec![0.0; rank_nodes.len()];
     for (rank_idx, bucket) in rank_nodes.iter().enumerate() {
         let mut max_main: f32 = 0.0;
         for node_id in bucket {
@@ -271,7 +478,6 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
                 }
             }
         }
-        rank_main[rank_idx] = main_cursor;
         main_cursor += max_main + config.rank_spacing;
         if rank_idx == max_rank {
             // Ensure no trailing spacing
@@ -355,111 +561,76 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
 
     for _ in 0..2 {
         for rank_idx in 0..rank_nodes.len() {
-            place_rank(rank_idx, true, &mut nodes);
+            place_rank(rank_idx, true, nodes);
         }
         for rank_idx in (0..rank_nodes.len()).rev() {
-            place_rank(rank_idx, false, &mut nodes);
+            place_rank(rank_idx, false, nodes);
         }
     }
+}
 
-    let mut anchored_nodes: HashSet<String> = anchored_subgraph_nodes;
-    if !graph.subgraphs.is_empty() {
-        if !anchor_info.is_empty() {
-            if graph.kind != crate::ir::DiagramKind::State {
-                apply_subgraph_direction_overrides(graph, &mut nodes, config);
+fn dagre_rankdir(direction: Direction) -> &'static str {
+    match direction {
+        Direction::TopDown => "tb",
+        Direction::BottomTop => "bt",
+        Direction::LeftRight => "lr",
+        Direction::RightLeft => "rl",
+    }
+}
+
+fn dagre_subgraph_ids(graph: &Graph, layout_set: &HashSet<String>) -> Vec<Option<String>> {
+    graph
+        .subgraphs
+        .iter()
+        .enumerate()
+        .map(|(idx, sub)| {
+            if is_region_subgraph(sub) {
+                None
+            } else if !sub.nodes.iter().any(|node_id| layout_set.contains(node_id)) {
+                None
+            } else {
+                Some(format!("__subgraph_{idx}__"))
             }
-            anchored_nodes =
-                align_subgraphs_to_anchor_nodes(graph, &anchor_info, &mut nodes, config);
+        })
+        .collect()
+}
+
+fn subgraph_parent_indices(
+    graph: &Graph,
+    subgraph_ids: &[Option<String>],
+) -> Vec<Option<usize>> {
+    let sets: Vec<HashSet<String>> = graph
+        .subgraphs
+        .iter()
+        .map(|sub| sub.nodes.iter().cloned().collect())
+        .collect();
+    let mut parents: Vec<Option<usize>> = vec![None; graph.subgraphs.len()];
+    for i in 0..graph.subgraphs.len() {
+        if subgraph_ids.get(i).and_then(|id| id.as_ref()).is_none() {
+            continue;
         }
-        if graph.kind == crate::ir::DiagramKind::State {
-            let anchored_indices: HashSet<usize> =
-                anchor_info.values().map(|info| info.sub_idx).collect();
-            apply_state_subgraph_layouts(graph, &mut nodes, config, &anchored_indices);
+        let mut parent: Option<usize> = None;
+        for j in 0..graph.subgraphs.len() {
+            if i == j {
+                continue;
+            }
+            if subgraph_ids.get(j).and_then(|id| id.as_ref()).is_none() {
+                continue;
+            }
+            if sets[j].len() > sets[i].len() && sets[i].is_subset(&sets[j]) {
+                match parent {
+                    None => parent = Some(j),
+                    Some(current) => {
+                        if sets[j].len() < sets[current].len() {
+                            parent = Some(j);
+                        }
+                    }
+                }
+            }
         }
-        apply_orthogonal_region_bands(graph, &mut nodes, config);
-        if graph.kind != crate::ir::DiagramKind::State {
-            apply_subgraph_bands(graph, &mut nodes, &anchored_nodes, config);
-        }
+        parents[i] = parent;
     }
-
-    let mut subgraphs = build_subgraph_layouts(graph, &nodes, theme, config);
-    apply_subgraph_anchors(graph, &subgraphs, &mut nodes);
-    let obstacles = build_obstacles(&nodes, &subgraphs);
-    let pair_counts = build_edge_pair_counts(&graph.edges);
-    let mut pair_seen: HashMap<(String, String), usize> = HashMap::new();
-    let mut edges = Vec::new();
-    for (idx, edge) in graph.edges.iter().enumerate() {
-        let key = edge_pair_key(edge);
-        let total = *pair_counts.get(&key).unwrap_or(&1) as f32;
-        let seen = pair_seen.entry(key).or_insert(0usize);
-        let idx_in_pair = *seen as f32;
-        *seen += 1;
-        let base_offset = if total > 1.0 {
-            (idx_in_pair - (total - 1.0) / 2.0) * (config.node_spacing * 0.35)
-        } else {
-            0.0
-        };
-        let from_layout = nodes.get(&edge.from).expect("from node missing");
-        let to_layout = nodes.get(&edge.to).expect("to node missing");
-        let temp_from = from_layout.anchor_subgraph.and_then(|idx| {
-            subgraphs
-                .get(idx)
-                .map(|sub| anchor_layout_for_edge(from_layout, sub, graph.direction, true))
-        });
-        let temp_to = to_layout.anchor_subgraph.and_then(|idx| {
-            subgraphs
-                .get(idx)
-                .map(|sub| anchor_layout_for_edge(to_layout, sub, graph.direction, false))
-        });
-        let from = temp_from.as_ref().unwrap_or(from_layout);
-        let to = temp_to.as_ref().unwrap_or(to_layout);
-        let label = edge.label.as_ref().map(|l| measure_label(l, theme, config));
-        let override_style = resolve_edge_style(idx, graph);
-
-        let route_ctx = RouteContext {
-            from_id: &edge.from,
-            to_id: &edge.to,
-            from,
-            to,
-            direction: graph.direction,
-            config,
-            obstacles: &obstacles,
-            base_offset,
-        };
-        let points = route_edge_with_avoidance(&route_ctx);
-        edges.push(EdgeLayout {
-            from: edge.from.clone(),
-            to: edge.to.clone(),
-            label,
-            points,
-            directed: edge.directed,
-            arrow_start: edge.arrow_start,
-            arrow_end: edge.arrow_end,
-            start_decoration: edge.start_decoration,
-            end_decoration: edge.end_decoration,
-            style: edge.style,
-            override_style,
-        });
-    }
-
-    if matches!(graph.direction, Direction::RightLeft | Direction::BottomTop) {
-        apply_direction_mirror(graph.direction, &mut nodes, &mut edges, &mut subgraphs);
-    }
-
-    normalize_layout(&mut nodes, &mut edges, &mut subgraphs);
-    let (width, height) = bounds_from_layout(&nodes, &subgraphs);
-
-    Layout {
-        kind: graph.kind,
-        nodes,
-        edges,
-        subgraphs,
-        lifelines: Vec::new(),
-        sequence_footboxes: Vec::new(),
-        sequence_frames: Vec::new(),
-        width,
-        height,
-    }
+    parents
 }
 
 fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
@@ -884,8 +1055,13 @@ fn apply_subgraph_bands(
     graph: &Graph,
     nodes: &mut BTreeMap<String, NodeLayout>,
     anchored_nodes: &HashSet<String>,
+    anchor_info: &HashMap<String, SubgraphAnchorInfo>,
     config: &LayoutConfig,
 ) {
+    let mut anchor_to_subgraph: HashMap<String, usize> = HashMap::new();
+    for (anchor_id, info) in anchor_info {
+        anchor_to_subgraph.insert(anchor_id.clone(), info.sub_idx);
+    }
     let mut group_nodes: Vec<Vec<String>> = Vec::new();
     let mut node_group: HashMap<String, usize> = HashMap::new();
 
@@ -893,6 +1069,9 @@ fn apply_subgraph_bands(
     group_nodes.push(Vec::new());
     for node_id in graph.nodes.keys() {
         if anchored_nodes.contains(node_id) {
+            continue;
+        }
+        if anchor_to_subgraph.contains_key(node_id) {
             continue;
         }
         node_group.insert(node_id.clone(), 0);
@@ -903,6 +1082,13 @@ fn apply_subgraph_bands(
         let group_idx = pos + 1;
         let sub = &graph.subgraphs[*idx];
         group_nodes.push(Vec::new());
+        for (anchor_id, anchor_idx) in anchor_to_subgraph.iter() {
+            if anchor_idx == idx {
+                if nodes.contains_key(anchor_id) {
+                    node_group.insert(anchor_id.clone(), group_idx);
+                }
+            }
+        }
         for node_id in &sub.nodes {
             if anchored_nodes.contains(node_id) {
                 continue;
