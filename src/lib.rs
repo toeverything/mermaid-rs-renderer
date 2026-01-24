@@ -85,7 +85,7 @@ pub mod theme;
 pub use config::{Config, LayoutConfig, RenderConfig};
 pub use ir::{
     DiagramKind, Direction, Edge, EdgeArrowhead, EdgeDecoration, EdgeStyle, Graph, Node, NodeShape,
-    Subgraph,
+    SequenceActivation, SequenceActivationKind, Subgraph,
 };
 pub use layout::{EdgeLayout, Layout, NodeLayout, SubgraphLayout, compute_layout};
 pub use parser::{ParseOutput, parse_mermaid};

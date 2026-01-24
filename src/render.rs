@@ -257,6 +257,18 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         ));
     }
 
+    for activation in &layout.sequence_activations {
+        svg.push_str(&format!(
+            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\"/>",
+            activation.x,
+            activation.y,
+            activation.width,
+            activation.height,
+            theme.sequence_activation_fill,
+            theme.sequence_activation_border
+        ));
+    }
+
     for note in &layout.sequence_notes {
         let fill = theme.sequence_note_fill.as_str();
         let stroke = theme.sequence_note_border.as_str();
@@ -366,6 +378,27 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     "middle",
                 ));
             }
+        }
+
+        for number in &layout.sequence_numbers {
+            let r = (theme.font_size * 0.45).max(6.0);
+            svg.push_str(&format!(
+                "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\"/>",
+                number.x,
+                number.y,
+                r,
+                theme.sequence_activation_fill,
+                theme.sequence_activation_border
+            ));
+            let label = number.value.to_string();
+            svg.push_str(&text_line_svg(
+                number.x,
+                number.y + theme.font_size * 0.35,
+                label.as_str(),
+                theme,
+                theme.primary_text_color.as_str(),
+                "middle",
+            ));
         }
     } else {
         let label_positions =
@@ -636,11 +669,65 @@ fn points_to_path(points: &[(f32, f32)]) -> String {
     if points.is_empty() {
         return String::new();
     }
-    let mut d = String::new();
-    d.push_str(&format!("M {:.2} {:.2}", points[0].0, points[0].1));
-    for point in points.iter().skip(1) {
-        d.push_str(&format!(" L {:.2} {:.2}", point.0, point.1));
+    if points.len() == 1 {
+        return format!("M {:.2} {:.2}", points[0].0, points[0].1);
     }
+    if points.len() == 2 {
+        // Simple straight line for 2 points
+        return format!(
+            "M {:.2} {:.2} L {:.2} {:.2}",
+            points[0].0, points[0].1, points[1].0, points[1].1
+        );
+    }
+
+    // Use monotone cubic interpolation (similar to d3.curveMonotone)
+    // This produces smooth curves that don't overshoot
+    let mut d = String::new();
+    d.push_str(&format!("M {:.3},{:.3}", points[0].0, points[0].1));
+
+    // Calculate tangents using finite differences with monotonicity constraint
+    let n = points.len();
+    let mut tangents: Vec<(f32, f32)> = Vec::with_capacity(n);
+
+    for i in 0..n {
+        if i == 0 {
+            // First point: use forward difference
+            tangents.push((points[1].0 - points[0].0, points[1].1 - points[0].1));
+        } else if i == n - 1 {
+            // Last point: use backward difference
+            tangents.push((
+                points[n - 1].0 - points[n - 2].0,
+                points[n - 1].1 - points[n - 2].1,
+            ));
+        } else {
+            // Interior points: average of adjacent slopes
+            let dx1 = points[i].0 - points[i - 1].0;
+            let dy1 = points[i].1 - points[i - 1].1;
+            let dx2 = points[i + 1].0 - points[i].0;
+            let dy2 = points[i + 1].1 - points[i].1;
+            tangents.push(((dx1 + dx2) * 0.5, (dy1 + dy2) * 0.5));
+        }
+    }
+
+    // Generate cubic bezier segments
+    for i in 0..n - 1 {
+        let p1 = points[i];
+        let p2 = points[i + 1];
+        let t1 = tangents[i];
+        let t2 = tangents[i + 1];
+
+        // Control points at 1/3 and 2/3 of the segment
+        let cp1x = p1.0 + t1.0 / 3.0;
+        let cp1y = p1.1 + t1.1 / 3.0;
+        let cp2x = p2.0 - t2.0 / 3.0;
+        let cp2y = p2.1 - t2.1 / 3.0;
+
+        d.push_str(&format!(
+            "C{:.3},{:.3},{:.3},{:.3},{:.3},{:.3}",
+            cp1x, cp1y, cp2x, cp2y, p2.0, p2.1
+        ));
+    }
+
     d
 }
 

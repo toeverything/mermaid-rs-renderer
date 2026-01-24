@@ -32,6 +32,19 @@ pub enum SequenceNotePosition {
     Over,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SequenceActivationKind {
+    Activate,
+    Deactivate,
+}
+
+#[derive(Debug, Clone)]
+pub struct SequenceActivation {
+    pub participant: String,
+    pub index: usize,
+    pub kind: SequenceActivationKind,
+}
+
 #[derive(Debug, Clone)]
 pub struct SequenceNote {
     pub position: SequenceNotePosition,
@@ -130,6 +143,8 @@ pub struct Graph {
     pub sequence_participants: Vec<String>,
     pub sequence_frames: Vec<SequenceFrame>,
     pub sequence_notes: Vec<SequenceNote>,
+    pub sequence_activations: Vec<SequenceActivation>,
+    pub sequence_autonumber: Option<usize>,
     pub class_defs: HashMap<String, NodeStyle>,
     pub node_classes: HashMap<String, Vec<String>>,
     pub node_styles: HashMap<String, NodeStyle>,
@@ -171,6 +186,8 @@ impl Graph {
             sequence_participants: Vec::new(),
             sequence_frames: Vec::new(),
             sequence_notes: Vec::new(),
+            sequence_activations: Vec::new(),
+            sequence_autonumber: None,
             class_defs: HashMap::new(),
             node_classes: HashMap::new(),
             node_styles: HashMap::new(),

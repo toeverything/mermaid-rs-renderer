@@ -623,9 +623,19 @@ fn parse_sequence_participant(line: &str) -> Option<(String, Option<String>)> {
 
 fn parse_sequence_message(
     line: &str,
-) -> Option<(String, String, Option<String>, crate::ir::EdgeStyle)> {
+) -> Option<(
+    String,
+    String,
+    Option<String>,
+    crate::ir::EdgeStyle,
+    Option<crate::ir::SequenceActivationKind>,
+)> {
     let tokens = [
-        "-->>+", "->>+", "-->+", "->+", "-->>", "->>", "-->", "->", "<--", "<-",
+        "-->>+", "->>+", "-->+", "->+",
+        "-->>-", "->>-", "-->-", "->-",
+        "<--+", "<-+",
+        "<--", "<-",
+        "-->>", "->>", "-->", "->",
     ];
     for token in tokens {
         if let Some(pos) = line.find(token) {
@@ -640,12 +650,22 @@ fn parse_sequence_message(
             if token.starts_with('<') {
                 std::mem::swap(&mut from, &mut to);
             }
-            let style = if token.starts_with("--") {
+            let trimmed = token
+                .trim_start_matches('<')
+                .trim_end_matches(|c| c == '+' || c == '-');
+            let style = if trimmed.starts_with("--") {
                 crate::ir::EdgeStyle::Dotted
             } else {
                 crate::ir::EdgeStyle::Solid
             };
-            return Some((from, to, label, style));
+            let activation = if token.ends_with('+') {
+                Some(crate::ir::SequenceActivationKind::Activate)
+            } else if token.ends_with('-') {
+                Some(crate::ir::SequenceActivationKind::Deactivate)
+            } else {
+                None
+            };
+            return Some((from, to, label, style, activation));
         }
     }
     None
@@ -1185,14 +1205,61 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
             continue;
         }
 
-        if lower.starts_with("activate ")
-            || lower.starts_with("deactivate ")
-            || lower.starts_with("autonumber")
-        {
+        if lower.starts_with("activate ") {
+            let id = line[9..].trim();
+            if !id.is_empty() {
+                let id = strip_quotes(id);
+                if !order.contains(&id) {
+                    order.push(id.clone());
+                }
+                graph.ensure_node(
+                    &id,
+                    labels.get(&id).cloned(),
+                    Some(crate::ir::NodeShape::RoundRect),
+                );
+                graph.sequence_activations.push(crate::ir::SequenceActivation {
+                    participant: id,
+                    index: graph.edges.len(),
+                    kind: crate::ir::SequenceActivationKind::Activate,
+                });
+            }
+            continue;
+        }
+        if lower.starts_with("deactivate ") {
+            let id = line[11..].trim();
+            if !id.is_empty() {
+                let id = strip_quotes(id);
+                if !order.contains(&id) {
+                    order.push(id.clone());
+                }
+                graph.ensure_node(
+                    &id,
+                    labels.get(&id).cloned(),
+                    Some(crate::ir::NodeShape::RoundRect),
+                );
+                graph.sequence_activations.push(crate::ir::SequenceActivation {
+                    participant: id,
+                    index: graph.edges.len(),
+                    kind: crate::ir::SequenceActivationKind::Deactivate,
+                });
+            }
+            continue;
+        }
+        if lower.starts_with("autonumber") {
+            let parts = line.split_whitespace().collect::<Vec<_>>();
+            if parts.len() >= 2 {
+                if let Ok(start) = parts[1].parse::<usize>() {
+                    graph.sequence_autonumber = Some(start);
+                } else {
+                    graph.sequence_autonumber = Some(1);
+                }
+            } else {
+                graph.sequence_autonumber = Some(1);
+            }
             continue;
         }
 
-        if let Some((from, to, label, style)) = parse_sequence_message(line) {
+        if let Some((from, to, label, style, activation)) = parse_sequence_message(line) {
             if !order.contains(&from) {
                 order.push(from.clone());
             }
@@ -1222,6 +1289,16 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
                 end_decoration: None,
                 style,
             });
+            if let Some(kind) = activation {
+                if let Some(last) = graph.edges.len().checked_sub(1) {
+                    let participant = graph.edges[last].to.clone();
+                    graph.sequence_activations.push(crate::ir::SequenceActivation {
+                        participant,
+                        index: last,
+                        kind,
+                    });
+                }
+            }
         }
     }
 
