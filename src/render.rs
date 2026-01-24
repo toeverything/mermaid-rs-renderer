@@ -410,9 +410,15 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 let rect_y = y - label.height / 2.0 - pad_y;
                 let rect_w = label.width + pad_x * 2.0;
                 let rect_h = label.height + pad_y * 2.0;
+                let label_fill = match layout.kind {
+                    crate::ir::DiagramKind::Class | crate::ir::DiagramKind::State => {
+                        theme.primary_color.as_str()
+                    }
+                    _ => theme.edge_label_background.as_str(),
+                };
                 svg.push_str(&format!(
                     "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"0\" ry=\"0\" fill=\"{}\" fill-opacity=\"0.5\" stroke=\"none\"/>",
-                    theme.edge_label_background
+                    label_fill
                 ));
                 svg.push_str(&text_block_svg(
                     x,
