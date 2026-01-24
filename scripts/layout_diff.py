@@ -148,96 +148,95 @@ def parse_mermaid_svg(path: Path):
     clusters = {}
     special_nodes = []
 
-    for g in root.iter():
-        if strip_ns(g.tag) != 'g':
-            continue
-        cls = g.attrib.get('class', '')
-        gid = g.attrib.get('id')
-        if gid and 'cluster' in cls and 'clusters' not in cls:
-            rect = None
-            for child in g:
-                if strip_ns(child.tag) == 'rect':
-                    rect = child
-                    break
-            if rect is not None:
-                try:
-                    x = float(rect.attrib.get('x', '0'))
-                    y = float(rect.attrib.get('y', '0'))
-                    w = float(rect.attrib.get('width', '0'))
-                    h = float(rect.attrib.get('height', '0'))
-                    clusters[gid] = {
-                        'x': x,
-                        'y': y,
-                        'width': w,
-                        'height': h,
-                    }
-                except ValueError:
-                    pass
-            continue
-        if gid:
-            if 'node' not in cls or 'edge' in cls or 'label' in cls:
-                continue
-            tx, ty = parse_transform(g.attrib.get('transform', ''))
-            bbox = bbox_from_shapes(g, tx, ty)
-            if bbox is None:
-                continue
-            x1, y1, x2, y2 = bbox
-            node = {
-                'x': x1,
-                'y': y1,
-                'width': x2 - x1,
-                'height': y2 - y1,
-                'raw_id': gid,
-                'class': cls,
-            }
-            norm_id = normalize_mermaid_id(gid)
-            nodes[norm_id] = node
-            label_lines = extract_label_lines(g)
-            if label_lines:
-                label = label_lines[0]
-                nodes_by_label.setdefault(label, node)
-            if (match := STATE_START_RE.match(gid)):
-                special_nodes.append({
-                    'kind': 'start',
-                    'index': int(match.group(1)),
-                    'node': node,
-                })
-            elif (match := STATE_END_RE.match(gid)):
-                special_nodes.append({
-                    'kind': 'end',
-                    'index': int(match.group(1)),
-                    'node': node,
-                })
+    def visit(elem, acc_tx, acc_ty):
+        tx, ty = parse_transform(elem.attrib.get('transform', ''))
+        cur_tx = acc_tx + tx
+        cur_ty = acc_ty + ty
 
-    # Sequence diagrams use actor rects instead of node groups.
-    for rect in root.iter():
-        if strip_ns(rect.tag) != 'rect':
-            continue
-        cls = rect.attrib.get('class', '')
-        if 'actor-top' not in cls:
-            continue
-        name = rect.attrib.get('name')
-        if not name or name in nodes:
-            continue
-        try:
-            x = float(rect.attrib.get('x', '0'))
-            y = float(rect.attrib.get('y', '0'))
-            w = float(rect.attrib.get('width', '0'))
-            h = float(rect.attrib.get('height', '0'))
-        except ValueError:
-            continue
-        if w <= 0 or h <= 0:
-            continue
-        node = {
-            'x': x,
-            'y': y,
-            'width': w,
-            'height': h,
-            'raw_id': name,
-            'class': cls,
-        }
-        nodes[name] = node
-        nodes_by_label.setdefault(name, node)
+        if strip_ns(elem.tag) == 'g':
+            cls = elem.attrib.get('class', '')
+            gid = elem.attrib.get('id')
+            if gid and 'cluster' in cls and 'clusters' not in cls:
+                rect = None
+                for child in elem:
+                    if strip_ns(child.tag) == 'rect':
+                        rect = child
+                        break
+                if rect is not None:
+                    try:
+                        x = float(rect.attrib.get('x', '0')) + cur_tx
+                        y = float(rect.attrib.get('y', '0')) + cur_ty
+                        w = float(rect.attrib.get('width', '0'))
+                        h = float(rect.attrib.get('height', '0'))
+                        clusters[gid] = {
+                            'x': x,
+                            'y': y,
+                            'width': w,
+                            'height': h,
+                        }
+                    except ValueError:
+                        pass
+            if gid:
+                if 'node' in cls and 'edge' not in cls and 'label' not in cls:
+                    bbox = bbox_from_shapes(elem, cur_tx, cur_ty)
+                    if bbox is not None:
+                        x1, y1, x2, y2 = bbox
+                        node = {
+                            'x': x1,
+                            'y': y1,
+                            'width': x2 - x1,
+                            'height': y2 - y1,
+                            'raw_id': gid,
+                            'class': cls,
+                        }
+                        norm_id = normalize_mermaid_id(gid)
+                        nodes[norm_id] = node
+                        label_lines = extract_label_lines(elem)
+                        if label_lines:
+                            label = label_lines[0]
+                            nodes_by_label.setdefault(label, node)
+                        if (match := STATE_START_RE.match(gid)):
+                            special_nodes.append({
+                                'kind': 'start',
+                                'index': int(match.group(1)),
+                                'node': node,
+                            })
+                        elif (match := STATE_END_RE.match(gid)):
+                            special_nodes.append({
+                                'kind': 'end',
+                                'index': int(match.group(1)),
+                                'node': node,
+                            })
+
+        # Sequence diagrams use actor rects instead of node groups.
+        if strip_ns(elem.tag) == 'rect':
+            cls = elem.attrib.get('class', '')
+            if 'actor-top' in cls:
+                name = elem.attrib.get('name')
+                if name and name not in nodes:
+                    try:
+                        x = float(elem.attrib.get('x', '0')) + cur_tx
+                        y = float(elem.attrib.get('y', '0')) + cur_ty
+                        w = float(elem.attrib.get('width', '0'))
+                        h = float(elem.attrib.get('height', '0'))
+                    except ValueError:
+                        x = y = w = h = None
+                    if w and h and w > 0 and h > 0:
+                        node = {
+                            'x': x,
+                            'y': y,
+                            'width': w,
+                            'height': h,
+                            'raw_id': name,
+                            'class': cls,
+                        }
+                        nodes[name] = node
+                        nodes_by_label.setdefault(name, node)
+
+        for child in list(elem):
+            visit(child, cur_tx, cur_ty)
+
+    visit(root, 0.0, 0.0)
     return nodes, nodes_by_label, clusters, special_nodes
 
 

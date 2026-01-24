@@ -128,12 +128,7 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
 }
 
 fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
-    let mut effective = config.clone();
-    if graph.kind == crate::ir::DiagramKind::Class {
-        effective.node_spacing = effective.node_spacing.max(48.0);
-        effective.rank_spacing = effective.rank_spacing.max(90.0);
-    }
-    let config = &effective;
+    let config = config;
     let mut nodes = BTreeMap::new();
 
     for node in graph.nodes.values() {
@@ -178,13 +173,15 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         }
     }
 
+    let anchored_indices: HashSet<usize> =
+        anchor_info.values().map(|info| info.sub_idx).collect();
     let mut edge_redirects: HashMap<String, String> = HashMap::new();
     if !graph.subgraphs.is_empty() {
-        for sub in &graph.subgraphs {
+        for (idx, sub) in graph.subgraphs.iter().enumerate() {
             let Some(anchor_id) = subgraph_anchor_id(sub, &nodes) else {
                 continue;
             };
-            if subgraph_is_anchorable(sub, graph, &nodes) {
+            if anchored_indices.contains(&idx) {
                 continue;
             }
             if let Some(anchor_child) = pick_subgraph_anchor_child(sub, graph, &anchor_ids) {
@@ -242,8 +239,6 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
 
     let mut anchored_nodes: HashSet<String> = anchored_subgraph_nodes;
     if !graph.subgraphs.is_empty() {
-        let anchored_indices: HashSet<usize> =
-            anchor_info.values().map(|info| info.sub_idx).collect();
         if graph.kind != crate::ir::DiagramKind::State {
             apply_subgraph_direction_overrides(graph, &mut nodes, config, &anchored_indices);
         }
@@ -354,11 +349,12 @@ fn assign_positions_dagre(
         return false;
     }
 
+    let compound_enabled = graph.kind == crate::ir::DiagramKind::State;
     let mut dagre_graph: DagreGraph<DagreConfig, DagreNode, DagreEdge> = DagreGraph::new(
         Some(GraphOption {
             directed: Some(true),
             multigraph: Some(false),
-            compound: Some(true),
+            compound: Some(compound_enabled),
         }),
     );
 
@@ -393,7 +389,7 @@ fn assign_positions_dagre(
         }
     }
 
-    if !anchor_ids.is_empty() {
+    if compound_enabled && !anchor_ids.is_empty() {
         let mut node_parent: HashMap<String, usize> = HashMap::new();
         for (idx, sub) in graph.subgraphs.iter().enumerate() {
             let Some(anchor_id) = anchor_ids.get(&idx) else {
@@ -473,6 +469,81 @@ fn assign_positions_dagre(
 
     let mut applied = false;
     for node_id in layout_node_ids {
+        let Some(dagre_node) = dagre_graph.node(node_id) else {
+            continue;
+        };
+        if let Some(node) = nodes.get_mut(node_id) {
+            node.x = dagre_node.x - node.width / 2.0;
+            node.y = dagre_node.y - node.height / 2.0;
+            applied = true;
+        }
+    }
+
+    applied
+}
+
+fn assign_positions_dagre_subset(
+    node_ids: &[String],
+    edges: &[crate::ir::Edge],
+    nodes: &mut BTreeMap<String, NodeLayout>,
+    direction: Direction,
+    config: &LayoutConfig,
+    node_order: Option<&HashMap<String, usize>>,
+) -> bool {
+    if node_ids.is_empty() {
+        return false;
+    }
+
+    let mut dagre_graph: DagreGraph<DagreConfig, DagreNode, DagreEdge> = DagreGraph::new(
+        Some(GraphOption {
+            directed: Some(true),
+            multigraph: Some(false),
+            compound: Some(false),
+        }),
+    );
+
+    let mut graph_config = DagreConfig::default();
+    graph_config.rankdir = Some(dagre_rankdir(direction).to_string());
+    graph_config.nodesep = Some(config.node_spacing);
+    graph_config.ranksep = Some(config.rank_spacing);
+    graph_config.marginx = Some(8.0);
+    graph_config.marginy = Some(8.0);
+    dagre_graph.set_graph(graph_config);
+
+    for node_id in node_ids {
+        let Some(layout) = nodes.get(node_id) else {
+            continue;
+        };
+        let mut node = DagreNode::default();
+        node.width = layout.width;
+        node.height = layout.height;
+        if let Some(order_map) = node_order {
+            if let Some(order) = order_map.get(node_id) {
+                node.order = Some(*order);
+            }
+        }
+        dagre_graph.set_node(node_id.clone(), Some(node));
+    }
+
+    let node_set: HashSet<String> = node_ids.iter().cloned().collect();
+    let mut edge_set: HashSet<(String, String)> = HashSet::new();
+    for edge in edges {
+        if !node_set.contains(&edge.from) || !node_set.contains(&edge.to) {
+            continue;
+        }
+        let from = edge.from.clone();
+        let to = edge.to.clone();
+        if !edge_set.insert((from.clone(), to.clone())) {
+            continue;
+        }
+        let edge_label = DagreEdge::default();
+        let _ = dagre_graph.set_edge(&from, &to, Some(edge_label), None);
+    }
+
+    dagre_layout::run_layout(&mut dagre_graph);
+
+    let mut applied = false;
+    for node_id in node_ids {
         let Some(dagre_node) = dagre_graph.node(node_id) else {
             continue;
         };
@@ -1387,13 +1458,10 @@ fn apply_subgraph_direction_overrides(
         let direction = match sub.direction {
             Some(direction) => direction,
             None => {
-                if sub.nodes.len() <= 1 {
+                if graph.kind != crate::ir::DiagramKind::Flowchart {
                     continue;
                 }
-                match graph.direction {
-                    Direction::TopDown | Direction::BottomTop => Direction::LeftRight,
-                    Direction::LeftRight | Direction::RightLeft => Direction::TopDown,
-                }
+                subgraph_layout_direction(graph, sub)
             }
         };
         if sub.nodes.is_empty() {
@@ -1415,8 +1483,55 @@ fn apply_subgraph_direction_overrides(
             continue;
         }
 
-        let ranks = compute_ranks_subset(&sub.nodes, &graph.edges);
-        assign_positions(&sub.nodes, &ranks, direction, config, nodes, min_x, min_y);
+        let mut temp_nodes: BTreeMap<String, NodeLayout> = BTreeMap::new();
+        for node_id in &sub.nodes {
+            if let Some(node) = nodes.get(node_id) {
+                let mut clone = node.clone();
+                clone.x = 0.0;
+                clone.y = 0.0;
+                temp_nodes.insert(node_id.clone(), clone);
+            }
+        }
+        let local_config = subgraph_layout_config(graph, false, config);
+        let applied = assign_positions_dagre_subset(
+            &sub.nodes,
+            &graph.edges,
+            &mut temp_nodes,
+            direction,
+            &local_config,
+            Some(&graph.node_order),
+        );
+        if !applied {
+            let ranks = compute_ranks_subset(&sub.nodes, &graph.edges);
+            assign_positions(
+                &sub.nodes,
+                &ranks,
+                direction,
+                &local_config,
+                &mut temp_nodes,
+                0.0,
+                0.0,
+            );
+        }
+        let mut temp_min_x = f32::MAX;
+        let mut temp_min_y = f32::MAX;
+        for node_id in &sub.nodes {
+            if let Some(node) = temp_nodes.get(node_id) {
+                temp_min_x = temp_min_x.min(node.x);
+                temp_min_y = temp_min_y.min(node.y);
+            }
+        }
+        if temp_min_x == f32::MAX {
+            continue;
+        }
+        for node_id in &sub.nodes {
+            if let (Some(target), Some(source)) =
+                (nodes.get_mut(node_id), temp_nodes.get(node_id))
+            {
+                target.x = source.x - temp_min_x + min_x;
+                target.y = source.y - temp_min_y + min_y;
+            }
+        }
 
         if matches!(direction, Direction::RightLeft | Direction::BottomTop) {
             mirror_subgraph_nodes(&sub.nodes, nodes, direction);
@@ -1447,6 +1562,20 @@ fn subgraph_is_anchorable(
         }
     }
     true
+}
+
+fn subgraph_should_anchor(
+    sub: &crate::ir::Subgraph,
+    graph: &Graph,
+    nodes: &BTreeMap<String, NodeLayout>,
+) -> bool {
+    if sub.nodes.is_empty() {
+        return false;
+    }
+    if graph.kind == crate::ir::DiagramKind::Flowchart {
+        return subgraph_anchor_id(sub, nodes).is_some();
+    }
+    subgraph_is_anchorable(sub, graph, nodes)
 }
 
 fn subgraph_anchor_id<'a>(
@@ -1522,6 +1651,14 @@ fn subgraph_layout_direction(graph: &Graph, sub: &crate::ir::Subgraph) -> Direct
     }
 }
 
+fn subgraph_layout_config(graph: &Graph, anchorable: bool, config: &LayoutConfig) -> LayoutConfig {
+    let mut local = config.clone();
+    if graph.kind == crate::ir::DiagramKind::Flowchart && anchorable {
+        local.rank_spacing = config.rank_spacing + 25.0;
+    }
+    local
+}
+
 fn subgraph_padding(
     graph: &Graph,
     sub: &crate::ir::Subgraph,
@@ -1557,6 +1694,7 @@ fn estimate_subgraph_box_size(
     nodes: &BTreeMap<String, NodeLayout>,
     theme: &Theme,
     config: &LayoutConfig,
+    anchorable: bool,
 ) -> Option<(f32, f32, f32, f32)> {
     if sub.nodes.is_empty() {
         return None;
@@ -1571,8 +1709,27 @@ fn estimate_subgraph_box_size(
             temp_nodes.insert(node_id.clone(), clone);
         }
     }
-    let ranks = compute_ranks_subset(&sub.nodes, &graph.edges);
-    assign_positions(&sub.nodes, &ranks, direction, config, &mut temp_nodes, 0.0, 0.0);
+    let local_config = subgraph_layout_config(graph, anchorable, config);
+    let applied = assign_positions_dagre_subset(
+        &sub.nodes,
+        &graph.edges,
+        &mut temp_nodes,
+        direction,
+        &local_config,
+        Some(&graph.node_order),
+    );
+    if !applied {
+        let ranks = compute_ranks_subset(&sub.nodes, &graph.edges);
+        assign_positions(
+            &sub.nodes,
+            &ranks,
+            direction,
+            &local_config,
+            &mut temp_nodes,
+            0.0,
+            0.0,
+        );
+    }
     let mut min_x = f32::MAX;
     let mut min_y = f32::MAX;
     let mut max_x = f32::MIN;
@@ -1608,14 +1765,14 @@ fn apply_subgraph_anchor_sizes(
         if is_region_subgraph(sub) {
             continue;
         }
-        if !subgraph_is_anchorable(sub, graph, nodes) {
+        if !subgraph_should_anchor(sub, graph, nodes) {
             continue;
         }
         let Some(anchor_id) = subgraph_anchor_id(sub, nodes) else {
             continue;
         };
         let Some((width, height, padding, top_padding)) =
-            estimate_subgraph_box_size(graph, sub, nodes, theme, config)
+            estimate_subgraph_box_size(graph, sub, nodes, theme, config, true)
         else {
             continue;
         };
@@ -1646,23 +1803,44 @@ fn align_subgraphs_to_anchor_nodes(
         return anchored_nodes;
     }
     for (anchor_id, info) in anchor_info {
-        let Some(anchor) = nodes.get(anchor_id) else {
-            continue;
+        let (anchor_x, anchor_y) = {
+            let Some(anchor) = nodes.get(anchor_id) else {
+                continue;
+            };
+            (anchor.x, anchor.y)
         };
         let Some(sub) = graph.subgraphs.get(info.sub_idx) else {
             continue;
         };
         let direction = subgraph_layout_direction(graph, sub);
-        let ranks = compute_ranks_subset(&sub.nodes, &graph.edges);
-        assign_positions(
+        let local_config = subgraph_layout_config(graph, true, config);
+        let applied = assign_positions_dagre_subset(
             &sub.nodes,
-            &ranks,
-            direction,
-            config,
+            &graph.edges,
             nodes,
-            anchor.x + info.padding,
-            anchor.y + info.top_padding,
+            direction,
+            &local_config,
+            Some(&graph.node_order),
         );
+        if !applied {
+            let ranks = compute_ranks_subset(&sub.nodes, &graph.edges);
+            assign_positions(
+                &sub.nodes,
+                &ranks,
+                direction,
+                &local_config,
+                nodes,
+                anchor_x + info.padding,
+                anchor_y + info.top_padding,
+            );
+        } else {
+            for node_id in &sub.nodes {
+                if let Some(node) = nodes.get_mut(node_id) {
+                    node.x += anchor_x + info.padding;
+                    node.y += anchor_y + info.top_padding;
+                }
+            }
+        }
         if matches!(direction, Direction::RightLeft | Direction::BottomTop) {
             mirror_subgraph_nodes(&sub.nodes, nodes, direction);
         }

@@ -15,8 +15,8 @@ pub struct LayoutConfig {
 impl Default for LayoutConfig {
     fn default() -> Self {
         Self {
-            node_spacing: 40.0,
-            rank_spacing: 80.0,
+            node_spacing: 50.0,
+            rank_spacing: 50.0,
             node_padding_x: 16.0,
             node_padding_y: 10.0,
             label_line_height: 1.3,
