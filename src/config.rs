@@ -1,8 +1,8 @@
 use crate::theme::Theme;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LayoutConfig {
     pub node_spacing: f32,
     pub rank_spacing: f32,
@@ -25,7 +25,7 @@ impl Default for LayoutConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RenderConfig {
     pub width: f32,
     pub height: f32,
