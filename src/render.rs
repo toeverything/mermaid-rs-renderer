@@ -369,12 +369,16 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         let label_positions =
             compute_edge_label_positions(&layout.edges, &layout.nodes, &layout.subgraphs);
 
+        let base_edge_width = match layout.kind {
+            crate::ir::DiagramKind::Class | crate::ir::DiagramKind::State => 1.0,
+            _ => 2.0,
+        };
         for (idx, edge) in layout.edges.iter().enumerate() {
             let d = points_to_path(&edge.points);
             let mut stroke = theme.line_color.clone();
             let (mut dash, mut stroke_width) = match edge.style {
-                crate::ir::EdgeStyle::Solid => (String::new(), 2.0),
-                crate::ir::EdgeStyle::Dotted => ("stroke-dasharray=\"2\"".to_string(), 2.0),
+                crate::ir::EdgeStyle::Solid => (String::new(), base_edge_width),
+                crate::ir::EdgeStyle::Dotted => ("stroke-dasharray=\"2\"".to_string(), base_edge_width),
                 crate::ir::EdgeStyle::Thick => (String::new(), 3.5),
             };
 
