@@ -41,11 +41,11 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
     for color in &colors {
         let idx = color_ids.get(color).copied().unwrap_or(0);
         svg.push_str(&format!(
-            "<marker id=\"arrow-{idx}\" viewBox=\"0 0 10 10\" refX=\"10\" refY=\"5\" markerWidth=\"8\" markerHeight=\"8\" orient=\"auto-start-reverse\"><path d=\"M 0 0 L 10 5 L 0 10 z\" fill=\"{}\"/></marker>",
+            "<marker id=\"arrow-{idx}\" viewBox=\"0 0 10 10\" refX=\"5\" refY=\"5\" markerUnits=\"userSpaceOnUse\" markerWidth=\"8\" markerHeight=\"8\" orient=\"auto\"><path d=\"M 0 0 L 10 5 L 0 10 z\" fill=\"{}\"/></marker>",
             color
         ));
         svg.push_str(&format!(
-            "<marker id=\"arrow-start-{idx}\" viewBox=\"0 0 10 10\" refX=\"0\" refY=\"5\" markerWidth=\"8\" markerHeight=\"8\" orient=\"auto\"><path d=\"M 10 0 L 0 5 L 10 10 z\" fill=\"{}\"/></marker>",
+            "<marker id=\"arrow-start-{idx}\" viewBox=\"0 0 10 10\" refX=\"4.5\" refY=\"5\" markerUnits=\"userSpaceOnUse\" markerWidth=\"8\" markerHeight=\"8\" orient=\"auto\"><path d=\"M 0 5 L 10 10 L 10 0 z\" fill=\"{}\"/></marker>",
             color
         ));
         if is_sequence {
