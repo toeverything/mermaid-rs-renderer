@@ -23,6 +23,24 @@ mmdr renders diagrams **500-1000x faster** than mermaid-cli by eliminating brows
 
 <sub>Intel Core Ultra 7 256V, Linux 6.18.2 | mermaid-cli 11.12.0 via Puppeteer/Chromium</sub>
 
+<details>
+<summary><strong>Pipeline Breakdown</strong></summary>
+
+Where time is spent in mmdr (parse → layout → render):
+
+| Diagram | Parse | Layout | Render | Total |
+|:--------|------:|-------:|-------:|------:|
+| flowchart (small) | 1.0 ms | 1.2 ms | 0.04 ms | 2.2 ms |
+| flowchart (medium) | 1.1 ms | 10.5 ms | 0.1 ms | 11.8 ms |
+| flowchart (large) | 1.4 ms | 63.1 ms | 0.5 ms | 65.0 ms |
+| classDiagram | 0.4 ms | 2.6 ms | 0.1 ms | 3.1 ms |
+| stateDiagram | 0.4 ms | 2.9 ms | 0.1 ms | 3.4 ms |
+| sequenceDiagram | 0.4 ms | 0.03 ms | 0.07 ms | 0.5 ms |
+
+Layout dominates for complex flowcharts; parsing and rendering are fast.
+
+</details>
+
 ## Why mmdr?
 
 The official `mermaid-cli` spawns a **headless Chromium browser** for every diagram, adding 2-3 seconds of startup overhead.
@@ -259,6 +277,73 @@ mmdr -i diagram.mmd -o out.svg --nodeSpacing 60 --rankSpacing 120
 | Cold start | ~3 ms | ~2,000 ms |
 | Memory | ~15 MB | ~300+ MB |
 | Dependencies | None | Node.js, npm, Chromium |
+
+## Library Usage
+
+Use mmdr as a Rust library in your project:
+
+```toml
+[dependencies]
+mermaid-rs-renderer = { git = "https://github.com/1jehuang/mermaid-rs-renderer" }
+```
+
+```rust
+use mermaid_rs_renderer::{render, render_with_options, RenderOptions};
+
+// Simple one-liner
+let svg = render("flowchart LR; A-->B-->C").unwrap();
+
+// With custom options
+let opts = RenderOptions::modern()
+    .with_node_spacing(60.0)
+    .with_rank_spacing(80.0);
+let svg = render_with_options("flowchart TD; X-->Y", opts).unwrap();
+```
+
+<details>
+<summary><strong>Full pipeline control</strong></summary>
+
+```rust
+use mermaid_rs_renderer::{
+    parse_mermaid, compute_layout, render_svg,
+    Theme, LayoutConfig,
+};
+
+let diagram = "flowchart LR; A-->B-->C";
+
+// Stage 1: Parse
+let parsed = parse_mermaid(diagram).unwrap();
+println!("Parsed {} nodes", parsed.graph.nodes.len());
+
+// Stage 2: Layout
+let theme = Theme::modern();
+let config = LayoutConfig::default();
+let layout = compute_layout(&parsed.graph, &theme, &config);
+
+// Stage 3: Render
+let svg = render_svg(&layout, &theme, &config);
+```
+
+</details>
+
+<details>
+<summary><strong>With timing information</strong></summary>
+
+```rust
+use mermaid_rs_renderer::{render_with_timing, RenderOptions};
+
+let result = render_with_timing(
+    "flowchart LR; A-->B",
+    RenderOptions::default()
+).unwrap();
+
+println!("Rendered in {:.2}ms", result.total_ms());
+println!("  Parse:  {}us", result.parse_us);
+println!("  Layout: {}us", result.layout_us);
+println!("  Render: {}us", result.render_us);
+```
+
+</details>
 
 ## Development
 

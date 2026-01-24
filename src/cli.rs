@@ -50,6 +50,10 @@ pub struct Args {
     /// Dump computed layout JSON (file or directory for markdown input)
     #[arg(long = "dumpLayout")]
     pub dump_layout: Option<PathBuf>,
+
+    /// Output timing information as JSON to stderr
+    #[arg(long = "timing")]
+    pub timing: bool,
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy)]
@@ -82,24 +86,38 @@ pub fn run() -> Result<()> {
     }
 
     let layout_outputs = if args.dump_layout.is_some() {
-        Some(resolve_layout_outputs(args.dump_layout.as_deref(), diagrams.len())?)
+        Some(resolve_layout_outputs(
+            args.dump_layout.as_deref(),
+            diagrams.len(),
+        )?)
     } else {
         None
     };
 
     if diagrams.len() == 1 {
+        let t_parse_start = std::time::Instant::now();
         let parsed = parse_mermaid(&diagrams[0])?;
+        let parse_us = t_parse_start.elapsed().as_micros();
+
         let mut config = base_config.clone();
         if let Some(init_cfg) = parsed.init_config {
             config = merge_init_config(config, init_cfg);
         }
+
+        let t_layout_start = std::time::Instant::now();
         let layout = compute_layout(&parsed.graph, &config.theme, &config.layout);
+        let layout_us = t_layout_start.elapsed().as_micros();
+
         if let Some(outputs) = layout_outputs.as_ref() {
             if let Some(path) = outputs.first() {
                 write_layout_dump(path, &layout, &parsed.graph)?;
             }
         }
+
+        let t_render_start = std::time::Instant::now();
         let svg = render_svg(&layout, &config.theme, &config.layout);
+        let render_us = t_render_start.elapsed().as_micros();
+
         match args.output_format {
             OutputFormat::Svg => {
                 write_output_svg(&svg, args.output.as_deref())?;
@@ -108,6 +126,14 @@ pub fn run() -> Result<()> {
                 let output = ensure_output(&args.output, "png")?;
                 write_output_png(&svg, &output, &config.render, &config.theme)?;
             }
+        }
+
+        if args.timing {
+            let total_us = parse_us + layout_us + render_us;
+            eprintln!(
+                r#"{{"parse_us":{},"layout_us":{},"render_us":{},"total_us":{}}}"#,
+                parse_us, layout_us, render_us, total_us
+            );
         }
         return Ok(());
     }
@@ -355,10 +381,7 @@ fn merge_init_config(mut config: Config, init: serde_json::Value) -> Config {
     if let Some(theme_name) = init.get("theme").and_then(|v| v.as_str()) {
         if theme_name == "modern" {
             config.theme = crate::theme::Theme::modern();
-        } else if theme_name == "base"
-            || theme_name == "default"
-            || theme_name == "mermaid"
-        {
+        } else if theme_name == "base" || theme_name == "default" || theme_name == "mermaid" {
             config.theme = crate::theme::Theme::mermaid_default();
         }
     }

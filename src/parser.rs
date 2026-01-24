@@ -858,41 +858,40 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
         }
     };
 
-    let finalize_regions = |ctx: CompositeContext,
-                            graph: &mut Graph,
-                            region_counter: &mut usize| {
-        if !ctx.has_separator {
-            return;
-        }
-        let mut regions: Vec<Vec<String>> = ctx
-            .regions
-            .into_iter()
-            .filter(|region| !region.is_empty())
-            .collect();
-        if regions.len() <= 1 {
-            return;
-        }
-        for region_nodes in regions.drain(..) {
-            let id = format!("__region_{}__", *region_counter);
-            *region_counter += 1;
-            graph.subgraphs.push(Subgraph {
-                id: Some(id.clone()),
-                label: String::new(),
-                nodes: region_nodes,
-                direction: None,
-            });
-            graph.subgraph_styles.insert(
-                id,
-                NodeStyle {
-                    fill: Some("none".to_string()),
-                    stroke: Some("none".to_string()),
-                    text_color: None,
-                    stroke_width: Some(0.0),
-                    stroke_dasharray: None,
-                },
-            );
-        }
-    };
+    let finalize_regions =
+        |ctx: CompositeContext, graph: &mut Graph, region_counter: &mut usize| {
+            if !ctx.has_separator {
+                return;
+            }
+            let mut regions: Vec<Vec<String>> = ctx
+                .regions
+                .into_iter()
+                .filter(|region| !region.is_empty())
+                .collect();
+            if regions.len() <= 1 {
+                return;
+            }
+            for region_nodes in regions.drain(..) {
+                let id = format!("__region_{}__", *region_counter);
+                *region_counter += 1;
+                graph.subgraphs.push(Subgraph {
+                    id: Some(id.clone()),
+                    label: String::new(),
+                    nodes: region_nodes,
+                    direction: None,
+                });
+                graph.subgraph_styles.insert(
+                    id,
+                    NodeStyle {
+                        fill: Some("none".to_string()),
+                        stroke: Some("none".to_string()),
+                        text_color: None,
+                        stroke_width: Some(0.0),
+                        stroke_dasharray: None,
+                    },
+                );
+            }
+        };
     while let Some(raw_line) = pending.pop_front() {
         for raw_statement in split_statements(&raw_line) {
             let line = raw_statement.trim();

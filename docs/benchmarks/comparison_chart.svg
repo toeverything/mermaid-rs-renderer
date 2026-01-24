@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400">
+<style>
+  .title { font: bold 16px sans-serif; }
+  .axis-label { font: 12px sans-serif; }
+  .tick-label { font: 11px sans-serif; }
+  .legend { font: 12px sans-serif; }
+  .bar-mmdr { fill: #2e7d32; }
+  .bar-cli { fill: #f57c00; }
+  .bar-label { font: 10px sans-serif; fill: white; }
+</style>
+<text x="400.0" y="25" text-anchor="middle" class="title">Render Time Comparison (log scale)</text>
+<line x1="120" y1="320.0" x2="650" y2="320.0" stroke="#ddd" stroke-dasharray="2,2"/>
+<text x="110" y="324.0" text-anchor="end" class="tick-label">1 ms</text>
+<line x1="120" y1="180.49422165295337" x2="650" y2="180.49422165295337" stroke="#ddd" stroke-dasharray="2,2"/>
+<text x="110" y="184.49422165295337" text-anchor="end" class="tick-label">10 ms</text>
+<line x1="120" y1="40.98844330590674" x2="650" y2="40.98844330590674" stroke="#ddd" stroke-dasharray="2,2"/>
+<text x="110" y="44.98844330590674" text-anchor="end" class="tick-label">100 ms</text>
+<rect x="133.25" y="239.0118963426931" width="30.916666666666664" height="80.98810365730691" class="bar-mmdr" rx="2"/>
+<text x="148.70833333333334" y="254.0118963426931" text-anchor="middle" class="bar-label">3.8</text>
+<text x="164.16666666666666" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 164.16666666666666 340)">flow small</text>
+<rect x="221.58333333333331" y="161.84857943098308" width="30.916666666666664" height="158.15142056901692" class="bar-mmdr" rx="2"/>
+<text x="237.04166666666666" y="176.84857943098308" text-anchor="middle" class="bar-label">13.6</text>
+<text x="252.49999999999997" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 252.49999999999997 340)">flow med</text>
+<rect x="309.91666666666663" y="64.56574815467425" width="30.916666666666664" height="255.43425184532575" class="bar-mmdr" rx="2"/>
+<text x="325.37499999999994" y="79.56574815467425" text-anchor="middle" class="bar-label">67.8</text>
+<text x="340.8333333333333" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 340.8333333333333 340)">flow large</text>
+<rect x="398.25" y="216.66737764460902" width="30.916666666666664" height="103.332622355391" class="bar-mmdr" rx="2"/>
+<text x="413.7083333333333" y="231.66737764460902" text-anchor="middle" class="bar-label">5.5</text>
+<text x="429.1666666666667" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 429.1666666666667 340)">class med</text>
+<rect x="486.5833333333333" y="209.0923948576467" width="30.916666666666664" height="110.9076051423533" class="bar-mmdr" rx="2"/>
+<text x="502.04166666666663" y="224.0923948576467" text-anchor="middle" class="bar-label">6.2</text>
+<text x="517.5" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 517.5 340)">state med</text>
+<rect x="574.9166666666666" y="255.7692452736689" width="30.916666666666664" height="64.2307547263311" class="bar-mmdr" rx="2"/>
+<text x="590.375" y="270.7692452736689" text-anchor="middle" class="bar-label">2.9</text>
+<text x="605.8333333333333" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 605.8333333333333 340)">sequence med</text>
+<rect x="670" y="60" width="15" height="15" class="bar-mmdr"/>
+<text x="690" y="72" class="legend">mmdr</text>
+<line x1="120" y1="40" x2="120" y2="320" stroke="#333" stroke-width="2"/>
+<line x1="120" y1="320" x2="650" y2="320" stroke="#333" stroke-width="2"/>
+</svg>

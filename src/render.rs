@@ -404,9 +404,8 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 let rect_w = label.width + 12.0;
                 let rect_h = label.height + 8.0;
                 svg.push_str(&format!(
-                    "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"6\" ry=\"6\" fill=\"{}\" fill-opacity=\"0.85\" stroke=\"{}\" stroke-opacity=\"0.35\" stroke-width=\"0.8\"/>",
-                    theme.edge_label_background,
-                    theme.primary_border_color
+                    "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"0\" ry=\"0\" fill=\"{}\" fill-opacity=\"0.8\" stroke=\"none\"/>",
+                    theme.edge_label_background
                 ));
                 svg.push_str(&text_block_svg(
                     x,
