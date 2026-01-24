@@ -257,6 +257,9 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         }
     }
 
+    // Separate overlapping sibling subgraphs
+    separate_sibling_subgraphs(graph, &mut nodes, config);
+
     let mut subgraphs = build_subgraph_layouts(graph, &nodes, theme, config);
     apply_subgraph_anchors(graph, &subgraphs, &mut nodes);
     let obstacles = build_obstacles(&nodes, &subgraphs);
@@ -349,7 +352,8 @@ fn assign_positions_dagre(
         return false;
     }
 
-    let compound_enabled = graph.kind == crate::ir::DiagramKind::State;
+    // Enable compound mode for diagrams with subgraphs so dagre treats them as clusters
+    let compound_enabled = !graph.subgraphs.is_empty();
     let mut dagre_graph: DagreGraph<DagreConfig, DagreNode, DagreEdge> = DagreGraph::new(
         Some(GraphOption {
             directed: Some(true),
@@ -448,6 +452,29 @@ fn assign_positions_dagre(
             if let Some(parent_anchor) = anchor_ids.get(&parent_idx) {
                 let _ = dagre_graph.set_parent(&node_id, Some(parent_anchor.clone()));
             }
+        }
+
+        // Add invisible edges between top-level sibling subgraphs to prevent overlap
+        // Find which anchors have no parent (top-level subgraphs)
+        let mut top_level_anchors: Vec<String> = Vec::new();
+        for (idx, anchor) in &anchor_ids {
+            let sub = &graph.subgraphs[*idx];
+            let is_nested = graph.subgraphs.iter().enumerate().any(|(other_idx, other)| {
+                other_idx != *idx
+                    && sub.nodes.iter().all(|n| other.nodes.contains(n))
+                    && other.nodes.len() > sub.nodes.len()
+            });
+            if !is_nested {
+                top_level_anchors.push(anchor.clone());
+            }
+        }
+        // Chain top-level anchors with invisible edges to force horizontal/vertical separation
+        for i in 0..top_level_anchors.len().saturating_sub(1) {
+            let from = &top_level_anchors[i];
+            let to = &top_level_anchors[i + 1];
+            let mut edge_label = DagreEdge::default();
+            edge_label.minlen = Some(1.0);
+            let _ = dagre_graph.set_edge(from, to, Some(edge_label), None);
         }
     }
 
@@ -2531,6 +2558,118 @@ fn resolve_subgraph_style(sub: &crate::ir::Subgraph, graph: &Graph) -> crate::ir
     }
 
     style
+}
+
+/// Separate sibling subgraphs that don't share nodes to avoid overlap
+fn separate_sibling_subgraphs(
+    graph: &Graph,
+    nodes: &mut BTreeMap<String, NodeLayout>,
+    config: &LayoutConfig,
+) {
+    if graph.subgraphs.len() < 2 {
+        return;
+    }
+
+    // Build node sets for each subgraph
+    let sets: Vec<HashSet<String>> = graph
+        .subgraphs
+        .iter()
+        .map(|sub| sub.nodes.iter().cloned().collect())
+        .collect();
+
+    // Find pairs of sibling subgraphs (non-overlapping node sets)
+    let mut sibling_groups: Vec<Vec<usize>> = Vec::new();
+    let mut assigned: HashSet<usize> = HashSet::new();
+
+    for i in 0..graph.subgraphs.len() {
+        if assigned.contains(&i) {
+            continue;
+        }
+        let mut group = vec![i];
+        assigned.insert(i);
+
+        for j in (i + 1)..graph.subgraphs.len() {
+            if assigned.contains(&j) {
+                continue;
+            }
+            // Check if j is a sibling (not nested with any in group)
+            let j_set = &sets[j];
+            let is_sibling = group.iter().all(|&k| {
+                let k_set = &sets[k];
+                // Neither is subset of the other
+                !j_set.is_subset(k_set) && !k_set.is_subset(j_set)
+            });
+            if is_sibling {
+                group.push(j);
+                assigned.insert(j);
+            }
+        }
+        if group.len() > 1 {
+            sibling_groups.push(group);
+        }
+    }
+
+    // For each group of siblings, compute bounds and separate them
+    let is_horizontal = is_horizontal(graph.direction);
+    for group in sibling_groups {
+        // Compute bounding box for each subgraph
+        let mut bounds: Vec<(usize, f32, f32, f32, f32)> = Vec::new(); // (idx, min_x, min_y, max_x, max_y)
+        for &idx in &group {
+            let sub = &graph.subgraphs[idx];
+            let mut min_x = f32::MAX;
+            let mut min_y = f32::MAX;
+            let mut max_x = f32::MIN;
+            let mut max_y = f32::MIN;
+            for node_id in &sub.nodes {
+                if let Some(node) = nodes.get(node_id) {
+                    min_x = min_x.min(node.x);
+                    min_y = min_y.min(node.y);
+                    max_x = max_x.max(node.x + node.width);
+                    max_y = max_y.max(node.y + node.height);
+                }
+            }
+            if min_x != f32::MAX {
+                bounds.push((idx, min_x, min_y, max_x, max_y));
+            }
+        }
+
+        if bounds.len() < 2 {
+            continue;
+        }
+
+        // Sort by position (x for LR, y for TD)
+        if is_horizontal {
+            bounds.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap()); // sort by min_y
+        } else {
+            bounds.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap()); // sort by min_x
+        }
+
+        // Shift subgraphs to avoid overlap
+        let mut offset = 0.0_f32;
+        for i in 0..bounds.len() {
+            let (idx, min_x, min_y, max_x, max_y) = bounds[i];
+            let sub = &graph.subgraphs[idx];
+
+            // Apply offset to all nodes in this subgraph
+            if offset > 0.0 {
+                for node_id in &sub.nodes {
+                    if let Some(node) = nodes.get_mut(node_id) {
+                        if is_horizontal {
+                            node.y += offset;
+                        } else {
+                            node.x += offset;
+                        }
+                    }
+                }
+            }
+
+            // Calculate next offset based on this subgraph's extent
+            let extent = if is_horizontal { max_y - min_y } else { max_x - min_x };
+            let next_start = if is_horizontal { min_y } else { min_x };
+            let current_end = next_start + extent + offset;
+            offset = current_end + config.node_spacing * 2.0;
+        }
+    }
 }
 
 fn build_subgraph_layouts(
