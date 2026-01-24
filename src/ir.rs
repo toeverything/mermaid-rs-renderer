@@ -169,6 +169,7 @@ pub struct Graph {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeShape {
     Rectangle,
+    ForkJoin,
     RoundRect,
     Stadium,
     Subroutine,

@@ -1356,6 +1356,16 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
             stroke,
             node.style.stroke_width.unwrap_or(1.0)
         ),
+        crate::ir::NodeShape::ForkJoin => format!(
+            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",
+            x,
+            y,
+            w,
+            h,
+            fill,
+            stroke,
+            node.style.stroke_width.unwrap_or(1.0)
+        ),
         crate::ir::NodeShape::ActorBox => format!(
             "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"3\" ry=\"3\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",
             x,

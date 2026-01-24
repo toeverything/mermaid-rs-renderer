@@ -538,6 +538,63 @@ fn parse_state_alias_line(line: &str) -> Option<(String, String)> {
     Some((id.to_string(), label))
 }
 
+fn parse_state_stereotype(
+    line: &str,
+) -> (String, Option<crate::ir::NodeShape>, Option<String>) {
+    let trimmed = line.trim();
+    if !trimmed.starts_with("state ") {
+        return (trimmed.to_string(), None, None);
+    }
+    let Some(start) = trimmed.find("<<") else {
+        return (trimmed.to_string(), None, None);
+    };
+    let Some(end) = trimmed[start + 2..].find(">>") else {
+        return (trimmed.to_string(), None, None);
+    };
+    let stereo_raw = &trimmed[start + 2..start + 2 + end];
+    let stereo = stereo_raw.trim().to_ascii_lowercase();
+
+    let before = trimmed[..start].trim_end();
+    let after = trimmed[start + 2 + end + 2..].trim_start();
+    let cleaned = if after.is_empty() {
+        before.to_string()
+    } else if before.is_empty() {
+        after.to_string()
+    } else {
+        format!("{before} {after}")
+    };
+
+    let (shape, label_override) = match stereo.as_str() {
+        "choice" => (Some(crate::ir::NodeShape::Diamond), None),
+        "fork" | "join" => (Some(crate::ir::NodeShape::ForkJoin), Some(String::new())),
+        _ => (None, None),
+    };
+
+    (cleaned, shape, label_override)
+}
+
+fn parse_state_description_line(line: &str) -> Option<(String, String)> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let rest = if trimmed.starts_with("state ") {
+        trimmed[6..].trim()
+    } else {
+        trimmed
+    };
+    if rest.to_ascii_lowercase().contains(" as ") {
+        return None;
+    }
+    let (id_part, desc_part) = rest.split_once(':')?;
+    let id = strip_quotes(id_part.trim());
+    let desc = strip_quotes(desc_part.trim());
+    if id.is_empty() || desc.is_empty() {
+        return None;
+    }
+    Some((id, desc))
+}
+
 fn parse_state_transition(line: &str) -> Option<(String, EdgeMeta, String, Option<String>)> {
     let tokens = ["<-->", "<--", "-->", "<->", "->", "<-", "..>", "<.."];
     for token in tokens {
@@ -1059,7 +1116,12 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
         };
     while let Some(raw_line) = pending.pop_front() {
         for raw_statement in split_statements(&raw_line) {
-            let line = raw_statement.trim();
+            let raw_line = raw_statement.trim();
+            if raw_line.is_empty() {
+                continue;
+            }
+            let (line, state_shape, label_override) = parse_state_stereotype(raw_line);
+            let line = line.trim();
             if line.is_empty() {
                 continue;
             }
@@ -1126,11 +1188,12 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
             }
 
             if let Some((id, label)) = parse_state_alias_line(line) {
+                let label = label_override.clone().unwrap_or(label);
                 labels.insert(id.clone(), label);
                 graph.ensure_node(
                     &id,
                     labels.get(&id).cloned(),
-                    Some(crate::ir::NodeShape::RoundRect),
+                    state_shape.or(Some(crate::ir::NodeShape::RoundRect)),
                 );
                 add_node_to_subgraphs(&mut graph, &subgraph_stack, &id);
                 record_region_node(&mut composite_stack, &id);
@@ -1151,8 +1214,22 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
 
                 let left_label = left_label_override.or_else(|| labels.get(&left_id).cloned());
                 let right_label = right_label_override.or_else(|| labels.get(&right_id).cloned());
-                graph.ensure_node(&left_id, left_label, Some(left_shape));
-                graph.ensure_node(&right_id, right_label, Some(right_shape));
+                let left_shape = if left_shape == crate::ir::NodeShape::RoundRect
+                    && graph.nodes.contains_key(&left_id)
+                {
+                    None
+                } else {
+                    Some(left_shape)
+                };
+                let right_shape = if right_shape == crate::ir::NodeShape::RoundRect
+                    && graph.nodes.contains_key(&right_id)
+                {
+                    None
+                } else {
+                    Some(right_shape)
+                };
+                graph.ensure_node(&left_id, left_label, left_shape);
+                graph.ensure_node(&right_id, right_label, right_shape);
                 add_node_to_subgraphs(&mut graph, &subgraph_stack, &left_id);
                 add_node_to_subgraphs(&mut graph, &subgraph_stack, &right_id);
                 record_region_node(&mut composite_stack, &left_id);
@@ -1175,11 +1252,27 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
                 continue;
             }
 
-            if let Some(id) = parse_state_simple(line) {
+            if let Some((id, label)) = parse_state_description_line(line) {
+                let label = label_override.clone().unwrap_or(label);
+                labels.insert(id.clone(), label);
                 graph.ensure_node(
                     &id,
                     labels.get(&id).cloned(),
-                    Some(crate::ir::NodeShape::RoundRect),
+                    state_shape.or(Some(crate::ir::NodeShape::RoundRect)),
+                );
+                add_node_to_subgraphs(&mut graph, &subgraph_stack, &id);
+                record_region_node(&mut composite_stack, &id);
+                continue;
+            }
+
+            if let Some(id) = parse_state_simple(line) {
+                if let Some(label) = label_override.clone() {
+                    labels.insert(id.clone(), label);
+                }
+                graph.ensure_node(
+                    &id,
+                    labels.get(&id).cloned(),
+                    state_shape.or(Some(crate::ir::NodeShape::RoundRect)),
                 );
                 add_node_to_subgraphs(&mut graph, &subgraph_stack, &id);
                 record_region_node(&mut composite_stack, &id);
@@ -2439,6 +2532,31 @@ mod tests {
         let wait_label = &parsed.graph.nodes.get("Wait").unwrap().label;
         assert_eq!(wait_label, "Waiting");
         assert!(parsed.graph.edges.len() >= 2);
+    }
+
+    #[test]
+    fn parse_state_description_line() {
+        let input = "stateDiagram-v2\nstate Idle : Waiting\nIdle --> Done";
+        let parsed = parse_mermaid(input).unwrap();
+        let node = parsed.graph.nodes.get("Idle").unwrap();
+        assert_eq!(node.label, "Waiting");
+    }
+
+    #[test]
+    fn parse_state_choice_stereotype() {
+        let input = "stateDiagram-v2\nstate Decide <<choice>>\n[*] --> Decide";
+        let parsed = parse_mermaid(input).unwrap();
+        let node = parsed.graph.nodes.get("Decide").unwrap();
+        assert_eq!(node.shape, crate::ir::NodeShape::Diamond);
+    }
+
+    #[test]
+    fn parse_state_fork_stereotype() {
+        let input = "stateDiagram-v2\nstate Fork <<fork>>\n[*] --> Fork";
+        let parsed = parse_mermaid(input).unwrap();
+        let node = parsed.graph.nodes.get("Fork").unwrap();
+        assert_eq!(node.shape, crate::ir::NodeShape::ForkJoin);
+        assert!(node.label.trim().is_empty());
     }
 
     #[test]

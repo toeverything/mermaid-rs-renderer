@@ -3549,6 +3549,10 @@ fn shape_size(shape: crate::ir::NodeShape, label: &TextBlock, config: &LayoutCon
             width *= 1.4;
             height *= 1.4;
         }
+        crate::ir::NodeShape::ForkJoin => {
+            width = width.max(50.0);
+            height = (config.node_padding_y * 0.4).max(8.0);
+        }
         crate::ir::NodeShape::Circle | crate::ir::NodeShape::DoubleCircle => {
             let size = if label_empty {
                 (config.node_padding_y * 1.4).max(14.0)
