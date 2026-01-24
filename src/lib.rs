@@ -58,7 +58,20 @@
 //! - ~15MB memory vs ~300MB for mermaid-cli
 //! - SVG and PNG output (PNG via resvg)
 //! - Customizable themes and layout configuration
+//!
+//! ## Cargo Features
+//!
+//! - **`cli`** (default) - CLI binary support. Disable for library-only usage.
+//! - **`png`** (default) - PNG output via resvg. Disable for SVG-only usage.
+//!
+//! For minimal dependencies (e.g., embedding in other tools like Zola):
+//!
+//! ```toml
+//! [dependencies]
+//! mermaid-rs-renderer = { version = "0.1", default-features = false }
+//! ```
 
+#[cfg(feature = "cli")]
 pub mod cli;
 pub mod config;
 pub mod ir;
@@ -75,7 +88,9 @@ pub use ir::{
 };
 pub use layout::{EdgeLayout, Layout, NodeLayout, SubgraphLayout, compute_layout};
 pub use parser::{ParseOutput, parse_mermaid};
-pub use render::{render_svg, write_output_png, write_output_svg};
+#[cfg(feature = "png")]
+pub use render::write_output_png;
+pub use render::{render_svg, write_output_svg};
 pub use theme::Theme;
 
 /// Options for the high-level `render` function.
@@ -228,6 +243,7 @@ pub fn render_with_timing(input: &str, options: RenderOptions) -> anyhow::Result
 }
 
 // Re-export cli::run for the binary
+#[cfg(feature = "cli")]
 pub use cli::run;
 
 #[cfg(test)]

@@ -2,7 +2,9 @@ use crate::config::{Config, load_config};
 use crate::layout::compute_layout;
 use crate::layout_dump::write_layout_dump;
 use crate::parser::parse_mermaid;
-use crate::render::{render_svg, write_output_png, write_output_svg};
+#[cfg(feature = "png")]
+use crate::render::write_output_png;
+use crate::render::{render_svg, write_output_svg};
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
 use std::io::{self, Read};
@@ -122,9 +124,16 @@ pub fn run() -> Result<()> {
             OutputFormat::Svg => {
                 write_output_svg(&svg, args.output.as_deref())?;
             }
+            #[cfg(feature = "png")]
             OutputFormat::Png => {
                 let output = ensure_output(&args.output, "png")?;
                 write_output_png(&svg, &output, &config.render, &config.theme)?;
+            }
+            #[cfg(not(feature = "png"))]
+            OutputFormat::Png => {
+                return Err(anyhow::anyhow!(
+                    "PNG output requires the 'png' feature. Rebuild with: cargo build --features png"
+                ));
             }
         }
 
@@ -158,8 +167,15 @@ pub fn run() -> Result<()> {
             OutputFormat::Svg => {
                 write_output_svg(&svg, Some(&outputs[idx]))?;
             }
+            #[cfg(feature = "png")]
             OutputFormat::Png => {
                 write_output_png(&svg, &outputs[idx], &config.render, &config.theme)?;
+            }
+            #[cfg(not(feature = "png"))]
+            OutputFormat::Png => {
+                return Err(anyhow::anyhow!(
+                    "PNG output requires the 'png' feature. Rebuild with: cargo build --features png"
+                ));
             }
         }
     }
@@ -191,6 +207,7 @@ fn read_input(path: Option<&Path>) -> Result<(String, bool)> {
     Ok((buf, false))
 }
 
+#[cfg(feature = "png")]
 fn ensure_output(output: &Option<PathBuf>, ext: &str) -> Result<PathBuf> {
     if let Some(path) = output {
         return Ok(path.clone());

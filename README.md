@@ -287,6 +287,25 @@ Use mmdr as a Rust library in your project:
 mermaid-rs-renderer = { git = "https://github.com/1jehuang/mermaid-rs-renderer" }
 ```
 
+<details>
+<summary><strong>Minimal dependencies (for embedding)</strong></summary>
+
+For tools like Zola that only need SVG rendering, disable default features to avoid CLI and PNG dependencies:
+
+```toml
+[dependencies]
+mermaid-rs-renderer = { git = "https://github.com/1jehuang/mermaid-rs-renderer", default-features = false }
+```
+
+| Feature | Default | Description |
+|:--------|:-------:|:------------|
+| `cli` | Yes | CLI binary and clap dependency |
+| `png` | Yes | PNG output via resvg/usvg |
+
+This reduces dependencies from ~180 to ~80 crates.
+
+</details>
+
 ```rust
 use mermaid_rs_renderer::{render, render_with_options, RenderOptions};
 
