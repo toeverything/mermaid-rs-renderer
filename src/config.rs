@@ -51,7 +51,7 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        let theme = Theme::modern();
+        let theme = Theme::mermaid_default();
         let render = RenderConfig {
             background: theme.background.clone(),
             ..Default::default()
