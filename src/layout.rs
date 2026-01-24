@@ -47,6 +47,29 @@ pub struct EdgeLayout {
     pub override_style: crate::ir::EdgeStyleOverride,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum EdgeSide {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct EdgePortInfo {
+    start_side: EdgeSide,
+    end_side: EdgeSide,
+    start_offset: f32,
+    end_offset: f32,
+}
+
+#[derive(Debug, Clone)]
+struct PortCandidate {
+    edge_idx: usize,
+    is_start: bool,
+    other_pos: f32,
+}
+
 #[derive(Debug, Clone)]
 pub struct SubgraphLayout {
     pub label: String,
@@ -125,6 +148,34 @@ struct Obstacle {
 
 fn is_horizontal(direction: Direction) -> bool {
     matches!(direction, Direction::LeftRight | Direction::RightLeft)
+}
+
+fn side_is_vertical(side: EdgeSide) -> bool {
+    matches!(side, EdgeSide::Left | EdgeSide::Right)
+}
+
+fn edge_sides(
+    from: &NodeLayout,
+    to: &NodeLayout,
+    direction: Direction,
+) -> (EdgeSide, EdgeSide, bool) {
+    let is_backward = if is_horizontal(direction) {
+        to.x + to.width < from.x
+    } else {
+        to.y + to.height < from.y
+    };
+
+    if is_horizontal(direction) {
+        if is_backward {
+            (EdgeSide::Left, EdgeSide::Right, true)
+        } else {
+            (EdgeSide::Right, EdgeSide::Left, false)
+        }
+    } else if is_backward {
+        (EdgeSide::Top, EdgeSide::Bottom, true)
+    } else {
+        (EdgeSide::Bottom, EdgeSide::Top, false)
+    }
 }
 
 fn is_region_subgraph(sub: &crate::ir::Subgraph) -> bool {
@@ -286,6 +337,89 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     let mut subgraphs = build_subgraph_layouts(graph, &nodes, theme, config);
     apply_subgraph_anchors(graph, &subgraphs, &mut nodes);
     let obstacles = build_obstacles(&nodes, &subgraphs);
+    let mut edge_ports: Vec<EdgePortInfo> = Vec::with_capacity(graph.edges.len());
+    let mut port_candidates: HashMap<(String, EdgeSide), Vec<PortCandidate>> = HashMap::new();
+    for (idx, edge) in graph.edges.iter().enumerate() {
+        let from_layout = nodes.get(&edge.from).expect("from node missing");
+        let to_layout = nodes.get(&edge.to).expect("to node missing");
+        let temp_from = from_layout.anchor_subgraph.and_then(|anchor_idx| {
+            subgraphs
+                .get(anchor_idx)
+                .map(|sub| anchor_layout_for_edge(from_layout, sub, graph.direction, true))
+        });
+        let temp_to = to_layout.anchor_subgraph.and_then(|anchor_idx| {
+            subgraphs
+                .get(anchor_idx)
+                .map(|sub| anchor_layout_for_edge(to_layout, sub, graph.direction, false))
+        });
+        let from = temp_from.as_ref().unwrap_or(from_layout);
+        let to = temp_to.as_ref().unwrap_or(to_layout);
+        let (start_side, end_side, _is_backward) = edge_sides(from, to, graph.direction);
+        edge_ports.push(EdgePortInfo {
+            start_side,
+            end_side,
+            start_offset: 0.0,
+            end_offset: 0.0,
+        });
+
+        let from_center = (from.x + from.width / 2.0, from.y + from.height / 2.0);
+        let to_center = (to.x + to.width / 2.0, to.y + to.height / 2.0);
+        let start_other = if side_is_vertical(start_side) {
+            to_center.1
+        } else {
+            to_center.0
+        };
+        let end_other = if side_is_vertical(end_side) {
+            from_center.1
+        } else {
+            from_center.0
+        };
+        port_candidates
+            .entry((edge.from.clone(), start_side))
+            .or_default()
+            .push(PortCandidate {
+                edge_idx: idx,
+                is_start: true,
+                other_pos: start_other,
+            });
+        port_candidates
+            .entry((edge.to.clone(), end_side))
+            .or_default()
+            .push(PortCandidate {
+                edge_idx: idx,
+                is_start: false,
+                other_pos: end_other,
+            });
+    }
+    for ((node_id, side), mut candidates) in port_candidates {
+        let Some(node) = nodes.get(&node_id) else {
+            continue;
+        };
+        candidates.sort_by(|a, b| {
+            a.other_pos
+                .partial_cmp(&b.other_pos)
+                .unwrap_or(Ordering::Equal)
+        });
+        let node_len = if side_is_vertical(side) {
+            node.height
+        } else {
+            node.width
+        };
+        let pad = (node_len * 0.2).min(12.0).max(4.0);
+        let usable = (node_len - 2.0 * pad).max(1.0);
+        let step = usable / (candidates.len() as f32 + 1.0);
+        for (i, candidate) in candidates.iter().enumerate() {
+            let pos = pad + step * (i as f32 + 1.0);
+            let offset = pos - node_len / 2.0;
+            if let Some(info) = edge_ports.get_mut(candidate.edge_idx) {
+                if candidate.is_start {
+                    info.start_offset = offset;
+                } else {
+                    info.end_offset = offset;
+                }
+            }
+        }
+    }
     let pair_counts = build_edge_pair_counts(&graph.edges);
     let mut pair_seen: HashMap<(String, String), usize> = HashMap::new();
     let mut edges = Vec::new();
@@ -317,6 +451,10 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         let label = edge.label.as_ref().map(|l| measure_label(l, theme, config));
         let override_style = resolve_edge_style(idx, graph);
 
+        let port_info = edge_ports
+            .get(idx)
+            .copied()
+            .expect("edge port info missing");
         let route_ctx = RouteContext {
             from_id: &edge.from,
             to_id: &edge.to,
@@ -326,6 +464,10 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             config,
             obstacles: &obstacles,
             base_offset,
+            start_side: port_info.start_side,
+            end_side: port_info.end_side,
+            start_offset: port_info.start_offset,
+            end_offset: port_info.end_offset,
         };
         let points = route_edge_with_avoidance(&route_ctx);
         edges.push(EdgeLayout {
@@ -1743,7 +1885,12 @@ fn subgraph_should_anchor(
     if sub.nodes.is_empty() {
         return false;
     }
-    if graph.kind == crate::ir::DiagramKind::Flowchart {
+    // For flowcharts and state diagrams, anchor if there's an anchor node
+    // State diagram composite states can have external edges, so we can't use
+    // subgraph_is_anchorable which rejects subgraphs with external edges
+    if graph.kind == crate::ir::DiagramKind::Flowchart
+        || graph.kind == crate::ir::DiagramKind::State
+    {
         return subgraph_anchor_id(sub, nodes).is_some();
     }
     subgraph_is_anchorable(sub, graph, nodes)
@@ -2420,6 +2567,17 @@ struct RouteContext<'a> {
     config: &'a LayoutConfig,
     obstacles: &'a [Obstacle],
     base_offset: f32,
+    start_side: EdgeSide,
+    end_side: EdgeSide,
+    start_offset: f32,
+    end_offset: f32,
+}
+
+fn apply_port_offset(point: (f32, f32), side: EdgeSide, offset: f32) -> (f32, f32) {
+    match side {
+        EdgeSide::Left | EdgeSide::Right => (point.0, point.1 + offset),
+        EdgeSide::Top | EdgeSide::Bottom => (point.0 + offset, point.1),
+    }
 }
 
 fn route_edge_with_avoidance(ctx: &RouteContext<'_>) -> Vec<(f32, f32)> {
@@ -2427,23 +2585,91 @@ fn route_edge_with_avoidance(ctx: &RouteContext<'_>) -> Vec<(f32, f32)> {
         return route_self_loop(ctx.from, ctx.direction, ctx.config);
     }
 
-    let (start, end) = if is_horizontal(ctx.direction) {
-        (
+    let (_, _, is_backward) = edge_sides(ctx.from, ctx.to, ctx.direction);
+
+    let (mut start, mut end) = if is_horizontal(ctx.direction) {
+        if is_backward {
             (
-                ctx.from.x + ctx.from.width,
-                ctx.from.y + ctx.from.height / 2.0,
-            ),
-            (ctx.to.x, ctx.to.y + ctx.to.height / 2.0),
-        )
+                (ctx.from.x, ctx.from.y + ctx.from.height / 2.0),
+                (ctx.to.x + ctx.to.width, ctx.to.y + ctx.to.height / 2.0),
+            )
+        } else {
+            (
+                (ctx.from.x + ctx.from.width, ctx.from.y + ctx.from.height / 2.0),
+                (ctx.to.x, ctx.to.y + ctx.to.height / 2.0),
+            )
+        }
     } else {
-        (
+        if is_backward {
             (
-                ctx.from.x + ctx.from.width / 2.0,
-                ctx.from.y + ctx.from.height,
-            ),
-            (ctx.to.x + ctx.to.width / 2.0, ctx.to.y),
-        )
+                (ctx.from.x + ctx.from.width / 2.0, ctx.from.y),
+                (ctx.to.x + ctx.to.width / 2.0, ctx.to.y + ctx.to.height),
+            )
+        } else {
+            (
+                (ctx.from.x + ctx.from.width / 2.0, ctx.from.y + ctx.from.height),
+                (ctx.to.x + ctx.to.width / 2.0, ctx.to.y),
+            )
+        }
     };
+    start = apply_port_offset(start, ctx.start_side, ctx.start_offset);
+    end = apply_port_offset(end, ctx.end_side, ctx.end_offset);
+
+    // For backward edges, try routing around obstacles (both left and right)
+    if is_backward {
+        let pad = ctx.config.node_spacing.max(30.0);
+
+        // Find the extents of any obstacle that blocks the direct path
+        let mut min_left = f32::MAX;
+        let mut max_right = 0.0f32;
+        for obstacle in ctx.obstacles {
+            if obstacle.id == ctx.from_id || obstacle.id == ctx.to_id {
+                continue;
+            }
+            if let Some(members) = &obstacle.members {
+                if members.contains(ctx.from_id) || members.contains(ctx.to_id) {
+                    continue;
+                }
+            }
+            // Check if obstacle vertically overlaps the edge path
+            let obs_top = obstacle.y;
+            let obs_bottom = obstacle.y + obstacle.height;
+            let path_top = end.1;
+            let path_bottom = start.1;
+            if obs_top < path_bottom && obs_bottom > path_top {
+                min_left = min_left.min(obstacle.x);
+                max_right = max_right.max(obstacle.x + obstacle.width);
+            }
+        }
+
+        // Try routing around the right side first
+        if max_right > 0.0 {
+            let route_x = max_right + pad;
+            let points = vec![
+                start,
+                (route_x, start.1),
+                (route_x, end.1),
+                end,
+            ];
+            if !path_intersects_obstacles(&points, ctx.obstacles, ctx.from_id, ctx.to_id) {
+                return points;
+            }
+        }
+
+        // Try routing around the left side
+        if min_left < f32::MAX {
+            let route_x = min_left - pad;
+            let points = vec![
+                start,
+                (route_x, start.1),
+                (route_x, end.1),
+                end,
+            ];
+            if !path_intersects_obstacles(&points, ctx.obstacles, ctx.from_id, ctx.to_id) {
+                return points;
+            }
+        }
+    }
 
     let step = ctx.config.node_spacing.max(16.0) * 0.6;
     let mut offsets = vec![ctx.base_offset];
