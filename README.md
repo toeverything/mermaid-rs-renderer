@@ -15,6 +15,50 @@ The official `mermaid-cli` spawns a headless Chromium browser via Puppeteer for 
 
 `mmdr` parses Mermaid syntax natively and renders directly to SVG, then optionally rasterizes via `resvg`. No browser needed.
 
+## Visual Comparison
+
+> **Note:** Visual output is still being actively improved. The examples below show current rendering quality.
+
+### Flowchart
+
+<table>
+<tr><th>mmdr</th><th>Official mermaid-cli</th></tr>
+<tr>
+<td><img src="docs/comparisons/flowchart_mmdr.svg" alt="mmdr flowchart" width="400"></td>
+<td><img src="docs/comparisons/flowchart_official.svg" alt="official flowchart" width="400"></td>
+</tr>
+</table>
+
+### Class Diagram
+
+<table>
+<tr><th>mmdr</th><th>Official mermaid-cli</th></tr>
+<tr>
+<td><img src="docs/comparisons/class_mmdr.svg" alt="mmdr class" width="400"></td>
+<td><img src="docs/comparisons/class_official.svg" alt="official class" width="400"></td>
+</tr>
+</table>
+
+### State Diagram
+
+<table>
+<tr><th>mmdr</th><th>Official mermaid-cli</th></tr>
+<tr>
+<td><img src="docs/comparisons/state_mmdr.svg" alt="mmdr state" width="400"></td>
+<td><img src="docs/comparisons/state_official.svg" alt="official state" width="400"></td>
+</tr>
+</table>
+
+### Sequence Diagram
+
+<table>
+<tr><th>mmdr</th><th>Official mermaid-cli</th></tr>
+<tr>
+<td><img src="docs/comparisons/sequence_mmdr.svg" alt="mmdr sequence" width="400"></td>
+<td><img src="docs/comparisons/sequence_official.svg" alt="official sequence" width="400"></td>
+</tr>
+</table>
+
 ## Status
 - Supports `flowchart` / `graph` with `TD/TB/LR/BT/RL` and subgraph `direction`
 - Basic `classDiagram` (class blocks + relations)
