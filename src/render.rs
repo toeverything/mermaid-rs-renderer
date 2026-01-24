@@ -310,10 +310,11 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             compute_edge_label_positions(&layout.edges, &layout.nodes, &layout.subgraphs);
 
         for (idx, edge) in layout.edges.iter().enumerate() {
-            let d = if layout.kind == crate::ir::DiagramKind::Class {
-                points_to_path_rounded(&edge.points, 10.0)
-            } else {
-                points_to_path(&edge.points)
+            let d = match layout.kind {
+                crate::ir::DiagramKind::Flowchart
+                | crate::ir::DiagramKind::Class
+                | crate::ir::DiagramKind::State => points_to_path_rounded(&edge.points, 12.0),
+                _ => points_to_path(&edge.points),
             };
             let mut stroke = theme.line_color.clone();
             let (mut dash, mut stroke_width) = match edge.style {
@@ -558,10 +559,11 @@ fn points_to_path_rounded(points: &[(f32, f32)], radius: f32) -> String {
             let dy1 = curr.1 - prev.1;
             let dx2 = next.0 - curr.0;
             let dy2 = next.1 - curr.1;
-            let orth1 = dx1.abs() < f32::EPSILON || dy1.abs() < f32::EPSILON;
-            let orth2 = dx2.abs() < f32::EPSILON || dy2.abs() < f32::EPSILON;
-            let turn = (dx1.abs() < f32::EPSILON && dy2.abs() < f32::EPSILON)
-                || (dy1.abs() < f32::EPSILON && dx2.abs() < f32::EPSILON);
+            const TOL: f32 = 0.5;
+            let orth1 = dx1.abs() < TOL || dy1.abs() < TOL;
+            let orth2 = dx2.abs() < TOL || dy2.abs() < TOL;
+            let turn = (dx1.abs() < TOL && dy2.abs() < TOL)
+                || (dy1.abs() < TOL && dx2.abs() < TOL);
             orth1 && orth2 && turn
         } else {
             false
