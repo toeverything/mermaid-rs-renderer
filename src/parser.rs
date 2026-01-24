@@ -498,20 +498,24 @@ fn edge_meta_from_state_token(token: &str) -> EdgeMeta {
 fn normalize_state_token(
     token: &str,
     is_start: bool,
-    counter: &mut usize,
+    start_counter: &mut usize,
+    end_states: &mut HashMap<String, String>,
+    scope: &str,
 ) -> (String, crate::ir::NodeShape, Option<String>) {
     let trimmed = token.trim();
     if trimmed == "[*]" || trimmed == "*" {
-        let id = if is_start {
-            format!("__start_{}__", *counter)
+        let (id, shape) = if is_start {
+            // Start states are unique - each [*] --> X creates a new start node
+            let id = format!("__start_{}__", *start_counter);
+            *start_counter += 1;
+            (id, crate::ir::NodeShape::Circle)
         } else {
-            format!("__end_{}__", *counter)
-        };
-        *counter += 1;
-        let shape = if is_start {
-            crate::ir::NodeShape::Circle
-        } else {
-            crate::ir::NodeShape::DoubleCircle
+            // End states are shared per scope - all X --> [*] in same scope go to same node
+            let id = end_states
+                .entry(scope.to_string())
+                .or_insert_with(|| format!("__end_{}__", scope))
+                .clone();
+            (id, crate::ir::NodeShape::DoubleCircle)
         };
         return (id, shape, Some(String::new()));
     }
@@ -855,7 +859,8 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
     let (lines, init_config) = preprocess_input(input)?;
 
     let mut labels: HashMap<String, String> = HashMap::new();
-    let mut special_counter: usize = 0;
+    let mut start_counter: usize = 0;
+    let mut end_states: HashMap<String, String> = HashMap::new();
     let mut subgraph_stack: Vec<usize> = Vec::new();
     let mut region_counter: usize = 0;
 
@@ -999,10 +1004,16 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
             }
 
             if let Some((left, meta, right, label)) = parse_state_transition(line) {
+                // Determine current scope for start/end state tracking
+                let scope = subgraph_stack
+                    .last()
+                    .and_then(|&idx| graph.subgraphs.get(idx))
+                    .and_then(|sub| sub.id.clone())
+                    .unwrap_or_else(|| "root".to_string());
                 let (left_id, left_shape, left_label_override) =
-                    normalize_state_token(&left, true, &mut special_counter);
+                    normalize_state_token(&left, true, &mut start_counter, &mut end_states, &scope);
                 let (right_id, right_shape, right_label_override) =
-                    normalize_state_token(&right, false, &mut special_counter);
+                    normalize_state_token(&right, false, &mut start_counter, &mut end_states, &scope);
 
                 let left_label = left_label_override.or_else(|| labels.get(&left_id).cloned());
                 let right_label = right_label_override.or_else(|| labels.get(&right_id).cloned());
@@ -2189,37 +2200,4 @@ mod tests {
         assert!(parsed.graph.edge_styles.contains_key(&0));
         assert!(parsed.graph.edge_styles.contains_key(&1));
     }
-}
-
-#[test]
-fn debug_composite_state() {
-    let input = r#"stateDiagram-v2
-    [*] --> Idle
-    Idle --> Processing : submit
-    Processing --> Success : complete
-    state Processing {
-
-#[test]
-fn debug_composite_state() {
-    let input = r#"stateDiagram-v2
-    [*] --> Idle
-    Idle --> Processing : submit
-    Processing --> Success : complete
-    state Processing {
-        [*] --> Validating
-        Validating --> Executing
-        Executing --> [*]
-    }
-"#;
-    let parsed = parse_mermaid(input).unwrap();
-    println!("\n=== NODES ===");
-    for (id, node) in &parsed.graph.nodes {
-        println!("  id={}, label={:?}", id, node.label);
-    }
-    println!("\n=== SUBGRAPHS ===");
-    for (i, sub) in parsed.graph.subgraphs.iter().enumerate() {
-        println!("  [{}] id={:?}, label={:?}", i, sub.id, sub.label);
-        println!("      nodes={:?}", sub.nodes);
-    }
-    panic!("Debug output above");
 }

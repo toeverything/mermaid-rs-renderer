@@ -2580,6 +2580,204 @@ fn apply_port_offset(point: (f32, f32), side: EdgeSide, offset: f32) -> (f32, f3
     }
 }
 
+fn shape_polygon_points(node: &NodeLayout) -> Option<Vec<(f32, f32)>> {
+    let x = node.x;
+    let y = node.y;
+    let w = node.width;
+    let h = node.height;
+    match node.shape {
+        crate::ir::NodeShape::Rectangle
+        | crate::ir::NodeShape::RoundRect
+        | crate::ir::NodeShape::ActorBox
+        | crate::ir::NodeShape::Stadium
+        | crate::ir::NodeShape::Subroutine
+        | crate::ir::NodeShape::Text => Some(vec![
+            (x, y),
+            (x + w, y),
+            (x + w, y + h),
+            (x, y + h),
+        ]),
+        crate::ir::NodeShape::Diamond => {
+            let cx = x + w / 2.0;
+            let cy = y + h / 2.0;
+            Some(vec![(cx, y), (x + w, cy), (cx, y + h), (x, cy)])
+        }
+        crate::ir::NodeShape::Hexagon => {
+            let x1 = x + w * 0.25;
+            let x2 = x + w * 0.75;
+            let y_mid = y + h / 2.0;
+            Some(vec![
+                (x1, y),
+                (x2, y),
+                (x + w, y_mid),
+                (x2, y + h),
+                (x1, y + h),
+                (x, y_mid),
+            ])
+        }
+        crate::ir::NodeShape::Parallelogram | crate::ir::NodeShape::ParallelogramAlt => {
+            let offset = w * 0.18;
+            let points = if node.shape == crate::ir::NodeShape::Parallelogram {
+                vec![
+                    (x + offset, y),
+                    (x + w, y),
+                    (x + w - offset, y + h),
+                    (x, y + h),
+                ]
+            } else {
+                vec![
+                    (x, y),
+                    (x + w - offset, y),
+                    (x + w, y + h),
+                    (x + offset, y + h),
+                ]
+            };
+            Some(points)
+        }
+        crate::ir::NodeShape::Trapezoid | crate::ir::NodeShape::TrapezoidAlt => {
+            let offset = w * 0.18;
+            let points = if node.shape == crate::ir::NodeShape::Trapezoid {
+                vec![
+                    (x + offset, y),
+                    (x + w - offset, y),
+                    (x + w, y + h),
+                    (x, y + h),
+                ]
+            } else {
+                vec![
+                    (x, y),
+                    (x + w, y),
+                    (x + w - offset, y + h),
+                    (x + offset, y + h),
+                ]
+            };
+            Some(points)
+        }
+        crate::ir::NodeShape::Asymmetric => {
+            let slant = w * 0.22;
+            Some(vec![
+                (x, y),
+                (x + w - slant, y),
+                (x + w, y + h / 2.0),
+                (x + w - slant, y + h),
+                (x, y + h),
+            ])
+        }
+        _ => None,
+    }
+}
+
+fn ray_polygon_intersection(
+    origin: (f32, f32),
+    dir: (f32, f32),
+    poly: &[(f32, f32)],
+) -> Option<(f32, f32)> {
+    let mut best_t = None;
+    let ox = origin.0;
+    let oy = origin.1;
+    let rx = dir.0;
+    let ry = dir.1;
+    if poly.len() < 2 {
+        return None;
+    }
+    for i in 0..poly.len() {
+        let (x1, y1) = poly[i];
+        let (x2, y2) = poly[(i + 1) % poly.len()];
+        let sx = x2 - x1;
+        let sy = y2 - y1;
+        let qx = x1 - ox;
+        let qy = y1 - oy;
+        let denom = rx * sy - ry * sx;
+        if denom.abs() < 1e-6 {
+            continue;
+        }
+        let t = (qx * sy - qy * sx) / denom;
+        let u = (qx * ry - qy * rx) / denom;
+        if t >= 0.0 && u >= 0.0 && u <= 1.0 {
+            match best_t {
+                Some(best) if t >= best => {}
+                _ => best_t = Some(t),
+            }
+        }
+    }
+    best_t.map(|t| (ox + rx * t, oy + ry * t))
+}
+
+fn ray_ellipse_intersection(
+    origin: (f32, f32),
+    dir: (f32, f32),
+    center: (f32, f32),
+    rx: f32,
+    ry: f32,
+) -> Option<(f32, f32)> {
+    let (ox, oy) = origin;
+    let (dx, dy) = dir;
+    let (cx, cy) = center;
+    let ox = ox - cx;
+    let oy = oy - cy;
+    let a = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry);
+    let b = 2.0 * ((ox * dx) / (rx * rx) + (oy * dy) / (ry * ry));
+    let c = (ox * ox) / (rx * rx) + (oy * oy) / (ry * ry) - 1.0;
+    let disc = b * b - 4.0 * a * c;
+    if disc < 0.0 || a.abs() < 1e-6 {
+        return None;
+    }
+    let sqrt_disc = disc.sqrt();
+    let t1 = (-b - sqrt_disc) / (2.0 * a);
+    let t2 = (-b + sqrt_disc) / (2.0 * a);
+    let t = if t1 >= 0.0 {
+        t1
+    } else if t2 >= 0.0 {
+        t2
+    } else {
+        return None;
+    };
+    Some((origin.0 + dx * t, origin.1 + dy * t))
+}
+
+fn anchor_point_for_node(node: &NodeLayout, side: EdgeSide, offset: f32) -> (f32, f32) {
+    let cx = node.x + node.width / 2.0;
+    let cy = node.y + node.height / 2.0;
+    let (dir, perp, max_offset) = match side {
+        EdgeSide::Left => ((-1.0, 0.0), (0.0, 1.0), node.height / 2.0 - 1.0),
+        EdgeSide::Right => ((1.0, 0.0), (0.0, 1.0), node.height / 2.0 - 1.0),
+        EdgeSide::Top => ((0.0, -1.0), (1.0, 0.0), node.width / 2.0 - 1.0),
+        EdgeSide::Bottom => ((0.0, 1.0), (1.0, 0.0), node.width / 2.0 - 1.0),
+    };
+    let clamp = if max_offset > 0.0 {
+        offset.clamp(-max_offset, max_offset)
+    } else {
+        0.0
+    };
+    let origin = (cx + perp.0 * clamp, cy + perp.1 * clamp);
+
+    match node.shape {
+        crate::ir::NodeShape::Circle | crate::ir::NodeShape::DoubleCircle => {
+            let rx = node.width / 2.0;
+            let ry = node.height / 2.0;
+            if let Some(point) = ray_ellipse_intersection(origin, dir, (cx, cy), rx, ry) {
+                return point;
+            }
+        }
+        _ => {}
+    }
+
+    if let Some(poly) = shape_polygon_points(node) {
+        if let Some(point) = ray_polygon_intersection(origin, dir, &poly) {
+            return point;
+        }
+    }
+
+    // Fallback to bounding box anchor.
+    let base = match side {
+        EdgeSide::Left => (node.x, cy),
+        EdgeSide::Right => (node.x + node.width, cy),
+        EdgeSide::Top => (cx, node.y),
+        EdgeSide::Bottom => (cx, node.y + node.height),
+    };
+    apply_port_offset(base, side, clamp)
+}
+
 fn route_edge_with_avoidance(ctx: &RouteContext<'_>) -> Vec<(f32, f32)> {
     if ctx.from_id == ctx.to_id {
         return route_self_loop(ctx.from, ctx.direction, ctx.config);
@@ -2587,33 +2785,8 @@ fn route_edge_with_avoidance(ctx: &RouteContext<'_>) -> Vec<(f32, f32)> {
 
     let (_, _, is_backward) = edge_sides(ctx.from, ctx.to, ctx.direction);
 
-    let (mut start, mut end) = if is_horizontal(ctx.direction) {
-        if is_backward {
-            (
-                (ctx.from.x, ctx.from.y + ctx.from.height / 2.0),
-                (ctx.to.x + ctx.to.width, ctx.to.y + ctx.to.height / 2.0),
-            )
-        } else {
-            (
-                (ctx.from.x + ctx.from.width, ctx.from.y + ctx.from.height / 2.0),
-                (ctx.to.x, ctx.to.y + ctx.to.height / 2.0),
-            )
-        }
-    } else {
-        if is_backward {
-            (
-                (ctx.from.x + ctx.from.width / 2.0, ctx.from.y),
-                (ctx.to.x + ctx.to.width / 2.0, ctx.to.y + ctx.to.height),
-            )
-        } else {
-            (
-                (ctx.from.x + ctx.from.width / 2.0, ctx.from.y + ctx.from.height),
-                (ctx.to.x + ctx.to.width / 2.0, ctx.to.y),
-            )
-        }
-    };
-    start = apply_port_offset(start, ctx.start_side, ctx.start_offset);
-    end = apply_port_offset(end, ctx.end_side, ctx.end_offset);
+    let start = anchor_point_for_node(ctx.from, ctx.start_side, ctx.start_offset);
+    let end = anchor_point_for_node(ctx.to, ctx.end_side, ctx.end_offset);
 
     // For backward edges, try routing around obstacles (both left and right)
     if is_backward {
