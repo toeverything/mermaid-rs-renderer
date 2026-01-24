@@ -64,11 +64,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
     for subgraph in &layout.subgraphs {
         let label_empty = subgraph.label.trim().is_empty();
         if is_state {
-            let sub_fill = subgraph
-                .style
-                .fill
-                .as_ref()
-                .unwrap_or(&theme.primary_color);
+            let sub_fill = subgraph.style.fill.as_ref().unwrap_or(&theme.primary_color);
             let sub_stroke = subgraph
                 .style
                 .stroke
@@ -133,7 +129,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 .as_ref()
                 .map(|value| format!(" stroke-dasharray=\"{}\"", value))
                 .unwrap_or_default();
-            let sub_stroke_width = subgraph.style.stroke_width.unwrap_or(1.2);
+            let sub_stroke_width = subgraph.style.stroke_width.unwrap_or(1.0);
             let invisible = label_empty
                 && sub_fill.as_str() == "none"
                 && sub_stroke.as_str() == "none"
@@ -286,12 +282,12 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
 
             let mut dash = String::new();
             if edge.style == crate::ir::EdgeStyle::Dotted {
-                dash = "stroke-dasharray=\"3 3\"".to_string();
+                dash = "stroke-dasharray=\"2 2\"".to_string();
             }
             if let Some(dash_override) = &edge.override_style.dasharray {
                 dash = format!("stroke-dasharray=\"{}\"", dash_override);
             }
-            let stroke_width = edge.override_style.stroke_width.unwrap_or(2.0);
+            let stroke_width = edge.override_style.stroke_width.unwrap_or(1.5);
             svg.push_str(&format!(
                 "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" {} {} {} />",
                 d, stroke, stroke_width, marker_end, marker_start, dash
@@ -351,9 +347,9 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             };
             let mut stroke = theme.line_color.clone();
             let (mut dash, mut stroke_width) = match edge.style {
-                crate::ir::EdgeStyle::Solid => (String::new(), 1.4),
-                crate::ir::EdgeStyle::Dotted => ("stroke-dasharray=\"3 5\"".to_string(), 1.2),
-                crate::ir::EdgeStyle::Thick => (String::new(), 2.6),
+                crate::ir::EdgeStyle::Solid => (String::new(), 2.0),
+                crate::ir::EdgeStyle::Dotted => ("stroke-dasharray=\"2\"".to_string(), 2.0),
+                crate::ir::EdgeStyle::Thick => (String::new(), 3.5),
             };
 
             if let Some(color) = &edge.override_style.stroke {
@@ -441,12 +437,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 || node.id.starts_with("__start_")
                 || node.id.starts_with("__end_");
             if !hide_label {
-                let label_svg = if node
-                    .label
-                    .lines
-                    .iter()
-                    .any(|line| is_divider_line(line))
-                {
+                let label_svg = if node.label.lines.iter().any(|line| is_divider_line(line)) {
                     text_block_svg_class(node, theme, config, node.style.text_color.as_deref())
                 } else {
                     text_block_svg(
@@ -468,17 +459,21 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             svg.push_str(&divider_lines_svg(footbox, theme, config));
             let center_x = footbox.x + footbox.width / 2.0;
             let center_y = footbox.y + footbox.height / 2.0;
-            let hide_label = footbox.label.lines.iter().all(|line| line.trim().is_empty())
+            let hide_label = footbox
+                .label
+                .lines
+                .iter()
+                .all(|line| line.trim().is_empty())
                 || footbox.id.starts_with("__start_")
                 || footbox.id.starts_with("__end_");
             if !hide_label {
-                let label_svg = if footbox
-                    .label
-                    .lines
-                    .iter()
-                    .any(|line| is_divider_line(line))
-                {
-                    text_block_svg_class(footbox, theme, config, footbox.style.text_color.as_deref())
+                let label_svg = if footbox.label.lines.iter().any(|line| is_divider_line(line)) {
+                    text_block_svg_class(
+                        footbox,
+                        theme,
+                        config,
+                        footbox.style.text_color.as_deref(),
+                    )
                 } else {
                     text_block_svg(
                         center_x,
@@ -539,7 +534,11 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             ));
             let center_x = footbox.x + footbox.width / 2.0;
             let center_y = footbox.y + footbox.height / 2.0;
-            let hide_label = footbox.label.lines.iter().all(|line| line.trim().is_empty())
+            let hide_label = footbox
+                .label
+                .lines
+                .iter()
+                .all(|line| line.trim().is_empty())
                 || footbox.id.starts_with("__start_")
                 || footbox.id.starts_with("__end_");
             if !hide_label {
@@ -595,8 +594,7 @@ fn points_to_path_rounded(points: &[(f32, f32)], radius: f32) -> String {
             const TOL: f32 = 0.5;
             let orth1 = dx1.abs() < TOL || dy1.abs() < TOL;
             let orth2 = dx2.abs() < TOL || dy2.abs() < TOL;
-            let turn = (dx1.abs() < TOL && dy2.abs() < TOL)
-                || (dy1.abs() < TOL && dx2.abs() < TOL);
+            let turn = (dx1.abs() < TOL && dy2.abs() < TOL) || (dy1.abs() < TOL && dx2.abs() < TOL);
             orth1 && orth2 && turn
         } else {
             false
@@ -757,13 +755,7 @@ fn text_block_svg_class(
         }
     }
     let mut member_lines: Vec<(usize, &str)> = Vec::new();
-    for (idx, line) in node
-        .label
-        .lines
-        .iter()
-        .enumerate()
-        .skip(divider_idx + 1)
-    {
+    for (idx, line) in node.label.lines.iter().enumerate().skip(divider_idx + 1) {
         if !line.trim().is_empty() {
             member_lines.push((idx, line.as_str()));
         }
@@ -926,7 +918,11 @@ fn is_divider_line(line: &str) -> bool {
     line.trim() == "---"
 }
 
-fn divider_lines_svg(node: &crate::layout::NodeLayout, theme: &Theme, config: &LayoutConfig) -> String {
+fn divider_lines_svg(
+    node: &crate::layout::NodeLayout,
+    theme: &Theme,
+    config: &LayoutConfig,
+) -> String {
     if !node.label.lines.iter().any(|line| is_divider_line(line)) {
         return String::new();
     }
@@ -1184,7 +1180,7 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
             h,
             fill,
             stroke,
-            node.style.stroke_width.unwrap_or(1.4)
+            node.style.stroke_width.unwrap_or(1.0)
         ),
         crate::ir::NodeShape::ActorBox => format!(
             "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"3\" ry=\"3\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",
@@ -1215,7 +1211,7 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
                 points,
                 fill,
                 stroke,
-                node.style.stroke_width.unwrap_or(1.4)
+                node.style.stroke_width.unwrap_or(1.0)
             )
         }
         crate::ir::NodeShape::Circle | crate::ir::NodeShape::DoubleCircle => {
@@ -1231,29 +1227,29 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
                 )
             } else if label_empty {
                 if node.shape == crate::ir::NodeShape::Circle {
-                    (theme.primary_text_color.as_str(), theme.primary_text_color.as_str())
+                    (
+                        theme.primary_text_color.as_str(),
+                        theme.primary_text_color.as_str(),
+                    )
                 } else {
-                    (theme.primary_border_color.as_str(), theme.background.as_str())
+                    (
+                        theme.primary_border_color.as_str(),
+                        theme.background.as_str(),
+                    )
                 }
             } else {
                 (fill.as_str(), stroke.as_str())
             };
-            let stroke_width = node.style.stroke_width.unwrap_or(if label_empty {
-                1.4
-            } else {
-                1.4
-            });
+            let stroke_width =
+                node.style
+                    .stroke_width
+                    .unwrap_or(if label_empty { 1.0 } else { 1.0 });
             let cx = x + w / 2.0;
             let cy = y + h / 2.0;
             let r = (w.min(h)) / 2.0;
             let mut svg = format!(
                 "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",
-                cx,
-                cy,
-                r,
-                circle_fill,
-                circle_stroke,
-                stroke_width
+                cx, cy, r, circle_fill, circle_stroke, stroke_width
             );
             if node.shape == crate::ir::NodeShape::DoubleCircle {
                 let r2 = r - 4.0;
@@ -1268,7 +1264,11 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
                     } else {
                         circle_stroke
                     };
-                    let inner_stroke_width = if label_empty || is_state_end { 1.2 } else { 1.0 };
+                    let inner_stroke_width = if label_empty || is_state_end {
+                        1.2
+                    } else {
+                        1.0
+                    };
                     svg.push_str(&format!(
                         "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{join}/>",
                         cx, cy, r2, inner_fill, inner_stroke, inner_stroke_width
@@ -1287,7 +1287,7 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
             h / 2.0,
             fill,
             stroke,
-            node.style.stroke_width.unwrap_or(1.4)
+            node.style.stroke_width.unwrap_or(1.0)
         ),
         crate::ir::NodeShape::RoundRect => format!(
             "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"10\" ry=\"10\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",
@@ -1297,10 +1297,10 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
             h,
             fill,
             stroke,
-            node.style.stroke_width.unwrap_or(1.4)
+            node.style.stroke_width.unwrap_or(1.0)
         ),
         crate::ir::NodeShape::Cylinder => {
-            let stroke_width = node.style.stroke_width.unwrap_or(1.4);
+            let stroke_width = node.style.stroke_width.unwrap_or(1.0);
             let cx = x + w / 2.0;
             let ry = (h * 0.12).clamp(6.0, 14.0);
             let rx = w / 2.0;
@@ -1337,17 +1337,11 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
             svg
         }
         crate::ir::NodeShape::Subroutine => {
-            let stroke_width = node.style.stroke_width.unwrap_or(1.4);
+            let stroke_width = node.style.stroke_width.unwrap_or(1.0);
             let inset = 6.0;
             let mut svg = format!(
                 "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"6\" ry=\"6\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{dash}{join}/>",
-                x,
-                y,
-                w,
-                h,
-                fill,
-                stroke,
-                stroke_width
+                x, y, w, h, fill, stroke, stroke_width
             );
             let y1 = y + 2.0;
             let y2 = y + h - 2.0;
@@ -1385,7 +1379,7 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
                 points,
                 fill,
                 stroke,
-                node.style.stroke_width.unwrap_or(1.4)
+                node.style.stroke_width.unwrap_or(1.0)
             )
         }
         crate::ir::NodeShape::Parallelogram | crate::ir::NodeShape::ParallelogramAlt => {
@@ -1414,7 +1408,7 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
                 points,
                 fill,
                 stroke,
-                node.style.stroke_width.unwrap_or(1.4)
+                node.style.stroke_width.unwrap_or(1.0)
             )
         }
         crate::ir::NodeShape::Trapezoid | crate::ir::NodeShape::TrapezoidAlt => {
@@ -1443,7 +1437,7 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
                 points,
                 fill,
                 stroke,
-                node.style.stroke_width.unwrap_or(1.4)
+                node.style.stroke_width.unwrap_or(1.0)
             )
         }
         crate::ir::NodeShape::Asymmetric => {
@@ -1466,7 +1460,7 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
                 points,
                 fill,
                 stroke,
-                node.style.stroke_width.unwrap_or(1.4)
+                node.style.stroke_width.unwrap_or(1.0)
             )
         }
         _ => format!(
@@ -1477,7 +1471,7 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
             h,
             fill,
             stroke,
-            node.style.stroke_width.unwrap_or(1.4)
+            node.style.stroke_width.unwrap_or(1.0)
         ),
     }
 }
