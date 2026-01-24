@@ -388,6 +388,27 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     "middle",
                 ));
             }
+
+            let end_label_offset = (theme.font_size * 0.6).max(8.0);
+            let label_color = edge
+                .override_style
+                .label_color
+                .as_deref()
+                .unwrap_or(theme.primary_text_color.as_str());
+            if let Some(label) = edge.start_label.as_ref()
+                && let Some((x, y)) = edge_endpoint_label_position(edge, true, end_label_offset)
+            {
+                svg.push_str(&text_block_svg(
+                    x, y, label, theme, config, false, Some(label_color),
+                ));
+            }
+            if let Some(label) = edge.end_label.as_ref()
+                && let Some((x, y)) = edge_endpoint_label_position(edge, false, end_label_offset)
+            {
+                svg.push_str(&text_block_svg(
+                    x, y, label, theme, config, false, Some(label_color),
+                ));
+            }
         }
 
         for number in &layout.sequence_numbers {
@@ -532,6 +553,27 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     config,
                     true,
                     edge.override_style.label_color.as_deref(),
+                ));
+            }
+
+            let end_label_offset = (theme.font_size * 0.6).max(8.0);
+            let label_color = edge
+                .override_style
+                .label_color
+                .as_deref()
+                .unwrap_or(theme.primary_text_color.as_str());
+            if let Some(label) = edge.start_label.as_ref()
+                && let Some((x, y)) = edge_endpoint_label_position(edge, true, end_label_offset)
+            {
+                svg.push_str(&text_block_svg(
+                    x, y, label, theme, config, false, Some(label_color),
+                ));
+            }
+            if let Some(label) = edge.end_label.as_ref()
+                && let Some((x, y)) = edge_endpoint_label_position(edge, false, end_label_offset)
+            {
+                svg.push_str(&text_block_svg(
+                    x, y, label, theme, config, false, Some(label_color),
                 ));
             }
         }
@@ -1248,6 +1290,33 @@ fn edge_endpoint_angle(points: &[(f32, f32)], start: bool) -> f32 {
     dy.atan2(dx).to_degrees()
 }
 
+fn edge_endpoint_label_position(edge: &EdgeLayout, start: bool, offset: f32) -> Option<(f32, f32)> {
+    if edge.points.len() < 2 {
+        return None;
+    }
+    let (p0, p1) = if start {
+        (edge.points[0], edge.points[1])
+    } else {
+        (
+            edge.points[edge.points.len() - 1],
+            edge.points[edge.points.len() - 2],
+        )
+    };
+    let dx = p1.0 - p0.0;
+    let dy = p1.1 - p0.1;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len <= f32::EPSILON {
+        return None;
+    }
+    let dir_x = dx / len;
+    let dir_y = dy / len;
+    let base_x = p0.0 + dir_x * offset * 1.4;
+    let base_y = p0.1 + dir_y * offset * 1.4;
+    let perp_x = -dir_y;
+    let perp_y = dir_x;
+    Some((base_x + perp_x * offset, base_y + perp_y * offset))
+}
+
 #[cfg(feature = "png")]
 fn primary_font(fonts: &str) -> String {
     fonts
@@ -1606,6 +1675,8 @@ mod tests {
             from: "A".to_string(),
             to: "B".to_string(),
             label: Some("go".to_string()),
+            start_label: None,
+            end_label: None,
             directed: true,
             arrow_start: false,
             arrow_end: true,

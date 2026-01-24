@@ -36,6 +36,8 @@ pub struct EdgeLayout {
     pub from: String,
     pub to: String,
     pub label: Option<TextBlock>,
+    pub start_label: Option<TextBlock>,
+    pub end_label: Option<TextBlock>,
     pub points: Vec<(f32, f32)>,
     pub directed: bool,
     pub arrow_start: bool,
@@ -470,6 +472,14 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         let from = temp_from.as_ref().unwrap_or(from_layout);
         let to = temp_to.as_ref().unwrap_or(to_layout);
         let label = edge.label.as_ref().map(|l| measure_label(l, theme, config));
+        let start_label = edge
+            .start_label
+            .as_ref()
+            .map(|l| measure_label(l, theme, config));
+        let end_label = edge
+            .end_label
+            .as_ref()
+            .map(|l| measure_label(l, theme, config));
         let override_style = resolve_edge_style(idx, graph);
 
         let port_info = edge_ports
@@ -495,6 +505,8 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             from: edge.from.clone(),
             to: edge.to.clone(),
             label,
+            start_label,
+            end_label,
             points,
             directed: edge.directed,
             arrow_start: edge.arrow_start,
@@ -836,6 +848,8 @@ fn assign_positions_manual(
                 from: prev.clone(),
                 to: dummy_id.clone(),
                 label: None,
+                start_label: None,
+                end_label: None,
                 directed: true,
                 arrow_start: false,
                 arrow_end: false,
@@ -851,6 +865,8 @@ fn assign_positions_manual(
             from: prev,
             to: edge.to.clone(),
             label: None,
+            start_label: None,
+            end_label: None,
             directed: true,
             arrow_start: false,
             arrow_end: false,
@@ -1128,6 +1144,14 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         let to = nodes.get(&edge.to).expect("to node missing");
         let y = message_ys.get(idx).copied().unwrap_or(message_cursor);
         let label = edge.label.as_ref().map(|l| measure_label(l, theme, config));
+        let start_label = edge
+            .start_label
+            .as_ref()
+            .map(|l| measure_label(l, theme, config));
+        let end_label = edge
+            .end_label
+            .as_ref()
+            .map(|l| measure_label(l, theme, config));
 
         let points = if edge.from == edge.to {
             let pad = config.node_spacing.max(20.0) * 0.6;
@@ -1149,6 +1173,8 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
             from: edge.from.clone(),
             to: edge.to.clone(),
             label,
+            start_label,
+            end_label,
             points,
             directed: edge.directed,
             arrow_start: edge.arrow_start,
@@ -3581,6 +3607,8 @@ mod tests {
             from: "A".to_string(),
             to: "B".to_string(),
             label: None,
+            start_label: None,
+            end_label: None,
             directed: true,
             arrow_start: false,
             arrow_end: true,
@@ -3605,6 +3633,8 @@ mod tests {
             from: "A".to_string(),
             to: "B".to_string(),
             label: None,
+            start_label: None,
+            end_label: None,
             directed: true,
             arrow_start: false,
             arrow_end: true,

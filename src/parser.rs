@@ -235,6 +235,8 @@ fn parse_flowchart(input: &str) -> Result<ParseOutput> {
                             from: left_id.clone(),
                             to: right_id.clone(),
                             label: label.clone(),
+                            start_label: None,
+                            end_label: None,
                             directed: edge_meta.directed,
                             arrow_start: edge_meta.arrow_start,
                             arrow_end: edge_meta.arrow_end,
@@ -260,7 +262,81 @@ fn parse_flowchart(input: &str) -> Result<ParseOutput> {
     Ok(ParseOutput { graph, init_config })
 }
 
-fn parse_class_relation_line(line: &str) -> Option<(String, String, EdgeMeta, Option<String>)> {
+fn split_trailing_quoted(input: &str) -> Option<(&str, &str)> {
+    let trimmed = input.trim_end();
+    let quote = trimmed.chars().last()?;
+    if quote != '"' && quote != '\'' {
+        return None;
+    }
+    let mut iter = trimmed.char_indices().rev();
+    let _ = iter.next();
+    for (idx, ch) in iter {
+        if ch == quote {
+            let before = &trimmed[..idx];
+            let value = &trimmed[idx + 1..trimmed.len() - 1];
+            return Some((before, value));
+        }
+    }
+    None
+}
+
+fn split_leading_quoted(input: &str) -> Option<(&str, &str)> {
+    let trimmed = input.trim_start();
+    let mut iter = trimmed.char_indices();
+    let Some((_, quote)) = iter.next() else {
+        return None;
+    };
+    if quote != '"' && quote != '\'' {
+        return None;
+    }
+    for (idx, ch) in iter {
+        if ch == quote {
+            let value = &trimmed[1..idx];
+            let rest = &trimmed[idx + 1..];
+            return Some((value, rest));
+        }
+    }
+    None
+}
+
+fn split_multiplicity_left(input: &str) -> (String, Option<String>) {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return (String::new(), None);
+    }
+    if let Some((before, value)) = split_trailing_quoted(trimmed) {
+        let before = before.trim();
+        if !before.is_empty() && !value.is_empty() {
+            return (before.to_string(), Some(value.to_string()));
+        }
+    }
+    (trimmed.to_string(), None)
+}
+
+fn split_multiplicity_right(input: &str) -> (String, Option<String>) {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return (String::new(), None);
+    }
+    if let Some((value, rest)) = split_leading_quoted(trimmed) {
+        let rest = rest.trim();
+        if !rest.is_empty() && !value.is_empty() {
+            return (rest.to_string(), Some(value.to_string()));
+        }
+    }
+    (trimmed.to_string(), None)
+}
+
+fn parse_class_relation_line(
+    line: &str,
+) -> Option<(
+    String,
+    String,
+    EdgeMeta,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+)> {
     let tokens = [
         "<|..", "..|>", "<|--", "--|>", "*--", "--*", "o--", "--o", "<..", "..>", "<--", "-->",
         "..", "--",
@@ -274,8 +350,10 @@ fn parse_class_relation_line(line: &str) -> Option<(String, String, EdgeMeta, Op
                 continue;
             }
             let (right, label) = split_label(right_part);
+            let (left, start_label) = split_multiplicity_left(left);
+            let (right, end_label) = split_multiplicity_right(&right);
             let meta = edge_meta_from_class_token(token);
-            return Some((left.to_string(), right.to_string(), meta, label));
+            return Some((left, right, meta, label, start_label, end_label));
         }
     }
     None
@@ -773,7 +851,9 @@ fn parse_class_diagram(input: &str) -> Result<ParseOutput> {
             continue;
         }
 
-        if let Some((left, right, meta, label)) = parse_class_relation_line(line) {
+        if let Some((left, right, meta, label, start_label, end_label)) =
+            parse_class_relation_line(line)
+        {
             let (left_id, left_label) = normalize_class_id(&left);
             let (right_id, right_label) = normalize_class_id(&right);
             if let Some(label) = left_label {
@@ -796,6 +876,8 @@ fn parse_class_diagram(input: &str) -> Result<ParseOutput> {
                 from: left_id,
                 to: right_id,
                 label,
+                start_label,
+                end_label,
                 directed: meta.directed,
                 arrow_start: meta.arrow_start,
                 arrow_end: meta.arrow_end,
@@ -1050,6 +1132,8 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
                     from: left_id,
                     to: right_id,
                     label,
+                    start_label: None,
+                    end_label: None,
                     directed: meta.directed,
                     arrow_start: meta.arrow_start,
                     arrow_end: meta.arrow_end,
@@ -1283,6 +1367,8 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
                 from,
                 to,
                 label,
+                start_label: None,
+                end_label: None,
                 directed: true,
                 arrow_start: false,
                 arrow_end: true,
@@ -2270,6 +2356,17 @@ mod tests {
         let label = &parsed.graph.nodes.get("Animal").unwrap().label;
         assert!(label.contains("Animal"));
         assert!(label.contains("name"));
+    }
+
+    #[test]
+    fn parse_class_relation_multiplicity() {
+        let input = "classDiagram\nClass01 \"1\" *-- \"many\" Class02 : contains";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.edges.len(), 1);
+        let edge = &parsed.graph.edges[0];
+        assert_eq!(edge.start_label.as_deref(), Some("1"));
+        assert_eq!(edge.end_label.as_deref(), Some("many"));
+        assert_eq!(edge.label.as_deref(), Some("contains"));
     }
 
     #[test]

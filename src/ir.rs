@@ -100,6 +100,8 @@ pub struct Edge {
     pub from: String,
     pub to: String,
     pub label: Option<String>,
+    pub start_label: Option<String>,
+    pub end_label: Option<String>,
     pub directed: bool,
     pub arrow_start: bool,
     pub arrow_end: bool,
