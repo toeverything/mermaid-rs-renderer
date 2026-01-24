@@ -393,6 +393,9 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
 
     if !is_sequence {
         for node in layout.nodes.values() {
+            if node.hidden {
+                continue;
+            }
             if node.anchor_subgraph.is_some() {
                 continue;
             }
@@ -458,6 +461,9 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         }
     } else {
         for node in layout.nodes.values() {
+            if node.hidden {
+                continue;
+            }
             if node.anchor_subgraph.is_some() {
                 continue;
             }

@@ -340,8 +340,6 @@ dependencies = [
 [[package]]
 name = "dagre_rust"
 version = "0.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be0e44f22d2a32979a1265aa1a70f6e2f4f43ec0d562d483a1c818f9a4121926"
 dependencies = [
  "graphlib_rust",
  "ordered_hashmap",
