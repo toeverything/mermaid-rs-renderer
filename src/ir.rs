@@ -23,6 +23,8 @@ pub enum SequenceFrameKind {
     Loop,
     Par,
     Rect,
+    Critical,
+    Break,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

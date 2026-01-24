@@ -1207,6 +1207,10 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
             || lower.starts_with("par ")
             || lower == "rect"
             || lower.starts_with("rect ")
+            || lower == "critical"
+            || lower.starts_with("critical ")
+            || lower == "break"
+            || lower.starts_with("break ")
         {
             let (kind, offset) = if lower.starts_with("opt") {
                 (crate::ir::SequenceFrameKind::Opt, 3)
@@ -1216,6 +1220,10 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
                 (crate::ir::SequenceFrameKind::Par, 3)
             } else if lower.starts_with("rect") {
                 (crate::ir::SequenceFrameKind::Rect, 4)
+            } else if lower.starts_with("critical") {
+                (crate::ir::SequenceFrameKind::Critical, 8)
+            } else if lower.starts_with("break") {
+                (crate::ir::SequenceFrameKind::Break, 5)
             } else {
                 (crate::ir::SequenceFrameKind::Alt, 3)
             };
@@ -1246,6 +1254,52 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
                     last.end_idx = split_idx;
                 }
                 let label = line.get(4..).map(str::trim).unwrap_or_default();
+                let label = if label.is_empty() {
+                    None
+                } else {
+                    Some(strip_quotes(label))
+                };
+                frame.sections.push(crate::ir::SequenceFrameSection {
+                    label,
+                    start_idx: split_idx,
+                    end_idx: split_idx,
+                });
+            }
+            continue;
+        }
+
+        if lower == "and" || lower.starts_with("and ") {
+            if let Some(frame) = open_frames.last_mut()
+                && frame.kind == crate::ir::SequenceFrameKind::Par
+            {
+                let split_idx = graph.edges.len();
+                if let Some(last) = frame.sections.last_mut() {
+                    last.end_idx = split_idx;
+                }
+                let label = line.get(3..).map(str::trim).unwrap_or_default();
+                let label = if label.is_empty() {
+                    None
+                } else {
+                    Some(strip_quotes(label))
+                };
+                frame.sections.push(crate::ir::SequenceFrameSection {
+                    label,
+                    start_idx: split_idx,
+                    end_idx: split_idx,
+                });
+            }
+            continue;
+        }
+
+        if lower == "option" || lower.starts_with("option ") {
+            if let Some(frame) = open_frames.last_mut()
+                && frame.kind == crate::ir::SequenceFrameKind::Critical
+            {
+                let split_idx = graph.edges.len();
+                if let Some(last) = frame.sections.last_mut() {
+                    last.end_idx = split_idx;
+                }
+                let label = line.get(6..).map(str::trim).unwrap_or_default();
                 let label = if label.is_empty() {
                     None
                 } else {
@@ -2409,6 +2463,32 @@ mod tests {
         assert_eq!(frame.sections[1].label.as_deref(), Some("bad"));
         assert_eq!(frame.sections[1].start_idx, 2);
         assert_eq!(frame.sections[1].end_idx, 3);
+    }
+
+    #[test]
+    fn parse_sequence_par_sections() {
+        let input =
+            "sequenceDiagram\nA->>B: req\npar first\nB-->>A: yes\nand second\nB-->>A: no\nend";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.sequence_frames.len(), 1);
+        let frame = &parsed.graph.sequence_frames[0];
+        assert_eq!(frame.kind, crate::ir::SequenceFrameKind::Par);
+        assert_eq!(frame.sections.len(), 2);
+        assert_eq!(frame.sections[0].label.as_deref(), Some("first"));
+        assert_eq!(frame.sections[1].label.as_deref(), Some("second"));
+    }
+
+    #[test]
+    fn parse_sequence_critical_sections() {
+        let input =
+            "sequenceDiagram\nA->>B: req\ncritical ok\nB-->>A: yes\noption fail\nB-->>A: no\nend";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.sequence_frames.len(), 1);
+        let frame = &parsed.graph.sequence_frames[0];
+        assert_eq!(frame.kind, crate::ir::SequenceFrameKind::Critical);
+        assert_eq!(frame.sections.len(), 2);
+        assert_eq!(frame.sections[0].label.as_deref(), Some("ok"));
+        assert_eq!(frame.sections[1].label.as_deref(), Some("fail"));
     }
 
     #[test]

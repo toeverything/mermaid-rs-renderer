@@ -1259,6 +1259,8 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
                 crate::ir::SequenceFrameKind::Loop => "loop",
                 crate::ir::SequenceFrameKind::Par => "par",
                 crate::ir::SequenceFrameKind::Rect => "rect",
+                crate::ir::SequenceFrameKind::Critical => "critical",
+                crate::ir::SequenceFrameKind::Break => "break",
             };
             let label_block = measure_label(frame_label_text, theme, config);
             let label_box_w =
