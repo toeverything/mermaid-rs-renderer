@@ -341,12 +341,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             compute_edge_label_positions(&layout.edges, &layout.nodes, &layout.subgraphs);
 
         for (idx, edge) in layout.edges.iter().enumerate() {
-            let d = match layout.kind {
-                crate::ir::DiagramKind::Flowchart
-                | crate::ir::DiagramKind::Class
-                | crate::ir::DiagramKind::State => points_to_path_rounded(&edge.points, 12.0),
-                _ => points_to_path(&edge.points),
-            };
+            let d = points_to_path(&edge.points);
             let mut stroke = theme.line_color.clone();
             let (mut dash, mut stroke_width) = match edge.style {
                 crate::ir::EdgeStyle::Solid => (String::new(), 2.0),
@@ -571,62 +566,6 @@ fn points_to_path(points: &[(f32, f32)]) -> String {
     for point in points.iter().skip(1) {
         d.push_str(&format!(" L {:.2} {:.2}", point.0, point.1));
     }
-    d
-}
-
-fn points_to_path_rounded(points: &[(f32, f32)], radius: f32) -> String {
-    if points.is_empty() {
-        return String::new();
-    }
-    if points.len() < 3 || radius <= 0.0 {
-        return points_to_path(points);
-    }
-
-    let mut d = String::new();
-    d.push_str(&format!("M {:.2} {:.2}", points[0].0, points[0].1));
-
-    for idx in 1..points.len() {
-        let curr = points[idx];
-        let is_corner = if idx + 1 < points.len() {
-            let prev = points[idx - 1];
-            let next = points[idx + 1];
-            let dx1 = curr.0 - prev.0;
-            let dy1 = curr.1 - prev.1;
-            let dx2 = next.0 - curr.0;
-            let dy2 = next.1 - curr.1;
-            const TOL: f32 = 0.5;
-            let orth1 = dx1.abs() < TOL || dy1.abs() < TOL;
-            let orth2 = dx2.abs() < TOL || dy2.abs() < TOL;
-            let turn = (dx1.abs() < TOL && dy2.abs() < TOL) || (dy1.abs() < TOL && dx2.abs() < TOL);
-            orth1 && orth2 && turn
-        } else {
-            false
-        };
-
-        if is_corner {
-            let prev = points[idx - 1];
-            let next = points[idx + 1];
-            let dx1 = curr.0 - prev.0;
-            let dy1 = curr.1 - prev.1;
-            let dx2 = next.0 - curr.0;
-            let dy2 = next.1 - curr.1;
-            let len1 = (dx1 * dx1 + dy1 * dy1).sqrt().max(1.0);
-            let len2 = (dx2 * dx2 + dy2 * dy2).sqrt().max(1.0);
-            let r = radius.min(len1 / 2.0).min(len2 / 2.0);
-            let (ux1, uy1) = (dx1 / len1, dy1 / len1);
-            let (ux2, uy2) = (dx2 / len2, dy2 / len2);
-            let p1 = (curr.0 - ux1 * r, curr.1 - uy1 * r);
-            let p2 = (curr.0 + ux2 * r, curr.1 + uy2 * r);
-            d.push_str(&format!(" L {:.2} {:.2}", p1.0, p1.1));
-            d.push_str(&format!(
-                " Q {:.2} {:.2} {:.2} {:.2}",
-                curr.0, curr.1, p2.0, p2.1
-            ));
-        } else {
-            d.push_str(&format!(" L {:.2} {:.2}", curr.0, curr.1));
-        }
-    }
-
     d
 }
 
