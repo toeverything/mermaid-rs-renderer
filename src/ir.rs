@@ -85,6 +85,7 @@ pub enum EdgeDecoration {
     Circle,
     Cross,
     Diamond,
+    DiamondFilled,
 }
 
 #[derive(Debug, Clone)]
@@ -100,6 +101,7 @@ pub struct Graph {
     pub kind: DiagramKind,
     pub direction: Direction,
     pub nodes: BTreeMap<String, Node>,
+    pub node_order: HashMap<String, usize>,
     pub edges: Vec<Edge>,
     pub subgraphs: Vec<Subgraph>,
     pub sequence_participants: Vec<String>,
@@ -138,6 +140,7 @@ impl Graph {
             kind: DiagramKind::Flowchart,
             direction: Direction::TopDown,
             nodes: BTreeMap::new(),
+            node_order: HashMap::new(),
             edges: Vec::new(),
             subgraphs: Vec::new(),
             sequence_participants: Vec::new(),
@@ -153,11 +156,16 @@ impl Graph {
     }
 
     pub fn ensure_node(&mut self, id: &str, label: Option<String>, shape: Option<NodeShape>) {
+        let is_new = !self.nodes.contains_key(id);
         let entry = self.nodes.entry(id.to_string()).or_insert(Node {
             id: id.to_string(),
             label: id.to_string(),
             shape: NodeShape::Rectangle,
         });
+        if is_new {
+            let order = self.node_order.len();
+            self.node_order.insert(id.to_string(), order);
+        }
         if let Some(label) = label {
             entry.label = label;
         }

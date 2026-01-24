@@ -125,6 +125,12 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
 }
 
 fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
+    let mut effective = config.clone();
+    if graph.kind == crate::ir::DiagramKind::Class {
+        effective.node_spacing = effective.node_spacing.max(48.0);
+        effective.rank_spacing = effective.rank_spacing.max(90.0);
+    }
+    let config = &effective;
     let mut nodes = BTreeMap::new();
 
     for node in graph.nodes.values() {
@@ -159,30 +165,65 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         );
     }
 
-    let ranks = compute_ranks(graph);
+    let anchor_info = apply_subgraph_anchor_sizes(graph, &mut nodes, theme, config);
+    let mut anchored_subgraph_nodes: HashSet<String> = HashSet::new();
+    for info in anchor_info.values() {
+        if let Some(sub) = graph.subgraphs.get(info.sub_idx) {
+            anchored_subgraph_nodes.extend(sub.nodes.iter().cloned());
+        }
+    }
+
+    let mut layout_node_ids: Vec<String> = graph.nodes.keys().cloned().collect();
+    layout_node_ids.sort_by_key(|id| graph.node_order.get(id).copied().unwrap_or(usize::MAX));
+    layout_node_ids.retain(|id| !anchored_subgraph_nodes.contains(id));
+    let layout_set: HashSet<String> = layout_node_ids.iter().cloned().collect();
+    let ranks = compute_ranks_subset(&layout_node_ids, &graph.edges);
     let mut max_rank = 0usize;
     for rank in ranks.values() {
         max_rank = max_rank.max(*rank);
     }
 
     let mut rank_nodes: Vec<Vec<String>> = vec![Vec::new(); max_rank + 1];
-    for (id, rank) in &ranks {
-        if let Some(bucket) = rank_nodes.get_mut(*rank) {
-            bucket.push(id.clone());
+    for node_id in &layout_node_ids {
+        let rank = *ranks.get(node_id).unwrap_or(&0);
+        if let Some(bucket) = rank_nodes.get_mut(rank) {
+            bucket.push(node_id.clone());
         }
     }
 
     for bucket in &mut rank_nodes {
-        bucket.sort();
+        bucket.sort_by_key(|id| graph.node_order.get(id).copied().unwrap_or(usize::MAX));
     }
 
-    order_rank_nodes(&mut rank_nodes, &graph.edges);
+    let layout_edges: Vec<crate::ir::Edge> = graph
+        .edges
+        .iter()
+        .filter(|edge| layout_set.contains(&edge.from) && layout_set.contains(&edge.to))
+        .cloned()
+        .collect();
+    order_rank_nodes(&mut rank_nodes, &layout_edges, &graph.node_order);
 
     let mut main_cursor = 0.0;
     let mut _max_cross: f32 = 0.0;
 
     for (rank_idx, bucket) in rank_nodes.iter().enumerate() {
         let mut cross_cursor = 0.0;
+        if !bucket.is_empty() {
+            let mut total_cross = 0.0;
+            for node_id in bucket {
+                if let Some(node_layout) = nodes.get(node_id) {
+                    total_cross += if is_horizontal(graph.direction) {
+                        node_layout.height
+                    } else {
+                        node_layout.width
+                    };
+                }
+            }
+            if bucket.len() > 1 {
+                total_cross += config.node_spacing * (bucket.len() as f32 - 1.0);
+            }
+            cross_cursor = -total_cross / 2.0;
+        }
         let mut max_main: f32 = 0.0;
 
         for node_id in bucket {
@@ -213,15 +254,91 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         }
     }
 
+    if rank_nodes.len() > 1 {
+        let mut node_rank: HashMap<String, usize> = HashMap::new();
+        for (rank_idx, bucket) in rank_nodes.iter().enumerate() {
+            for node_id in bucket {
+                node_rank.insert(node_id.clone(), rank_idx);
+            }
+        }
+        for bucket in &rank_nodes {
+            if bucket.len() != 1 {
+                continue;
+            }
+            let node_id = &bucket[0];
+            let Some(_node) = nodes.get(node_id) else {
+                continue;
+            };
+            let mut sum = 0.0;
+            let mut count = 0.0;
+            let rank = *node_rank.get(node_id).unwrap_or(&0);
+            for edge in &layout_edges {
+                if edge.to == *node_id {
+                    let Some(&from_rank) = node_rank.get(&edge.from) else {
+                        continue;
+                    };
+                    if from_rank + 1 != rank {
+                        continue;
+                    }
+                    if let Some(neighbor) = nodes.get(&edge.from) {
+                        let center = if is_horizontal(graph.direction) {
+                            neighbor.y + neighbor.height / 2.0
+                        } else {
+                            neighbor.x + neighbor.width / 2.0
+                        };
+                        sum += center;
+                        count += 1.0;
+                    }
+                } else if edge.from == *node_id {
+                    let Some(&to_rank) = node_rank.get(&edge.to) else {
+                        continue;
+                    };
+                    if to_rank != rank + 1 {
+                        continue;
+                    }
+                    if let Some(neighbor) = nodes.get(&edge.to) {
+                        let center = if is_horizontal(graph.direction) {
+                            neighbor.y + neighbor.height / 2.0
+                        } else {
+                            neighbor.x + neighbor.width / 2.0
+                        };
+                        sum += center;
+                        count += 1.0;
+                    }
+                }
+            }
+            if count == 0.0 {
+                continue;
+            }
+            let desired_center = sum / count;
+            if let Some(node) = nodes.get_mut(node_id) {
+                if is_horizontal(graph.direction) {
+                    node.y = desired_center - node.height / 2.0;
+                } else {
+                    node.x = desired_center - node.width / 2.0;
+                }
+            }
+        }
+    }
+
+
+    let mut anchored_nodes: HashSet<String> = anchored_subgraph_nodes;
     if !graph.subgraphs.is_empty() {
-        if graph.kind != crate::ir::DiagramKind::State {
-            apply_subgraph_direction_overrides(graph, &mut nodes, config);
-        } else {
-            apply_state_subgraph_layouts(graph, &mut nodes, config);
+        if !anchor_info.is_empty() {
+            if graph.kind != crate::ir::DiagramKind::State {
+                apply_subgraph_direction_overrides(graph, &mut nodes, config);
+            }
+            anchored_nodes =
+                align_subgraphs_to_anchor_nodes(graph, &anchor_info, &mut nodes, config);
+        }
+        if graph.kind == crate::ir::DiagramKind::State {
+            let anchored_indices: HashSet<usize> =
+                anchor_info.values().map(|info| info.sub_idx).collect();
+            apply_state_subgraph_layouts(graph, &mut nodes, config, &anchored_indices);
         }
         apply_orthogonal_region_bands(graph, &mut nodes, config);
         if graph.kind != crate::ir::DiagramKind::State {
-            apply_subgraph_bands(graph, &mut nodes, config);
+            apply_subgraph_bands(graph, &mut nodes, &anchored_nodes, config);
         }
     }
 
@@ -330,7 +447,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
 
     let actor_width = (max_label_width + theme.font_size * 2.5).max(150.0);
     let actor_height = (max_label_height + theme.font_size * 2.5).max(65.0);
-    let actor_gap = (theme.font_size * 3.1).max(40.0);
+    let actor_gap = (theme.font_size * 3.125).max(40.0);
 
     let mut cursor_x = 0.0;
     for id in &participants {
@@ -361,6 +478,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
 
     let base_spacing = (theme.font_size * 2.8).max(24.0);
     let mut extra_before = vec![0.0; graph.edges.len()];
+    let frame_end_pad = base_spacing * 0.25;
     for frame in &graph.sequence_frames {
         if frame.start_idx < extra_before.len() {
             extra_before[frame.start_idx] += base_spacing;
@@ -369,6 +487,9 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
             if section.start_idx < extra_before.len() {
                 extra_before[section.start_idx] += base_spacing;
             }
+        }
+        if frame.end_idx < extra_before.len() {
+            extra_before[frame.end_idx] += frame_end_pad;
         }
     }
 
@@ -400,9 +521,6 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         if edge.style == crate::ir::EdgeStyle::Dotted {
             if override_style.dasharray.is_none() {
                 override_style.dasharray = Some("3 3".to_string());
-            }
-            if override_style.stroke_width.is_none() {
-                override_style.stroke_width = Some(1.4);
             }
         }
         edges.push(EdgeLayout {
@@ -505,7 +623,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
             }
 
             let mut section_labels = Vec::new();
-            let label_offset = theme.font_size * 1.1;
+            let label_offset = theme.font_size * 0.7;
             for (section_idx, section) in frame.sections.iter().enumerate() {
                 if let Some(label) = &section.label {
                     let display = format!("[{}]", label);
@@ -616,7 +734,11 @@ fn merge_edge_style(
     }
 }
 
-fn order_rank_nodes(rank_nodes: &mut [Vec<String>], edges: &[crate::ir::Edge]) {
+fn order_rank_nodes(
+    rank_nodes: &mut [Vec<String>],
+    edges: &[crate::ir::Edge],
+    node_order: &HashMap<String, usize>,
+) {
     if rank_nodes.len() <= 1 {
         return;
     }
@@ -662,7 +784,14 @@ fn order_rank_nodes(rank_nodes: &mut [Vec<String>], edges: &[crate::ir::Edge]) {
                 Some(std::cmp::Ordering::Equal) | None => {
                     let a_pos = current_positions.get(a).copied().unwrap_or(0);
                     let b_pos = current_positions.get(b).copied().unwrap_or(0);
-                    a_pos.cmp(&b_pos)
+                    match a_pos.cmp(&b_pos) {
+                        std::cmp::Ordering::Equal => node_order
+                            .get(a)
+                            .copied()
+                            .unwrap_or(usize::MAX)
+                            .cmp(&node_order.get(b).copied().unwrap_or(usize::MAX)),
+                        other => other,
+                    }
                 }
                 Some(ordering) => ordering,
             }
@@ -711,81 +840,10 @@ fn barycenter(
     }
 }
 
-fn compute_ranks(graph: &Graph) -> HashMap<String, usize> {
-    let mut indeg: HashMap<String, usize> = HashMap::new();
-    let mut adj: HashMap<String, Vec<String>> = HashMap::new();
-
-    for id in graph.nodes.keys() {
-        indeg.insert(id.clone(), 0);
-    }
-
-    for edge in &graph.edges {
-        adj.entry(edge.from.clone())
-            .or_default()
-            .push(edge.to.clone());
-        *indeg.entry(edge.to.clone()).or_insert(0) += 1;
-    }
-
-    let mut queue: VecDeque<String> = indeg
-        .iter()
-        .filter(|(_, deg)| **deg == 0)
-        .map(|(id, _)| id.clone())
-        .collect();
-
-    let mut order = Vec::new();
-    while let Some(node) = queue.pop_front() {
-        order.push(node.clone());
-        if let Some(nexts) = adj.get(&node) {
-            for next in nexts {
-                if let Some(deg) = indeg.get_mut(next) {
-                    *deg -= 1;
-                    if *deg == 0 {
-                        queue.push_back(next.clone());
-                    }
-                }
-            }
-        }
-    }
-
-    if order.len() < graph.nodes.len() {
-        let mut seen: HashSet<String> = order.iter().cloned().collect();
-        for id in graph.nodes.keys() {
-            if !seen.contains(id) {
-                order.push(id.clone());
-                seen.insert(id.clone());
-            }
-        }
-    }
-
-    let order_index: HashMap<String, usize> = order
-        .iter()
-        .enumerate()
-        .map(|(idx, id)| (id.clone(), idx))
-        .collect();
-
-    let mut ranks: HashMap<String, usize> = HashMap::new();
-    for node in &order {
-        let rank = *ranks.get(node).unwrap_or(&0);
-        ranks.entry(node.clone()).or_insert(rank);
-        if let Some(nexts) = adj.get(node) {
-            let from_idx = *order_index.get(node).unwrap_or(&0);
-            for next in nexts {
-                let to_idx = *order_index.get(next).unwrap_or(&from_idx);
-                if to_idx <= from_idx {
-                    continue;
-                }
-                let entry = ranks.entry(next.clone()).or_insert(0);
-                *entry = (*entry).max(rank + 1);
-            }
-        }
-    }
-
-    ranks
-}
-
 fn apply_subgraph_bands(
     graph: &Graph,
     nodes: &mut BTreeMap<String, NodeLayout>,
+    anchored_nodes: &HashSet<String>,
     config: &LayoutConfig,
 ) {
     let mut group_nodes: Vec<Vec<String>> = Vec::new();
@@ -794,6 +852,9 @@ fn apply_subgraph_bands(
     // Group 0: nodes not in any subgraph.
     group_nodes.push(Vec::new());
     for node_id in graph.nodes.keys() {
+        if anchored_nodes.contains(node_id) {
+            continue;
+        }
         node_group.insert(node_id.clone(), 0);
     }
 
@@ -803,6 +864,9 @@ fn apply_subgraph_bands(
         let sub = &graph.subgraphs[*idx];
         group_nodes.push(Vec::new());
         for node_id in &sub.nodes {
+            if anchored_nodes.contains(node_id) {
+                continue;
+            }
             if nodes.contains_key(node_id) {
                 node_group.insert(node_id.clone(), group_idx);
             }
@@ -859,8 +923,16 @@ fn apply_subgraph_bands(
 
     let spacing = config.rank_spacing * 0.8;
     if is_horizontal(graph.direction) {
-        let mut cursor = 0.0;
+        let mut cursor = groups
+            .iter()
+            .find(|group| group.0 == 0)
+            .map(|group| group.3)
+            .unwrap_or(0.0)
+            + spacing;
         for (group_idx, min_x, _min_y, max_x, _max_y) in groups {
+            if group_idx == 0 {
+                continue;
+            }
             let width = max_x - min_x;
             let offset = cursor - min_x;
             for node_id in group_nodes[group_idx].iter() {
@@ -871,8 +943,16 @@ fn apply_subgraph_bands(
             cursor += width + spacing;
         }
     } else {
-        let mut cursor = 0.0;
+        let mut cursor = groups
+            .iter()
+            .find(|group| group.0 == 0)
+            .map(|group| group.4)
+            .unwrap_or(0.0)
+            + spacing;
         for (group_idx, _min_x, min_y, _max_x, max_y) in groups {
+            if group_idx == 0 {
+                continue;
+            }
             let height = max_y - min_y;
             let offset = cursor - min_y;
             for node_id in group_nodes[group_idx].iter() {
@@ -1075,12 +1155,219 @@ fn apply_subgraph_direction_overrides(
     }
 }
 
+fn subgraph_is_anchorable(sub: &crate::ir::Subgraph, graph: &Graph) -> bool {
+    if sub.nodes.is_empty() {
+        return false;
+    }
+    let set: HashSet<&str> = sub.nodes.iter().map(|id| id.as_str()).collect();
+    for edge in &graph.edges {
+        let from_in = set.contains(edge.from.as_str());
+        let to_in = set.contains(edge.to.as_str());
+        if from_in ^ to_in {
+            return false;
+        }
+    }
+    true
+}
+
+fn subgraph_anchor_id<'a>(
+    sub: &'a crate::ir::Subgraph,
+    nodes: &BTreeMap<String, NodeLayout>,
+) -> Option<&'a str> {
+    if let Some(id) = sub.id.as_deref() {
+        if nodes.contains_key(id) && !sub.nodes.iter().any(|node_id| node_id == id) {
+            return Some(id);
+        }
+    }
+    let label = sub.label.as_str();
+    if nodes.contains_key(label) && !sub.nodes.iter().any(|node_id| node_id == label) {
+        return Some(label);
+    }
+    None
+}
+
+#[derive(Debug, Clone)]
+struct SubgraphAnchorInfo {
+    sub_idx: usize,
+    padding: f32,
+    top_padding: f32,
+}
+
+fn subgraph_layout_direction(graph: &Graph, sub: &crate::ir::Subgraph) -> Direction {
+    if let Some(direction) = sub.direction {
+        return direction;
+    }
+    if graph.kind == crate::ir::DiagramKind::State {
+        return graph.direction;
+    }
+    if sub.nodes.len() <= 1 {
+        return graph.direction;
+    }
+    match graph.direction {
+        Direction::TopDown | Direction::BottomTop => Direction::LeftRight,
+        Direction::LeftRight | Direction::RightLeft => Direction::TopDown,
+    }
+}
+
+fn subgraph_padding(
+    graph: &Graph,
+    sub: &crate::ir::Subgraph,
+    theme: &Theme,
+    config: &LayoutConfig,
+) -> (f32, f32) {
+    let label_empty = sub.label.trim().is_empty();
+    let mut label_block = measure_label(&sub.label, theme, config);
+    if label_empty {
+        label_block.width = 0.0;
+        label_block.height = 0.0;
+    }
+    let base_padding = if graph.kind == crate::ir::DiagramKind::State {
+        16.0
+    } else {
+        24.0
+    };
+    let padding = if is_region_subgraph(sub) { 0.0 } else { base_padding };
+    let label_height = if label_empty { 0.0 } else { label_block.height };
+    let top_padding = if label_empty {
+        padding
+    } else if graph.kind == crate::ir::DiagramKind::State {
+        (label_height + theme.font_size * 0.4).max(18.0)
+    } else {
+        padding + label_height + 8.0
+    };
+    (padding, top_padding)
+}
+
+fn estimate_subgraph_box_size(
+    graph: &Graph,
+    sub: &crate::ir::Subgraph,
+    nodes: &BTreeMap<String, NodeLayout>,
+    theme: &Theme,
+    config: &LayoutConfig,
+) -> Option<(f32, f32, f32, f32)> {
+    if sub.nodes.is_empty() {
+        return None;
+    }
+    let direction = subgraph_layout_direction(graph, sub);
+    let mut temp_nodes: BTreeMap<String, NodeLayout> = BTreeMap::new();
+    for node_id in &sub.nodes {
+        if let Some(node) = nodes.get(node_id) {
+            let mut clone = node.clone();
+            clone.x = 0.0;
+            clone.y = 0.0;
+            temp_nodes.insert(node_id.clone(), clone);
+        }
+    }
+    let ranks = compute_ranks_subset(&sub.nodes, &graph.edges);
+    assign_positions(&sub.nodes, &ranks, direction, config, &mut temp_nodes, 0.0, 0.0);
+    let mut min_x = f32::MAX;
+    let mut min_y = f32::MAX;
+    let mut max_x = f32::MIN;
+    let mut max_y = f32::MIN;
+    for node_id in &sub.nodes {
+        if let Some(node) = temp_nodes.get(node_id) {
+            min_x = min_x.min(node.x);
+            min_y = min_y.min(node.y);
+            max_x = max_x.max(node.x + node.width);
+            max_y = max_y.max(node.y + node.height);
+        }
+    }
+    if min_x == f32::MAX {
+        return None;
+    }
+    let (padding, top_padding) = subgraph_padding(graph, sub, theme, config);
+    let width = (max_x - min_x) + padding * 2.0;
+    let height = (max_y - min_y) + padding + top_padding;
+    Some((width, height, padding, top_padding))
+}
+
+fn apply_subgraph_anchor_sizes(
+    graph: &Graph,
+    nodes: &mut BTreeMap<String, NodeLayout>,
+    theme: &Theme,
+    config: &LayoutConfig,
+) -> HashMap<String, SubgraphAnchorInfo> {
+    let mut anchors: HashMap<String, SubgraphAnchorInfo> = HashMap::new();
+    if graph.subgraphs.is_empty() {
+        return anchors;
+    }
+    for (idx, sub) in graph.subgraphs.iter().enumerate() {
+        if is_region_subgraph(sub) {
+            continue;
+        }
+        if !subgraph_is_anchorable(sub, graph) {
+            continue;
+        }
+        let Some(anchor_id) = subgraph_anchor_id(sub, nodes) else {
+            continue;
+        };
+        let Some((width, height, padding, top_padding)) =
+            estimate_subgraph_box_size(graph, sub, nodes, theme, config)
+        else {
+            continue;
+        };
+        if let Some(node) = nodes.get_mut(anchor_id) {
+            node.width = width;
+            node.height = height;
+        }
+        anchors.insert(
+            anchor_id.to_string(),
+            SubgraphAnchorInfo {
+                sub_idx: idx,
+                padding,
+                top_padding,
+            },
+        );
+    }
+    anchors
+}
+
+fn align_subgraphs_to_anchor_nodes(
+    graph: &Graph,
+    anchor_info: &HashMap<String, SubgraphAnchorInfo>,
+    nodes: &mut BTreeMap<String, NodeLayout>,
+    config: &LayoutConfig,
+) -> HashSet<String> {
+    let mut anchored_nodes = HashSet::new();
+    if anchor_info.is_empty() {
+        return anchored_nodes;
+    }
+    for (anchor_id, info) in anchor_info {
+        let Some(anchor) = nodes.get(anchor_id) else {
+            continue;
+        };
+        let Some(sub) = graph.subgraphs.get(info.sub_idx) else {
+            continue;
+        };
+        let direction = subgraph_layout_direction(graph, sub);
+        let ranks = compute_ranks_subset(&sub.nodes, &graph.edges);
+        assign_positions(
+            &sub.nodes,
+            &ranks,
+            direction,
+            config,
+            nodes,
+            anchor.x + info.padding,
+            anchor.y + info.top_padding,
+        );
+        if matches!(direction, Direction::RightLeft | Direction::BottomTop) {
+            mirror_subgraph_nodes(&sub.nodes, nodes, direction);
+        }
+        anchored_nodes.extend(sub.nodes.iter().cloned());
+    }
+    anchored_nodes
+}
+
 fn apply_state_subgraph_layouts(
     graph: &Graph,
     nodes: &mut BTreeMap<String, NodeLayout>,
     config: &LayoutConfig,
+    skip_indices: &HashSet<usize>,
 ) {
-    for sub in &graph.subgraphs {
+    for (idx, sub) in graph.subgraphs.iter().enumerate() {
+        if skip_indices.contains(&idx) {
+            continue;
+        }
         if sub.nodes.len() <= 1 {
             continue;
         }
@@ -1255,7 +1542,7 @@ fn compute_ranks_subset(node_ids: &[String], edges: &[crate::ir::Edge]) -> HashM
     }
 
     if order.len() < set.len() {
-        for id in &set {
+        for id in node_ids {
             if !order.contains(id) {
                 order.push(id.clone());
             }

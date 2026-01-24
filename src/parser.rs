@@ -289,16 +289,16 @@ fn edge_meta_from_class_token(token: &str) -> EdgeMeta {
     let mut start_decoration = None;
     let mut end_decoration = None;
     if token.starts_with('*') {
-        start_decoration = Some(crate::ir::EdgeDecoration::Diamond);
+        start_decoration = Some(crate::ir::EdgeDecoration::DiamondFilled);
     }
     if token.ends_with('*') {
-        end_decoration = Some(crate::ir::EdgeDecoration::Diamond);
+        end_decoration = Some(crate::ir::EdgeDecoration::DiamondFilled);
     }
     if token.starts_with('o') {
-        start_decoration = Some(crate::ir::EdgeDecoration::Circle);
+        start_decoration = Some(crate::ir::EdgeDecoration::Diamond);
     }
     if token.ends_with('o') {
-        end_decoration = Some(crate::ir::EdgeDecoration::Circle);
+        end_decoration = Some(crate::ir::EdgeDecoration::Diamond);
     }
 
     EdgeMeta {
@@ -367,6 +367,25 @@ fn split_class_body(body: &str) -> Vec<String> {
         }
     }
     entries
+}
+
+fn normalize_class_method_signature(entry: &str) -> String {
+    let trimmed = entry.trim();
+    let Some(close_idx) = trimmed.find(')') else {
+        return trimmed.to_string();
+    };
+    let (sig, rest) = trimmed.split_at(close_idx + 1);
+    let rest = rest.trim();
+    if rest.is_empty() {
+        return trimmed.to_string();
+    }
+    if rest.starts_with(':') {
+        return format!("{} {}", sig, rest);
+    }
+    if trimmed.contains("):") || trimmed.contains(") :") {
+        return trimmed.to_string();
+    }
+    format!("{} : {}", sig, rest)
 }
 
 fn parse_class_member_line(line: &str) -> Option<(String, String)> {
@@ -619,7 +638,7 @@ fn split_label(input: &str) -> (String, Option<String>) {
 fn parse_class_diagram(input: &str) -> Result<ParseOutput> {
     let mut graph = Graph::new();
     graph.kind = DiagramKind::Class;
-    graph.direction = Direction::LeftRight;
+    graph.direction = Direction::TopDown;
     let (lines, init_config) = preprocess_input(input)?;
 
     let mut members: HashMap<String, Vec<String>> = HashMap::new();
@@ -633,6 +652,17 @@ fn parse_class_diagram(input: &str) -> Result<ParseOutput> {
         }
         let lower = line.to_ascii_lowercase();
         if lower.starts_with("classdiagram") {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() > 1 {
+                if let Some(dir) = Direction::from_token(parts[1]) {
+                    graph.direction = dir;
+                }
+            }
+            continue;
+        }
+
+        if let Some(direction) = parse_direction_line(line) {
+            graph.direction = direction;
             continue;
         }
 
@@ -734,7 +764,7 @@ fn parse_class_diagram(input: &str) -> Result<ParseOutput> {
             for entry in items {
                 let trimmed = entry.trim();
                 if trimmed.contains('(') && trimmed.contains(')') {
-                    methods.push(trimmed.to_string());
+                    methods.push(normalize_class_method_signature(trimmed));
                 } else {
                     attrs.push(trimmed.to_string());
                 }
