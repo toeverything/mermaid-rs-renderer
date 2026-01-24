@@ -183,6 +183,12 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         max_rank = max_rank.max(*rank);
     }
 
+    let layout_edges: Vec<crate::ir::Edge> = graph
+        .edges
+        .iter()
+        .filter(|edge| layout_set.contains(&edge.from) && layout_set.contains(&edge.to))
+        .cloned()
+        .collect();
     let mut rank_nodes: Vec<Vec<String>> = vec![Vec::new(); max_rank + 1];
     for node_id in &layout_node_ids {
         let rank = *ranks.get(node_id).unwrap_or(&0);
@@ -191,136 +197,170 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         }
     }
 
-    for bucket in &mut rank_nodes {
-        bucket.sort_by_key(|id| graph.node_order.get(id).copied().unwrap_or(usize::MAX));
+    let mut expanded_edges: Vec<crate::ir::Edge> = Vec::new();
+    let mut order_map = graph.node_order.clone();
+    let mut dummy_counter = 0usize;
+
+    for edge in &layout_edges {
+        let Some(&from_rank) = ranks.get(&edge.from) else {
+            continue;
+        };
+        let Some(&to_rank) = ranks.get(&edge.to) else {
+            continue;
+        };
+        if to_rank <= from_rank {
+            continue;
+        }
+        let span = to_rank - from_rank;
+        if span <= 1 {
+            expanded_edges.push(edge.clone());
+            continue;
+        }
+        let mut prev = edge.from.clone();
+        for step in 1..span {
+            let dummy_id = format!("__dummy_{}__", dummy_counter);
+            dummy_counter += 1;
+            let order_idx = order_map.len();
+            order_map.insert(dummy_id.clone(), order_idx);
+            if let Some(bucket) = rank_nodes.get_mut(from_rank + step) {
+                bucket.push(dummy_id.clone());
+            }
+            expanded_edges.push(crate::ir::Edge {
+                from: prev.clone(),
+                to: dummy_id.clone(),
+                label: None,
+                directed: true,
+                arrow_start: false,
+                arrow_end: false,
+                start_decoration: None,
+                end_decoration: None,
+                style: crate::ir::EdgeStyle::Solid,
+            });
+            prev = dummy_id;
+        }
+        expanded_edges.push(crate::ir::Edge {
+            from: prev,
+            to: edge.to.clone(),
+            label: None,
+            directed: true,
+            arrow_start: false,
+            arrow_end: false,
+            start_decoration: None,
+            end_decoration: None,
+            style: crate::ir::EdgeStyle::Solid,
+        });
     }
 
-    let layout_edges: Vec<crate::ir::Edge> = graph
-        .edges
-        .iter()
-        .filter(|edge| layout_set.contains(&edge.from) && layout_set.contains(&edge.to))
-        .cloned()
-        .collect();
-    order_rank_nodes(&mut rank_nodes, &layout_edges, &graph.node_order);
+    for bucket in &mut rank_nodes {
+        bucket.sort_by_key(|id| order_map.get(id).copied().unwrap_or(usize::MAX));
+    }
+    order_rank_nodes(&mut rank_nodes, &expanded_edges, &order_map);
 
     let mut main_cursor = 0.0;
-    let mut _max_cross: f32 = 0.0;
-
+    let mut rank_main: Vec<f32> = vec![0.0; rank_nodes.len()];
     for (rank_idx, bucket) in rank_nodes.iter().enumerate() {
-        let mut cross_cursor = 0.0;
-        if !bucket.is_empty() {
-            let mut total_cross = 0.0;
-            for node_id in bucket {
-                if let Some(node_layout) = nodes.get(node_id) {
-                    total_cross += if is_horizontal(graph.direction) {
-                        node_layout.height
-                    } else {
-                        node_layout.width
-                    };
-                }
-            }
-            if bucket.len() > 1 {
-                total_cross += config.node_spacing * (bucket.len() as f32 - 1.0);
-            }
-            cross_cursor = -total_cross / 2.0;
-        }
         let mut max_main: f32 = 0.0;
-
         for node_id in bucket {
             if let Some(node_layout) = nodes.get_mut(node_id) {
                 if is_horizontal(graph.direction) {
                     node_layout.x = main_cursor;
-                    node_layout.y = cross_cursor;
-                    cross_cursor += node_layout.height + config.node_spacing;
-                    if node_layout.width > max_main {
-                        max_main = node_layout.width;
-                    }
+                    max_main = max_main.max(node_layout.width);
                 } else {
-                    node_layout.x = cross_cursor;
                     node_layout.y = main_cursor;
-                    cross_cursor += node_layout.width + config.node_spacing;
-                    if node_layout.height > max_main {
-                        max_main = node_layout.height;
-                    }
+                    max_main = max_main.max(node_layout.height);
                 }
             }
         }
-
+        rank_main[rank_idx] = main_cursor;
         main_cursor += max_main + config.rank_spacing;
-        _max_cross = _max_cross.max(cross_cursor);
-
         if rank_idx == max_rank {
             // Ensure no trailing spacing
         }
     }
 
-    if rank_nodes.len() > 1 {
-        let mut node_rank: HashMap<String, usize> = HashMap::new();
-        for (rank_idx, bucket) in rank_nodes.iter().enumerate() {
-            for node_id in bucket {
-                node_rank.insert(node_id.clone(), rank_idx);
-            }
+    let mut incoming: HashMap<String, Vec<String>> = HashMap::new();
+    let mut outgoing: HashMap<String, Vec<String>> = HashMap::new();
+    for edge in &layout_edges {
+        incoming.entry(edge.to.clone()).or_default().push(edge.from.clone());
+        outgoing.entry(edge.from.clone()).or_default().push(edge.to.clone());
+    }
+
+    let mut cross_pos: HashMap<String, f32> = HashMap::new();
+    let mut place_rank = |rank_idx: usize,
+                          use_incoming: bool,
+                          nodes: &mut BTreeMap<String, NodeLayout>| {
+        let bucket = &rank_nodes[rank_idx];
+        if bucket.is_empty() {
+            return;
         }
-        for bucket in &rank_nodes {
-            if bucket.len() != 1 {
-                continue;
-            }
-            let node_id = &bucket[0];
-            let Some(_node) = nodes.get(node_id) else {
+        let neighbors = if use_incoming { &incoming } else { &outgoing };
+        let mut entries: Vec<(String, f32, f32)> = Vec::new();
+        for node_id in bucket {
+            let Some(node) = nodes.get(node_id) else {
                 continue;
             };
             let mut sum = 0.0;
             let mut count = 0.0;
-            let rank = *node_rank.get(node_id).unwrap_or(&0);
-            for edge in &layout_edges {
-                if edge.to == *node_id {
-                    let Some(&from_rank) = node_rank.get(&edge.from) else {
-                        continue;
-                    };
-                    if from_rank + 1 != rank {
-                        continue;
-                    }
-                    if let Some(neighbor) = nodes.get(&edge.from) {
-                        let center = if is_horizontal(graph.direction) {
-                            neighbor.y + neighbor.height / 2.0
-                        } else {
-                            neighbor.x + neighbor.width / 2.0
-                        };
-                        sum += center;
-                        count += 1.0;
-                    }
-                } else if edge.from == *node_id {
-                    let Some(&to_rank) = node_rank.get(&edge.to) else {
-                        continue;
-                    };
-                    if to_rank != rank + 1 {
-                        continue;
-                    }
-                    if let Some(neighbor) = nodes.get(&edge.to) {
-                        let center = if is_horizontal(graph.direction) {
-                            neighbor.y + neighbor.height / 2.0
-                        } else {
-                            neighbor.x + neighbor.width / 2.0
-                        };
-                        sum += center;
+            if let Some(list) = neighbors.get(node_id) {
+                for neighbor_id in list {
+                    if let Some(center) = cross_pos.get(neighbor_id) {
+                        sum += *center;
                         count += 1.0;
                     }
                 }
             }
-            if count == 0.0 {
-                continue;
-            }
-            let desired_center = sum / count;
-            if let Some(node) = nodes.get_mut(node_id) {
-                if is_horizontal(graph.direction) {
-                    node.y = desired_center - node.height / 2.0;
+            let desired = if count > 0.0 { sum / count } else { 0.0 };
+            let half = if is_horizontal(graph.direction) {
+                node.height / 2.0
+            } else {
+                node.width / 2.0
+            };
+            entries.push((node_id.clone(), desired, half));
+        }
+        entries.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        let desired_mean = entries.iter().map(|(_, d, _)| *d).sum::<f32>() / entries.len() as f32;
+        let mut assigned: Vec<(String, f32, f32)> = Vec::new();
+        let mut prev_center: Option<f32> = None;
+        let mut prev_half = 0.0;
+        for (node_id, desired, half) in entries {
+            let center = if let Some(prev) = prev_center {
+                let min_center = prev + prev_half + half + config.node_spacing;
+                if desired < min_center {
+                    min_center
                 } else {
-                    node.x = desired_center - node.width / 2.0;
+                    desired
+                }
+            } else {
+                desired
+            };
+            assigned.push((node_id, center, half));
+            prev_center = Some(center);
+            prev_half = half;
+        }
+        let actual_mean =
+            assigned.iter().map(|(_, c, _)| *c).sum::<f32>() / assigned.len() as f32;
+        let delta = desired_mean - actual_mean;
+        for (node_id, center, _half) in assigned {
+            let center = center + delta;
+            if let Some(node) = nodes.get_mut(&node_id) {
+                if is_horizontal(graph.direction) {
+                    node.y = center - node.height / 2.0;
+                } else {
+                    node.x = center - node.width / 2.0;
                 }
             }
+            cross_pos.insert(node_id, center);
+        }
+    };
+
+    for _ in 0..2 {
+        for rank_idx in 0..rank_nodes.len() {
+            place_rank(rank_idx, true, &mut nodes);
+        }
+        for rank_idx in (0..rank_nodes.len()).rev() {
+            place_rank(rank_idx, false, &mut nodes);
         }
     }
-
 
     let mut anchored_nodes: HashSet<String> = anchored_subgraph_nodes;
     if !graph.subgraphs.is_empty() {
