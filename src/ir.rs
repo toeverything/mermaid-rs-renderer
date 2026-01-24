@@ -83,6 +83,8 @@ pub struct Edge {
     pub directed: bool,
     pub arrow_start: bool,
     pub arrow_end: bool,
+    pub arrow_start_kind: Option<EdgeArrowhead>,
+    pub arrow_end_kind: Option<EdgeArrowhead>,
     pub start_decoration: Option<EdgeDecoration>,
     pub end_decoration: Option<EdgeDecoration>,
     pub style: EdgeStyle,
@@ -101,6 +103,12 @@ pub enum EdgeDecoration {
     Cross,
     Diamond,
     DiamondFilled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EdgeArrowhead {
+    OpenTriangle,
+    ClassDependency,
 }
 
 #[derive(Debug, Clone)]

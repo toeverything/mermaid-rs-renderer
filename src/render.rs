@@ -13,6 +13,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
     let height = layout.height.max(200.0);
     let is_sequence = !layout.sequence_footboxes.is_empty();
     let is_state = layout.kind == crate::ir::DiagramKind::State;
+    let is_class = layout.kind == crate::ir::DiagramKind::Class;
 
     svg.push_str(&format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" viewBox=\"0 0 {width} {height}\">",
@@ -58,6 +59,30 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 "<marker id=\"arrow-start-seq-{idx}\" viewBox=\"-1 0 12 10\" refX=\"2.1\" refY=\"5\" markerUnits=\"userSpaceOnUse\" markerWidth=\"12\" markerHeight=\"12\" orient=\"auto\"><path d=\"M 11 0 L 0 5 L 11 10 z\" fill=\"{}\" stroke=\"{}\"/></marker>",
                 color,
                 color
+            ));
+        }
+        if is_state {
+            svg.push_str(&format!(
+                "<marker id=\"arrow-state-{idx}\" viewBox=\"0 0 20 14\" refX=\"19\" refY=\"7\" markerUnits=\"userSpaceOnUse\" markerWidth=\"20\" markerHeight=\"14\" orient=\"auto\"><path d=\"M 19 7 L 9 13 L 14 7 L 9 1 Z\" fill=\"{}\" stroke=\"{}\"/></marker>",
+                color, color
+            ));
+        }
+        if is_class {
+            svg.push_str(&format!(
+                "<marker id=\"arrow-class-open-{idx}\" viewBox=\"0 0 20 14\" refX=\"1\" refY=\"7\" markerUnits=\"userSpaceOnUse\" markerWidth=\"20\" markerHeight=\"14\" orient=\"auto\"><path d=\"M 1 7 L 18 13 V 1 Z\" fill=\"none\" stroke=\"{}\"/></marker>",
+                color
+            ));
+            svg.push_str(&format!(
+                "<marker id=\"arrow-class-open-start-{idx}\" viewBox=\"0 0 20 14\" refX=\"18\" refY=\"7\" markerUnits=\"userSpaceOnUse\" markerWidth=\"20\" markerHeight=\"14\" orient=\"auto\"><path d=\"M 1 7 L 18 13 V 1 Z\" fill=\"none\" stroke=\"{}\"/></marker>",
+                color
+            ));
+            svg.push_str(&format!(
+                "<marker id=\"arrow-class-dep-{idx}\" viewBox=\"0 0 20 14\" refX=\"13\" refY=\"7\" markerUnits=\"userSpaceOnUse\" markerWidth=\"20\" markerHeight=\"14\" orient=\"auto\"><path d=\"M 18 7 L 9 13 L 14 7 L 9 1 Z\" fill=\"{}\" stroke=\"{}\"/></marker>",
+                color, color
+            ));
+            svg.push_str(&format!(
+                "<marker id=\"arrow-class-dep-start-{idx}\" viewBox=\"0 0 20 14\" refX=\"6\" refY=\"7\" markerUnits=\"userSpaceOnUse\" markerWidth=\"20\" markerHeight=\"14\" orient=\"auto\"><path d=\"M 5 7 L 9 13 L 1 7 L 9 1 Z\" fill=\"{}\" stroke=\"{}\"/></marker>",
+                color, color
             ));
         }
     }
@@ -228,13 +253,13 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             lifeline.y1,
             lifeline.x,
             lifeline.y2,
-            theme.primary_border_color
+            theme.sequence_actor_line
         ));
     }
 
     for note in &layout.sequence_notes {
-        let fill = theme.cluster_background.as_str();
-        let stroke = theme.cluster_border.as_str();
+        let fill = theme.sequence_note_fill.as_str();
+        let stroke = theme.sequence_note_border.as_str();
         let fold = (theme.font_size * 0.8)
             .max(8.0)
             .min(note.width.min(note.height) * 0.3);
@@ -284,12 +309,12 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
 
             let mut dash = String::new();
             if edge.style == crate::ir::EdgeStyle::Dotted {
-                dash = "stroke-dasharray=\"2 2\"".to_string();
+                dash = "stroke-dasharray=\"3 3\"".to_string();
             }
             if let Some(dash_override) = &edge.override_style.dasharray {
                 dash = format!("stroke-dasharray=\"{}\"", dash_override);
             }
-            let stroke_width = edge.override_style.stroke_width.unwrap_or(1.5);
+            let stroke_width = edge.override_style.stroke_width.unwrap_or(2.0);
             svg.push_str(&format!(
                 "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" {} {} {} />",
                 d, stroke, stroke_width, marker_end, marker_start, dash
@@ -325,7 +350,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 let end = edge.points.last().copied().unwrap_or(start);
                 let mid_x = (start.0 + end.0) / 2.0;
                 let line_y = start.1;
-                let label_y = line_y - theme.font_size * 0.95;
+                let label_y = line_y - theme.font_size * 1.95;
                 let label_text = label.lines.join("\n");
                 svg.push_str(&text_line_svg(
                     mid_x,
@@ -358,12 +383,40 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             }
             let marker_id = color_ids.get(&stroke).copied().unwrap_or(0);
             let marker_end = if edge.arrow_end {
-                format!("marker-end=\"url(#arrow-{marker_id})\"")
+                match layout.kind {
+                    crate::ir::DiagramKind::State => {
+                        format!("marker-end=\"url(#arrow-state-{marker_id})\"")
+                    }
+                    crate::ir::DiagramKind::Class => match edge.arrow_end_kind {
+                        Some(crate::ir::EdgeArrowhead::OpenTriangle) => {
+                            format!("marker-end=\"url(#arrow-class-open-{marker_id})\"")
+                        }
+                        Some(crate::ir::EdgeArrowhead::ClassDependency) => {
+                            format!("marker-end=\"url(#arrow-class-dep-{marker_id})\"")
+                        }
+                        None => format!("marker-end=\"url(#arrow-{marker_id})\""),
+                    },
+                    _ => format!("marker-end=\"url(#arrow-{marker_id})\""),
+                }
             } else {
                 String::new()
             };
             let marker_start = if edge.arrow_start {
-                format!("marker-start=\"url(#arrow-start-{marker_id})\"")
+                match layout.kind {
+                    crate::ir::DiagramKind::State => {
+                        format!("marker-start=\"url(#arrow-state-{marker_id})\"")
+                    }
+                    crate::ir::DiagramKind::Class => match edge.arrow_start_kind {
+                        Some(crate::ir::EdgeArrowhead::OpenTriangle) => {
+                            format!("marker-start=\"url(#arrow-class-open-start-{marker_id})\"")
+                        }
+                        Some(crate::ir::EdgeArrowhead::ClassDependency) => format!(
+                            "marker-start=\"url(#arrow-class-dep-start-{marker_id})\""
+                        ),
+                        None => format!("marker-start=\"url(#arrow-start-{marker_id})\""),
+                    },
+                    _ => format!("marker-start=\"url(#arrow-start-{marker_id})\""),
+                }
             } else {
                 String::new()
             };
@@ -514,8 +567,8 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 node.y,
                 node.width,
                 node.height,
-                theme.primary_color,
-                theme.primary_border_color
+                theme.sequence_actor_fill,
+                theme.sequence_actor_border
             ));
             let center_x = node.x + node.width / 2.0;
             let center_y = node.y + node.height / 2.0;
@@ -541,8 +594,8 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 footbox.y,
                 footbox.width,
                 footbox.height,
-                theme.primary_color,
-                theme.primary_border_color
+                theme.sequence_actor_fill,
+                theme.sequence_actor_border
             ));
             let center_x = footbox.x + footbox.width / 2.0;
             let center_y = footbox.y + footbox.height / 2.0;
@@ -712,7 +765,7 @@ fn text_block_svg_class(
     }
     let mut member_lines: Vec<(usize, &str)> = Vec::new();
     for (idx, line) in node.label.lines.iter().enumerate().skip(divider_idx + 1) {
-        if !line.trim().is_empty() {
+        if !line.trim().is_empty() && !is_divider_line(line) {
             member_lines.push((idx, line.as_str()));
         }
     }
@@ -1447,6 +1500,8 @@ mod tests {
             directed: true,
             arrow_start: false,
             arrow_end: true,
+            arrow_start_kind: None,
+            arrow_end_kind: None,
             start_decoration: None,
             end_decoration: None,
             style: crate::ir::EdgeStyle::Solid,

@@ -235,6 +235,8 @@ fn parse_flowchart(input: &str) -> Result<ParseOutput> {
                             directed: edge_meta.directed,
                             arrow_start: edge_meta.arrow_start,
                             arrow_end: edge_meta.arrow_end,
+                            arrow_start_kind: edge_meta.arrow_start_kind,
+                            arrow_end_kind: edge_meta.arrow_end_kind,
                             start_decoration: edge_meta.start_decoration,
                             end_decoration: edge_meta.end_decoration,
                             style: edge_meta.style,
@@ -301,10 +303,30 @@ fn edge_meta_from_class_token(token: &str) -> EdgeMeta {
         end_decoration = Some(crate::ir::EdgeDecoration::Diamond);
     }
 
+    let mut arrow_start_kind = None;
+    let mut arrow_end_kind = None;
+    if token.contains('|') {
+        if arrow_start {
+            arrow_start_kind = Some(crate::ir::EdgeArrowhead::OpenTriangle);
+        }
+        if arrow_end {
+            arrow_end_kind = Some(crate::ir::EdgeArrowhead::OpenTriangle);
+        }
+    } else {
+        if arrow_start {
+            arrow_start_kind = Some(crate::ir::EdgeArrowhead::ClassDependency);
+        }
+        if arrow_end {
+            arrow_end_kind = Some(crate::ir::EdgeArrowhead::ClassDependency);
+        }
+    }
+
     EdgeMeta {
         directed,
         arrow_start,
         arrow_end,
+        arrow_start_kind,
+        arrow_end_kind,
         start_decoration,
         end_decoration,
         style,
@@ -465,6 +487,8 @@ fn edge_meta_from_state_token(token: &str) -> EdgeMeta {
         directed,
         arrow_start,
         arrow_end,
+        arrow_start_kind: None,
+        arrow_end_kind: None,
         start_decoration: None,
         end_decoration: None,
         style,
@@ -748,6 +772,8 @@ fn parse_class_diagram(input: &str) -> Result<ParseOutput> {
                 directed: meta.directed,
                 arrow_start: meta.arrow_start,
                 arrow_end: meta.arrow_end,
+                arrow_start_kind: meta.arrow_start_kind,
+                arrow_end_kind: meta.arrow_end_kind,
                 start_decoration: meta.start_decoration,
                 end_decoration: meta.end_decoration,
                 style: meta.style,
@@ -993,6 +1019,8 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
                     directed: meta.directed,
                     arrow_start: meta.arrow_start,
                     arrow_end: meta.arrow_end,
+                    arrow_start_kind: meta.arrow_start_kind,
+                    arrow_end_kind: meta.arrow_end_kind,
                     start_decoration: meta.start_decoration,
                     end_decoration: meta.end_decoration,
                     style: meta.style,
@@ -1177,6 +1205,8 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
                 directed: true,
                 arrow_start: false,
                 arrow_end: true,
+                arrow_start_kind: None,
+                arrow_end_kind: None,
                 start_decoration: None,
                 end_decoration: None,
                 style,
@@ -1436,6 +1466,8 @@ struct EdgeMeta {
     directed: bool,
     arrow_start: bool,
     arrow_end: bool,
+    arrow_start_kind: Option<crate::ir::EdgeArrowhead>,
+    arrow_end_kind: Option<crate::ir::EdgeArrowhead>,
     start_decoration: Option<crate::ir::EdgeDecoration>,
     end_decoration: Option<crate::ir::EdgeDecoration>,
     style: crate::ir::EdgeStyle,
@@ -1479,6 +1511,8 @@ fn parse_edge_meta(arrow: &str) -> EdgeMeta {
         directed,
         arrow_start,
         arrow_end,
+        arrow_start_kind: None,
+        arrow_end_kind: None,
         start_decoration,
         end_decoration,
         style,
@@ -2155,4 +2189,37 @@ mod tests {
         assert!(parsed.graph.edge_styles.contains_key(&0));
         assert!(parsed.graph.edge_styles.contains_key(&1));
     }
+}
+
+#[test]
+fn debug_composite_state() {
+    let input = r#"stateDiagram-v2
+    [*] --> Idle
+    Idle --> Processing : submit
+    Processing --> Success : complete
+    state Processing {
+
+#[test]
+fn debug_composite_state() {
+    let input = r#"stateDiagram-v2
+    [*] --> Idle
+    Idle --> Processing : submit
+    Processing --> Success : complete
+    state Processing {
+        [*] --> Validating
+        Validating --> Executing
+        Executing --> [*]
+    }
+"#;
+    let parsed = parse_mermaid(input).unwrap();
+    println!("\n=== NODES ===");
+    for (id, node) in &parsed.graph.nodes {
+        println!("  id={}, label={:?}", id, node.label);
+    }
+    println!("\n=== SUBGRAPHS ===");
+    for (i, sub) in parsed.graph.subgraphs.iter().enumerate() {
+        println!("  [{}] id={:?}, label={:?}", i, sub.id, sub.label);
+        println!("      nodes={:?}", sub.nodes);
+    }
+    panic!("Debug output above");
 }

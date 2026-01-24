@@ -14,12 +14,19 @@ pub struct Theme {
     pub cluster_background: String,
     pub cluster_border: String,
     pub background: String,
+    pub sequence_actor_fill: String,
+    pub sequence_actor_border: String,
+    pub sequence_actor_line: String,
+    pub sequence_note_fill: String,
+    pub sequence_note_border: String,
+    pub sequence_activation_fill: String,
+    pub sequence_activation_border: String,
 }
 
 impl Theme {
     pub fn mermaid_default() -> Self {
         Self {
-            font_family: "\"trebuchet ms\", verdana, arial, sans-serif".to_string(),
+            font_family: "'trebuchet ms', verdana, arial, sans-serif".to_string(),
             font_size: 16.0,
             primary_color: "#ECECFF".to_string(),
             primary_text_color: "#333333".to_string(),
@@ -31,6 +38,13 @@ impl Theme {
             cluster_background: "#FFFFDE".to_string(),
             cluster_border: "#AAAA33".to_string(),
             background: "#FFFFFF".to_string(),
+            sequence_actor_fill: "#EAEAEA".to_string(),
+            sequence_actor_border: "#666666".to_string(),
+            sequence_actor_line: "#999999".to_string(),
+            sequence_note_fill: "#FFF5AD".to_string(),
+            sequence_note_border: "#AAAA33".to_string(),
+            sequence_activation_fill: "#F4F4F4".to_string(),
+            sequence_activation_border: "#666666".to_string(),
         }
     }
 
@@ -48,6 +62,13 @@ impl Theme {
             cluster_background: "#F7FAFF".to_string(),
             cluster_border: "#D7E0F0".to_string(),
             background: "#FFFFFF".to_string(),
+            sequence_actor_fill: "#F8FAFF".to_string(),
+            sequence_actor_border: "#C7D2E5".to_string(),
+            sequence_actor_line: "#7A8AA6".to_string(),
+            sequence_note_fill: "#F7FAFF".to_string(),
+            sequence_note_border: "#D7E0F0".to_string(),
+            sequence_activation_fill: "#EEF2F8".to_string(),
+            sequence_activation_border: "#7A8AA6".to_string(),
         }
     }
 }

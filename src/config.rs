@@ -79,6 +79,13 @@ struct ThemeVariables {
     cluster_bkg: Option<String>,
     cluster_border: Option<String>,
     background: Option<String>,
+    actor_bkg: Option<String>,
+    actor_border: Option<String>,
+    actor_line: Option<String>,
+    note_bkg: Option<String>,
+    note_border_color: Option<String>,
+    activation_bkg_color: Option<String>,
+    activation_border_color: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -149,6 +156,27 @@ pub fn load_config(path: Option<&Path>) -> anyhow::Result<Config> {
         }
         if let Some(v) = vars.background {
             config.theme.background = v;
+        }
+        if let Some(v) = vars.actor_bkg {
+            config.theme.sequence_actor_fill = v;
+        }
+        if let Some(v) = vars.actor_border {
+            config.theme.sequence_actor_border = v;
+        }
+        if let Some(v) = vars.actor_line {
+            config.theme.sequence_actor_line = v;
+        }
+        if let Some(v) = vars.note_bkg {
+            config.theme.sequence_note_fill = v;
+        }
+        if let Some(v) = vars.note_border_color {
+            config.theme.sequence_note_border = v;
+        }
+        if let Some(v) = vars.activation_bkg_color {
+            config.theme.sequence_activation_fill = v;
+        }
+        if let Some(v) = vars.activation_border_color {
+            config.theme.sequence_activation_border = v;
         }
     }
 

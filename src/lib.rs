@@ -84,7 +84,8 @@ pub mod theme;
 // Re-export commonly used types at crate root for ergonomic library usage
 pub use config::{Config, LayoutConfig, RenderConfig};
 pub use ir::{
-    DiagramKind, Direction, Edge, EdgeDecoration, EdgeStyle, Graph, Node, NodeShape, Subgraph,
+    DiagramKind, Direction, Edge, EdgeArrowhead, EdgeDecoration, EdgeStyle, Graph, Node, NodeShape,
+    Subgraph,
 };
 pub use layout::{EdgeLayout, Layout, NodeLayout, SubgraphLayout, compute_layout};
 pub use parser::{ParseOutput, parse_mermaid};
