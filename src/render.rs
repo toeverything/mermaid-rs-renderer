@@ -1,4 +1,6 @@
-use crate::config::{LayoutConfig, RenderConfig};
+use crate::config::LayoutConfig;
+#[cfg(feature = "png")]
+use crate::config::RenderConfig;
 use crate::layout::{EdgeLayout, Layout, TextBlock};
 use crate::theme::Theme;
 use anyhow::Result;
@@ -399,12 +401,14 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             }
 
             if let Some((x, y, label)) = label_positions.get(&idx).and_then(|v| v.clone()) {
-                let rect_x = x - label.width / 2.0 - 6.0;
-                let rect_y = y - label.height / 2.0 - 4.0;
-                let rect_w = label.width + 12.0;
-                let rect_h = label.height + 8.0;
+                let pad_x = 4.0;
+                let pad_y = 2.0;
+                let rect_x = x - label.width / 2.0 - pad_x;
+                let rect_y = y - label.height / 2.0 - pad_y;
+                let rect_w = label.width + pad_x * 2.0;
+                let rect_h = label.height + pad_y * 2.0;
                 svg.push_str(&format!(
-                    "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"0\" ry=\"0\" fill=\"{}\" fill-opacity=\"0.8\" stroke=\"none\"/>",
+                    "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"0\" ry=\"0\" fill=\"{}\" fill-opacity=\"0.5\" stroke=\"none\"/>",
                     theme.edge_label_background
                 ));
                 svg.push_str(&text_block_svg(
@@ -1037,6 +1041,7 @@ pub fn write_output_svg(svg: &str, output: Option<&Path>) -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "png")]
 pub fn write_output_png(
     svg: &str,
     output: &Path,
@@ -1143,6 +1148,7 @@ fn edge_decoration_svg(
     }
 }
 
+#[cfg(feature = "png")]
 fn primary_font(fonts: &str) -> String {
     fonts
         .split(',')
