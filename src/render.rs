@@ -257,6 +257,18 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         ));
     }
 
+    for activation in &layout.sequence_activations {
+        svg.push_str(&format!(
+            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\"/>",
+            activation.x,
+            activation.y,
+            activation.width,
+            activation.height,
+            theme.sequence_activation_fill,
+            theme.sequence_activation_border
+        ));
+    }
+
     for note in &layout.sequence_notes {
         let fill = theme.sequence_note_fill.as_str();
         let stroke = theme.sequence_note_border.as_str();
@@ -366,6 +378,27 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     "middle",
                 ));
             }
+        }
+
+        for number in &layout.sequence_numbers {
+            let r = (theme.font_size * 0.45).max(6.0);
+            svg.push_str(&format!(
+                "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\"/>",
+                number.x,
+                number.y,
+                r,
+                theme.sequence_activation_fill,
+                theme.sequence_activation_border
+            ));
+            let label = number.value.to_string();
+            svg.push_str(&text_line_svg(
+                number.x,
+                number.y + theme.font_size * 0.35,
+                label.as_str(),
+                theme,
+                theme.primary_text_color.as_str(),
+                "middle",
+            ));
         }
     } else {
         let label_positions =

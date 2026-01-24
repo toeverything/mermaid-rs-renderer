@@ -123,6 +123,23 @@ pub struct SequenceNoteLayout {
 }
 
 #[derive(Debug, Clone)]
+pub struct SequenceActivationLayout {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub participant: String,
+    pub depth: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct SequenceNumberLayout {
+    pub x: f32,
+    pub y: f32,
+    pub value: usize,
+}
+
+#[derive(Debug, Clone)]
 pub struct Layout {
     pub kind: crate::ir::DiagramKind,
     pub nodes: BTreeMap<String, NodeLayout>,
@@ -132,6 +149,8 @@ pub struct Layout {
     pub sequence_footboxes: Vec<NodeLayout>,
     pub sequence_frames: Vec<SequenceFrameLayout>,
     pub sequence_notes: Vec<SequenceNoteLayout>,
+    pub sequence_activations: Vec<SequenceActivationLayout>,
+    pub sequence_numbers: Vec<SequenceNumberLayout>,
     pub width: f32,
     pub height: f32,
 }
@@ -503,6 +522,8 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         sequence_footboxes: Vec::new(),
         sequence_frames: Vec::new(),
         sequence_notes: Vec::new(),
+        sequence_activations: Vec::new(),
+        sequence_numbers: Vec::new(),
         width,
         height,
     }
@@ -1301,6 +1322,112 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         })
         .collect::<Vec<_>>();
 
+    let activation_width = (theme.font_size * 0.75).max(10.0);
+    let activation_offset = (activation_width * 0.6).max(4.0);
+    let activation_end_default = message_ys
+        .last()
+        .copied()
+        .unwrap_or(lifeline_start + base_spacing * 0.5)
+        + base_spacing * 0.6;
+    let mut sequence_activations = Vec::new();
+    let mut activation_stacks: HashMap<String, Vec<(f32, usize)>> = HashMap::new();
+    let mut events = graph
+        .sequence_activations
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(order, event)| (event.index, order, event))
+        .collect::<Vec<_>>();
+    events.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    let activation_y_for = |idx: usize| {
+        if idx < message_ys.len() {
+            message_ys[idx]
+        } else {
+            activation_end_default
+        }
+    };
+    for (_, _, event) in events {
+        let y = activation_y_for(event.index);
+        let stack = activation_stacks.entry(event.participant.clone()).or_default();
+        match event.kind {
+            crate::ir::SequenceActivationKind::Activate => {
+                let depth = stack.len();
+                stack.push((y, depth));
+            }
+            crate::ir::SequenceActivationKind::Deactivate => {
+                if let Some((start_y, depth)) = stack.pop() {
+                    if let Some(node) = nodes.get(&event.participant) {
+                        let base_x = node.x + node.width / 2.0 - activation_width / 2.0;
+                        let x = base_x + depth as f32 * activation_offset;
+                        let mut y0 = start_y.min(y);
+                        let mut height = (y - start_y).abs();
+                        if height < base_spacing * 0.6 {
+                            height = base_spacing * 0.6;
+                        }
+                        if y0 < lifeline_start {
+                            y0 = lifeline_start;
+                        }
+                        sequence_activations.push(SequenceActivationLayout {
+                            x,
+                            y: y0,
+                            width: activation_width,
+                            height,
+                            participant: event.participant.clone(),
+                            depth,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    for (participant, stack) in activation_stacks {
+        for (start_y, depth) in stack {
+            if let Some(node) = nodes.get(&participant) {
+                let base_x = node.x + node.width / 2.0 - activation_width / 2.0;
+                let x = base_x + depth as f32 * activation_offset;
+                let mut y0 = start_y.min(activation_end_default);
+                let mut height = (activation_end_default - start_y).abs();
+                if height < base_spacing * 0.6 {
+                    height = base_spacing * 0.6;
+                }
+                if y0 < lifeline_start {
+                    y0 = lifeline_start;
+                }
+                sequence_activations.push(SequenceActivationLayout {
+                    x,
+                    y: y0,
+                    width: activation_width,
+                    height,
+                    participant: participant.clone(),
+                    depth,
+                });
+            }
+        }
+    }
+
+    let mut sequence_numbers = Vec::new();
+    if let Some(start) = graph.sequence_autonumber {
+        let mut value = start;
+        for (idx, edge) in graph.edges.iter().enumerate() {
+            if let (Some(from), Some(y)) =
+                (nodes.get(&edge.from), message_ys.get(idx).copied())
+            {
+                let from_x = from.x + from.width / 2.0;
+                let to_x = nodes
+                    .get(&edge.to)
+                    .map(|node| node.x + node.width / 2.0)
+                    .unwrap_or(from_x);
+                let offset = if to_x >= from_x { 16.0 } else { -16.0 };
+                sequence_numbers.push(SequenceNumberLayout {
+                    x: from_x + offset,
+                    y,
+                    value,
+                });
+                value += 1;
+            }
+        }
+    }
+
     let (mut width, mut height) = bounds_from_layout(&nodes, &subgraphs);
     let mut max_x = width.max(cursor_x + 40.0) - 60.0;
     let mut max_y = height - 60.0;
@@ -1314,6 +1441,16 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         min_x = min_x.min(frame.x);
         max_x = max_x.max(frame.x + frame.width);
         max_y = max_y.max(frame.y + frame.height);
+    }
+    for activation in &sequence_activations {
+        min_x = min_x.min(activation.x);
+        max_x = max_x.max(activation.x + activation.width);
+        max_y = max_y.max(activation.y + activation.height);
+    }
+    for number in &sequence_numbers {
+        min_x = min_x.min(number.x);
+        max_x = max_x.max(number.x);
+        max_y = max_y.max(number.y);
     }
 
     let shift_x = if min_x < 0.0 { -min_x + 20.0 } else { 0.0 };
@@ -1343,6 +1480,12 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         for note in &mut sequence_notes {
             note.x += shift_x;
         }
+        for activation in &mut sequence_activations {
+            activation.x += shift_x;
+        }
+        for number in &mut sequence_numbers {
+            number.x += shift_x;
+        }
         max_x += shift_x;
     }
 
@@ -1363,6 +1506,8 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         sequence_footboxes,
         sequence_frames,
         sequence_notes,
+        sequence_activations,
+        sequence_numbers,
         width,
         height,
     }
