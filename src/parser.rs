@@ -52,6 +52,7 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
         DiagramKind::Timeline => parse_timeline_diagram(input),
         DiagramKind::Gantt => parse_gantt_diagram(input),
         DiagramKind::Requirement => parse_requirement_diagram(input),
+        DiagramKind::GitGraph => parse_gitgraph_diagram(input),
         DiagramKind::Flowchart => parse_flowchart(input),
     }
 }
@@ -102,6 +103,9 @@ fn detect_diagram_kind(input: &str) -> DiagramKind {
         }
         if lower.starts_with("requirementdiagram") {
             return DiagramKind::Requirement;
+        }
+        if lower.starts_with("gitgraph") {
+            return DiagramKind::GitGraph;
         }
         if lower.starts_with("flowchart") || lower.starts_with("graph") {
             return DiagramKind::Flowchart;
@@ -2007,6 +2011,154 @@ fn parse_requirement_relation_line(line: &str) -> Option<(String, String, String
     Some((from.to_string(), rel.to_string(), to.to_string()))
 }
 
+fn parse_gitgraph_diagram(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::GitGraph;
+    graph.direction = Direction::LeftRight;
+    let (lines, init_config) = preprocess_input(input)?;
+
+    let mut branch_heads: HashMap<String, Option<String>> = HashMap::new();
+    let mut current_branch = "main".to_string();
+    branch_heads.insert(current_branch.clone(), None);
+    let mut commit_counter: usize = 0;
+
+    for raw_line in lines {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("gitgraph") {
+            continue;
+        }
+        if lower.starts_with("branch ") {
+            let name = line.get(7..).unwrap_or("").trim();
+            if !name.is_empty() {
+                let head = branch_heads.get(&current_branch).cloned().unwrap_or(None);
+                branch_heads.insert(name.to_string(), head);
+            }
+            continue;
+        }
+        if lower.starts_with("checkout ") {
+            let name = line.get(9..).unwrap_or("").trim();
+            if !name.is_empty() {
+                current_branch = name.to_string();
+                branch_heads.entry(current_branch.clone()).or_insert(None);
+            }
+            continue;
+        }
+        if lower.starts_with("merge ") {
+            let from_branch = line.get(6..).unwrap_or("").trim();
+            if from_branch.is_empty() {
+                continue;
+            }
+            let from_head = branch_heads.get(from_branch).cloned().unwrap_or(None);
+            let current_head = branch_heads.get(&current_branch).cloned().unwrap_or(None);
+            if from_head.is_none() && current_head.is_none() {
+                continue;
+            }
+            commit_counter += 1;
+            let merge_id = format!("merge_{}", commit_counter);
+            let label = format!("merge {}", from_branch);
+            graph.ensure_node(
+                &merge_id,
+                Some(label),
+                Some(crate::ir::NodeShape::Circle),
+            );
+            if let Some(parent) = current_head {
+                graph.edges.push(crate::ir::Edge {
+                    from: parent,
+                    to: merge_id.clone(),
+                    label: None,
+                    start_label: None,
+                    end_label: None,
+                    directed: true,
+                    arrow_start: false,
+                    arrow_end: true,
+                    arrow_start_kind: None,
+                    arrow_end_kind: None,
+                    start_decoration: None,
+                    end_decoration: None,
+                    style: crate::ir::EdgeStyle::Solid,
+                });
+            }
+            if let Some(parent) = from_head {
+                graph.edges.push(crate::ir::Edge {
+                    from: parent,
+                    to: merge_id.clone(),
+                    label: None,
+                    start_label: None,
+                    end_label: None,
+                    directed: true,
+                    arrow_start: false,
+                    arrow_end: true,
+                    arrow_start_kind: None,
+                    arrow_end_kind: None,
+                    start_decoration: None,
+                    end_decoration: None,
+                    style: crate::ir::EdgeStyle::Solid,
+                });
+            }
+            branch_heads.insert(current_branch.clone(), Some(merge_id));
+            continue;
+        }
+        if lower.starts_with("commit") {
+            commit_counter += 1;
+            let id = extract_gitgraph_attr(line, "id")
+                .or_else(|| extract_gitgraph_attr(line, "tag"))
+                .unwrap_or_else(|| format!("C{}", commit_counter));
+            let node_id = format!("commit_{}", commit_counter);
+            graph.ensure_node(
+                &node_id,
+                Some(id),
+                Some(crate::ir::NodeShape::Circle),
+            );
+            if let Some(parent) = branch_heads.get(&current_branch).cloned().unwrap_or(None) {
+                graph.edges.push(crate::ir::Edge {
+                    from: parent,
+                    to: node_id.clone(),
+                    label: None,
+                    start_label: None,
+                    end_label: None,
+                    directed: true,
+                    arrow_start: false,
+                    arrow_end: true,
+                    arrow_start_kind: None,
+                    arrow_end_kind: None,
+                    start_decoration: None,
+                    end_decoration: None,
+                    style: crate::ir::EdgeStyle::Solid,
+                });
+            }
+            branch_heads.insert(current_branch.clone(), Some(node_id));
+            continue;
+        }
+    }
+
+    Ok(ParseOutput { graph, init_config })
+}
+
+fn extract_gitgraph_attr(line: &str, key: &str) -> Option<String> {
+    let needle = format!("{}:", key);
+    let idx = line.find(&needle)?;
+    let mut rest = line[idx + needle.len()..].trim_start();
+    if rest.is_empty() {
+        return None;
+    }
+    let first = rest.chars().next()?;
+    if first == '"' || first == '\'' {
+        rest = &rest[1..];
+        if let Some(end) = rest.find(first) {
+            return Some(rest[..end].to_string());
+        }
+        return Some(rest.to_string());
+    }
+    let end = rest
+        .find(|ch: char| ch.is_whitespace() || ch == ',')
+        .unwrap_or(rest.len());
+    Some(rest[..end].to_string())
+}
+
 fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
     let mut graph = Graph::new();
     graph.kind = DiagramKind::State;
@@ -3679,6 +3831,15 @@ mod tests {
         assert_eq!(parsed.graph.nodes.len(), 2);
         assert_eq!(parsed.graph.edges.len(), 1);
         assert_eq!(parsed.graph.edges[0].label.as_deref(), Some("satisfies"));
+    }
+
+    #[test]
+    fn parse_gitgraph_basic() {
+        let input = "gitGraph\n  commit\n  branch feature\n  checkout feature\n  commit id:\"F1\"\n  checkout main\n  merge feature";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::GitGraph);
+        assert!(parsed.graph.nodes.len() >= 3);
+        assert!(parsed.graph.edges.len() >= 2);
     }
 
     #[test]

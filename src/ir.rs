@@ -21,6 +21,7 @@ pub enum DiagramKind {
     Timeline,
     Gantt,
     Requirement,
+    GitGraph,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
