@@ -23,6 +23,8 @@ pub enum DiagramKind {
     Requirement,
     GitGraph,
     C4,
+    Sankey,
+    Quadrant,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

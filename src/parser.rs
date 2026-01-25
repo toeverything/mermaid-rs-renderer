@@ -54,6 +54,8 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
         DiagramKind::Requirement => parse_requirement_diagram(input),
         DiagramKind::GitGraph => parse_gitgraph_diagram(input),
         DiagramKind::C4 => parse_c4_diagram(input),
+        DiagramKind::Sankey => parse_sankey_diagram(input),
+        DiagramKind::Quadrant => parse_quadrant_diagram(input),
         DiagramKind::Flowchart => parse_flowchart(input),
     }
 }
@@ -110,6 +112,12 @@ fn detect_diagram_kind(input: &str) -> DiagramKind {
         }
         if lower.starts_with("c4") {
             return DiagramKind::C4;
+        }
+        if lower.starts_with("sankey") {
+            return DiagramKind::Sankey;
+        }
+        if lower.starts_with("quadrantchart") {
+            return DiagramKind::Quadrant;
         }
         if lower.starts_with("flowchart") || lower.starts_with("graph") {
             return DiagramKind::Flowchart;
@@ -2330,6 +2338,108 @@ fn c4_shape_for(kind: &str) -> crate::ir::NodeShape {
     crate::ir::NodeShape::Rectangle
 }
 
+fn parse_sankey_diagram(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::Sankey;
+    graph.direction = Direction::LeftRight;
+    let (lines, init_config) = preprocess_input(input)?;
+
+    for raw_line in lines {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("sankey") {
+            continue;
+        }
+        let parts = split_args(line);
+        if parts.len() < 3 {
+            continue;
+        }
+        let from = strip_quotes(parts[0].trim());
+        let to = strip_quotes(parts[1].trim());
+        let value = parts[2].trim();
+        if from.is_empty() || to.is_empty() {
+            continue;
+        }
+        graph.ensure_node(&from, None, Some(crate::ir::NodeShape::Rectangle));
+        graph.ensure_node(&to, None, Some(crate::ir::NodeShape::Rectangle));
+        let label = if value.is_empty() {
+            None
+        } else {
+            Some(value.to_string())
+        };
+        graph.edges.push(crate::ir::Edge {
+            from,
+            to,
+            label,
+            start_label: None,
+            end_label: None,
+            directed: true,
+            arrow_start: false,
+            arrow_end: true,
+            arrow_start_kind: None,
+            arrow_end_kind: None,
+            start_decoration: None,
+            end_decoration: None,
+            style: crate::ir::EdgeStyle::Solid,
+        });
+    }
+
+    Ok(ParseOutput { graph, init_config })
+}
+
+fn parse_quadrant_diagram(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::Quadrant;
+    graph.direction = Direction::LeftRight;
+    let (lines, init_config) = preprocess_input(input)?;
+
+    for raw_line in lines {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("quadrantchart")
+            || lower.starts_with("title")
+            || lower.starts_with("x-axis")
+            || lower.starts_with("y-axis")
+            || lower.starts_with("quadrant-")
+        {
+            continue;
+        }
+        if let Some((label, coords)) = parse_quadrant_point(line) {
+            let node_id = format!("quadrant_{}", graph.nodes.len());
+            let node_label = format!("{}\n{}", label, coords);
+            graph.ensure_node(
+                &node_id,
+                Some(node_label),
+                Some(crate::ir::NodeShape::Circle),
+            );
+        }
+    }
+
+    Ok(ParseOutput { graph, init_config })
+}
+
+fn parse_quadrant_point(line: &str) -> Option<(String, String)> {
+    let (left, right) = line.split_once(':')?;
+    let label = left.trim();
+    if label.is_empty() {
+        return None;
+    }
+    let coords = right.trim().trim_matches(|ch| ch == '[' || ch == ']' || ch == '(' || ch == ')');
+    let mut parts = coords
+        .split(',')
+        .map(|part| part.trim())
+        .filter(|part| !part.is_empty());
+    let x = parts.next()?;
+    let y = parts.next()?;
+    Some((label.to_string(), format!("{}, {}", x, y)))
+}
+
 fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
     let mut graph = Graph::new();
     graph.kind = DiagramKind::State;
@@ -4021,6 +4131,22 @@ mod tests {
         assert!(parsed.graph.nodes.len() >= 3);
         assert_eq!(parsed.graph.edges.len(), 1);
         assert_eq!(parsed.graph.subgraphs.len(), 1);
+    }
+
+    #[test]
+    fn parse_sankey_basic() {
+        let input = "sankey\n  A, B, 10\n  B, C, 5";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::Sankey);
+        assert_eq!(parsed.graph.edges.len(), 2);
+    }
+
+    #[test]
+    fn parse_quadrant_basic() {
+        let input = "quadrantChart\n  title Sample\n  A : [0.2, 0.8]\n  B : [0.7, 0.3]";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::Quadrant);
+        assert_eq!(parsed.graph.nodes.len(), 2);
     }
 
     #[test]
