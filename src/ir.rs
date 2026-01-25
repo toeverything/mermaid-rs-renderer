@@ -17,6 +17,8 @@ pub enum DiagramKind {
     Er,
     Pie,
     Mindmap,
+    Journey,
+    Timeline,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

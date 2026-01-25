@@ -48,6 +48,8 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
         DiagramKind::Er => parse_er_diagram(input),
         DiagramKind::Pie => parse_pie_diagram(input),
         DiagramKind::Mindmap => parse_mindmap_diagram(input),
+        DiagramKind::Journey => parse_journey_diagram(input),
+        DiagramKind::Timeline => parse_timeline_diagram(input),
         DiagramKind::Flowchart => parse_flowchart(input),
     }
 }
@@ -86,6 +88,12 @@ fn detect_diagram_kind(input: &str) -> DiagramKind {
         }
         if lower.starts_with("mindmap") {
             return DiagramKind::Mindmap;
+        }
+        if lower.starts_with("journey") {
+            return DiagramKind::Journey;
+        }
+        if lower.starts_with("timeline") {
+            return DiagramKind::Timeline;
         }
         if lower.starts_with("flowchart") || lower.starts_with("graph") {
             return DiagramKind::Flowchart;
@@ -1512,6 +1520,202 @@ fn parse_mindmap_diagram(input: &str) -> Result<ParseOutput> {
     }
 
     Ok(ParseOutput { graph, init_config })
+}
+
+fn parse_journey_diagram(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::Journey;
+    graph.direction = Direction::LeftRight;
+    let (lines, init_config) = preprocess_input(input)?;
+
+    let mut current_section: Option<usize> = None;
+    let mut last_task: Option<String> = None;
+
+    for raw_line in lines {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("journey") {
+            continue;
+        }
+        if lower.starts_with("title") {
+            continue;
+        }
+        if lower.starts_with("section") {
+            let label = line.get(7..).unwrap_or("").trim();
+            let id = format!("section_{}", graph.subgraphs.len());
+            graph.subgraphs.push(Subgraph {
+                id: Some(id),
+                label: label.to_string(),
+                nodes: Vec::new(),
+                direction: None,
+            });
+            current_section = Some(graph.subgraphs.len() - 1);
+            last_task = None;
+            continue;
+        }
+
+        if let Some((label, score, actors)) = parse_journey_task_line(line) {
+            let node_id = format!("journey_{}", graph.nodes.len());
+            let mut node_label = label;
+            if let Some(score) = score {
+                node_label.push_str(&format!("\nscore: {}", score));
+            }
+            if !actors.is_empty() {
+                node_label.push_str(&format!("\n{}", actors.join(", ")));
+            }
+            graph.ensure_node(
+                &node_id,
+                Some(node_label),
+                Some(crate::ir::NodeShape::Rectangle),
+            );
+            if let Some(idx) = current_section {
+                if let Some(subgraph) = graph.subgraphs.get_mut(idx) {
+                    subgraph.nodes.push(node_id.clone());
+                }
+            }
+            if let Some(prev) = last_task.take() {
+                graph.edges.push(crate::ir::Edge {
+                    from: prev,
+                    to: node_id.clone(),
+                    label: None,
+                    start_label: None,
+                    end_label: None,
+                    directed: false,
+                    arrow_start: false,
+                    arrow_end: false,
+                    arrow_start_kind: None,
+                    arrow_end_kind: None,
+                    start_decoration: None,
+                    end_decoration: None,
+                    style: crate::ir::EdgeStyle::Solid,
+                });
+            }
+            last_task = Some(node_id);
+        }
+    }
+
+    Ok(ParseOutput { graph, init_config })
+}
+
+fn parse_journey_task_line(line: &str) -> Option<(String, Option<String>, Vec<String>)> {
+    let mut parts = line.split(':').map(|part| part.trim()).collect::<Vec<_>>();
+    if parts.len() < 2 {
+        return None;
+    }
+    let label = parts.remove(0).to_string();
+    if label.is_empty() {
+        return None;
+    }
+    let score = parts
+        .get(0)
+        .map(|value| value.to_string())
+        .filter(|value| !value.is_empty());
+    let actors = if parts.len() >= 2 {
+        parts[1]
+            .split(',')
+            .map(|actor| actor.trim().to_string())
+            .filter(|actor| !actor.is_empty())
+            .collect()
+    } else {
+        Vec::new()
+    };
+    Some((label, score, actors))
+}
+
+fn parse_timeline_diagram(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::Timeline;
+    graph.direction = Direction::TopDown;
+    let (lines, init_config) = preprocess_input(input)?;
+
+    let mut current_section: Option<usize> = None;
+    let mut last_event: Option<String> = None;
+
+    for raw_line in lines {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("timeline") {
+            continue;
+        }
+        if lower.starts_with("title") {
+            continue;
+        }
+        if lower.starts_with("section") {
+            let label = line.get(7..).unwrap_or("").trim();
+            let id = format!("section_{}", graph.subgraphs.len());
+            graph.subgraphs.push(Subgraph {
+                id: Some(id),
+                label: label.to_string(),
+                nodes: Vec::new(),
+                direction: None,
+            });
+            current_section = Some(graph.subgraphs.len() - 1);
+            last_event = None;
+            continue;
+        }
+
+        if let Some((time, event)) = parse_timeline_event_line(line) {
+            let node_id = format!("timeline_{}", graph.nodes.len());
+            let label = if event.is_empty() {
+                time.clone()
+            } else {
+                format!("{}\n{}", time, event)
+            };
+            graph.ensure_node(
+                &node_id,
+                Some(label),
+                Some(crate::ir::NodeShape::Rectangle),
+            );
+            if let Some(idx) = current_section {
+                if let Some(subgraph) = graph.subgraphs.get_mut(idx) {
+                    subgraph.nodes.push(node_id.clone());
+                }
+            }
+            if let Some(prev) = last_event.take() {
+                graph.edges.push(crate::ir::Edge {
+                    from: prev,
+                    to: node_id.clone(),
+                    label: None,
+                    start_label: None,
+                    end_label: None,
+                    directed: false,
+                    arrow_start: false,
+                    arrow_end: false,
+                    arrow_start_kind: None,
+                    arrow_end_kind: None,
+                    start_decoration: None,
+                    end_decoration: None,
+                    style: crate::ir::EdgeStyle::Solid,
+                });
+            }
+            last_event = Some(node_id);
+        }
+    }
+
+    Ok(ParseOutput { graph, init_config })
+}
+
+fn parse_timeline_event_line(line: &str) -> Option<(String, String)> {
+    if let Some((left, right)) = line.split_once(':') {
+        let time = left.trim().to_string();
+        if time.is_empty() {
+            return None;
+        }
+        let event = right.trim().to_string();
+        return Some((time, event));
+    }
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some((trimmed.to_string(), String::new()))
+    }
 }
 
 fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
@@ -3148,6 +3352,25 @@ mod tests {
         assert_eq!(parsed.graph.kind, DiagramKind::Mindmap);
         assert!(parsed.graph.nodes.len() >= 4);
         assert_eq!(parsed.graph.edges.len(), 3);
+    }
+
+    #[test]
+    fn parse_journey_basic() {
+        let input = "journey\n  title My Journey\n  section Start\n    Step one: 5: Alice\n    Step two: 3: Alice, Bob";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::Journey);
+        assert_eq!(parsed.graph.subgraphs.len(), 1);
+        assert_eq!(parsed.graph.nodes.len(), 2);
+        assert_eq!(parsed.graph.edges.len(), 1);
+    }
+
+    #[test]
+    fn parse_timeline_basic() {
+        let input = "timeline\n  title History\n  2020 : Launch\n  2021 : Growth";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::Timeline);
+        assert_eq!(parsed.graph.nodes.len(), 2);
+        assert_eq!(parsed.graph.edges.len(), 1);
     }
 
     #[test]
