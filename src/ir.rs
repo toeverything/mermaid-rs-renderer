@@ -62,6 +62,13 @@ pub struct SequenceNote {
 }
 
 #[derive(Debug, Clone)]
+pub struct SequenceBox {
+    pub label: Option<String>,
+    pub color: Option<String>,
+    pub participants: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
 pub struct StateNote {
     pub position: StateNotePosition,
     pub target: String,
@@ -169,6 +176,7 @@ pub struct Graph {
     pub sequence_notes: Vec<SequenceNote>,
     pub sequence_activations: Vec<SequenceActivation>,
     pub sequence_autonumber: Option<usize>,
+    pub sequence_boxes: Vec<SequenceBox>,
     pub state_notes: Vec<StateNote>,
     pub class_defs: HashMap<String, NodeStyle>,
     pub node_classes: HashMap<String, Vec<String>>,
@@ -215,6 +223,7 @@ impl Graph {
             sequence_notes: Vec::new(),
             sequence_activations: Vec::new(),
             sequence_autonumber: None,
+            sequence_boxes: Vec::new(),
             state_notes: Vec::new(),
             class_defs: HashMap::new(),
             node_classes: HashMap::new(),

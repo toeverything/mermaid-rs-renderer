@@ -114,6 +114,16 @@ pub struct SequenceFrameLayout {
 }
 
 #[derive(Debug, Clone)]
+pub struct SequenceBoxLayout {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub label: Option<TextBlock>,
+    pub color: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub struct SequenceNoteLayout {
     pub x: f32,
     pub y: f32,
@@ -161,6 +171,7 @@ pub struct Layout {
     pub subgraphs: Vec<SubgraphLayout>,
     pub lifelines: Vec<Lifeline>,
     pub sequence_footboxes: Vec<NodeLayout>,
+    pub sequence_boxes: Vec<SequenceBoxLayout>,
     pub sequence_frames: Vec<SequenceFrameLayout>,
     pub sequence_notes: Vec<SequenceNoteLayout>,
     pub sequence_activations: Vec<SequenceActivationLayout>,
@@ -580,6 +591,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         subgraphs,
         lifelines: Vec::new(),
         sequence_footboxes: Vec::new(),
+        sequence_boxes: Vec::new(),
         sequence_frames: Vec::new(),
         sequence_notes: Vec::new(),
         sequence_activations: Vec::new(),
@@ -1401,6 +1413,45 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         })
         .collect::<Vec<_>>();
 
+    let mut sequence_boxes = Vec::new();
+    if !graph.sequence_boxes.is_empty() {
+        let pad_x = theme.font_size * 0.8;
+        let pad_y = theme.font_size * 0.6;
+        let bottom = sequence_footboxes
+            .iter()
+            .map(|foot| foot.y + foot.height)
+            .fold(lifeline_end, f32::max);
+        for seq_box in &graph.sequence_boxes {
+            let mut min_x = f32::INFINITY;
+            let mut max_x = f32::NEG_INFINITY;
+            for participant in &seq_box.participants {
+                if let Some(node) = nodes.get(participant) {
+                    min_x = min_x.min(node.x);
+                    max_x = max_x.max(node.x + node.width);
+                }
+            }
+            if !min_x.is_finite() || !max_x.is_finite() {
+                continue;
+            }
+            let x = min_x - pad_x;
+            let y = 0.0;
+            let width = (max_x - min_x) + pad_x * 2.0;
+            let height = bottom + pad_y;
+            let label = seq_box
+                .label
+                .as_ref()
+                .map(|text| measure_label(text, theme, config));
+            sequence_boxes.push(SequenceBoxLayout {
+                x,
+                y,
+                width,
+                height,
+                label,
+                color: seq_box.color.clone(),
+            });
+        }
+    }
+
     let activation_width = (theme.font_size * 0.75).max(10.0);
     let activation_offset = (activation_width * 0.6).max(4.0);
     let activation_end_default = message_ys
@@ -1583,6 +1634,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         subgraphs,
         lifelines,
         sequence_footboxes,
+        sequence_boxes,
         sequence_frames,
         sequence_notes,
         sequence_activations,

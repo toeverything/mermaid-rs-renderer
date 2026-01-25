@@ -205,6 +205,39 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         }
     }
 
+    if is_sequence {
+        for seq_box in &layout.sequence_boxes {
+            let stroke = theme.primary_border_color.as_str();
+            let fill = seq_box
+                .color
+                .as_deref()
+                .unwrap_or("none");
+            let mut fill_attr = format!("fill=\"{}\"", fill);
+            if seq_box.color.is_some() && fill != "none" {
+                fill_attr.push_str(" fill-opacity=\"0.12\"");
+            }
+            svg.push_str(&format!(
+                "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" {fill_attr} stroke=\"{}\" stroke-width=\"1.2\"/>",
+                seq_box.x, seq_box.y, seq_box.width, seq_box.height, stroke
+            ));
+            if let Some(label) = seq_box.label.as_ref() {
+                let pad_x = theme.font_size * 0.8;
+                let pad_y = theme.font_size * 0.9;
+                let label_x = seq_box.x + pad_x;
+                let label_y = seq_box.y + pad_y + label.height / 2.0;
+                svg.push_str(&text_block_svg_anchor(
+                    label_x,
+                    label_y,
+                    label,
+                    theme,
+                    config,
+                    "start",
+                    Some(theme.primary_text_color.as_str()),
+                ));
+            }
+        }
+    }
+
     for frame in &layout.sequence_frames {
         let stroke = theme.primary_border_color.as_str();
         svg.push_str(&format!(

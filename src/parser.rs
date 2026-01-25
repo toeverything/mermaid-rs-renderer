@@ -828,6 +828,55 @@ fn parse_sequence_participant(
     Some((strip_quotes(rest), None, shape))
 }
 
+fn is_color_token(token: &str) -> bool {
+    let lower = token.trim().to_ascii_lowercase();
+    lower == "transparent"
+        || lower.starts_with('#')
+        || lower.starts_with("rgb(")
+        || lower.starts_with("rgba(")
+        || lower.starts_with("hsl(")
+        || lower.starts_with("hsla(")
+}
+
+fn parse_sequence_box_line(line: &str) -> Option<(Option<String>, Option<String>)> {
+    let trimmed = line.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if !lower.starts_with("box") {
+        return None;
+    }
+    let rest = trimmed[3..].trim();
+    if rest.is_empty() {
+        return Some((None, None));
+    }
+    let tokens = tokenize_quoted(rest);
+    if tokens.is_empty() {
+        return Some((None, None));
+    }
+    let first = tokens[0].clone();
+    if first.eq_ignore_ascii_case("transparent") {
+        let label = tokens[1..].join(" ");
+        let label = if label.trim().is_empty() { None } else { Some(label) };
+        return Some((None, label));
+    }
+    let color = if tokens.len() > 1 {
+        Some(first.clone())
+    } else if is_color_token(&first) {
+        Some(first.clone())
+    } else {
+        None
+    };
+    let label = if tokens.len() > 1 {
+        Some(tokens[1..].join(" "))
+    } else if color.is_none() {
+        Some(first.clone())
+    } else {
+        None
+    };
+    let label = label.filter(|value| !value.trim().is_empty());
+    let color = color.filter(|value| value.to_ascii_lowercase() != "transparent");
+    Some((color, label))
+}
+
 fn ensure_sequence_node(
     graph: &mut Graph,
     labels: &HashMap<String, String>,
@@ -1411,6 +1460,7 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
     let mut order: Vec<String> = Vec::new();
     let mut open_frames: Vec<crate::ir::SequenceFrame> = Vec::new();
     let mut frames: Vec<crate::ir::SequenceFrame> = Vec::new();
+    let mut open_boxes: Vec<crate::ir::SequenceBox> = Vec::new();
 
     for raw_line in lines {
         let line = raw_line.trim();
@@ -1429,6 +1479,20 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
                 labels.insert(id.clone(), label);
             }
             ensure_sequence_node(&mut graph, &labels, &id, Some(shape));
+            if let Some(box_ctx) = open_boxes.last_mut()
+                && !box_ctx.participants.contains(&id)
+            {
+                box_ctx.participants.push(id.clone());
+            }
+            continue;
+        }
+
+        if let Some((color, label)) = parse_sequence_box_line(line) {
+            open_boxes.push(crate::ir::SequenceBox {
+                label,
+                color,
+                participants: Vec::new(),
+            });
             continue;
         }
 
@@ -1557,6 +1621,8 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
                 }
                 frame.end_idx = end_idx;
                 frames.push(frame);
+            } else if let Some(seq_box) = open_boxes.pop() {
+                graph.sequence_boxes.push(seq_box);
             }
             continue;
         }
@@ -1667,6 +1733,9 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
         }
         frame.end_idx = end_idx;
         frames.push(frame);
+    }
+    while let Some(seq_box) = open_boxes.pop() {
+        graph.sequence_boxes.push(seq_box);
     }
 
     graph.sequence_participants = order;
@@ -2756,6 +2825,19 @@ mod tests {
         assert_eq!(frame.sections.len(), 2);
         assert_eq!(frame.sections[0].label.as_deref(), Some("ok"));
         assert_eq!(frame.sections[1].label.as_deref(), Some("fail"));
+    }
+
+    #[test]
+    fn parse_sequence_box() {
+        let input = "sequenceDiagram\nbox Aqua Group\nparticipant A\nparticipant B\nend";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.sequence_boxes.len(), 1);
+        let seq_box = &parsed.graph.sequence_boxes[0];
+        assert_eq!(seq_box.color.as_deref(), Some("Aqua"));
+        assert_eq!(seq_box.label.as_deref(), Some("Group"));
+        assert_eq!(seq_box.participants.len(), 2);
+        assert!(seq_box.participants.iter().any(|id| id == "A"));
+        assert!(seq_box.participants.iter().any(|id| id == "B"));
     }
 
     #[test]
