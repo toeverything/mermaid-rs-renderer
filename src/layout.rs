@@ -164,6 +164,31 @@ pub struct SequenceNumberLayout {
 }
 
 #[derive(Debug, Clone)]
+pub struct PieSliceLayout {
+    pub label: TextBlock,
+    pub value: f32,
+    pub start_angle: f32,
+    pub end_angle: f32,
+    pub color: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct PieLegendItem {
+    pub x: f32,
+    pub y: f32,
+    pub label: TextBlock,
+    pub color: String,
+    pub marker_size: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct PieTitleLayout {
+    pub x: f32,
+    pub y: f32,
+    pub text: TextBlock,
+}
+
+#[derive(Debug, Clone)]
 pub struct Layout {
     pub kind: crate::ir::DiagramKind,
     pub nodes: BTreeMap<String, NodeLayout>,
@@ -177,6 +202,11 @@ pub struct Layout {
     pub sequence_activations: Vec<SequenceActivationLayout>,
     pub sequence_numbers: Vec<SequenceNumberLayout>,
     pub state_notes: Vec<StateNoteLayout>,
+    pub pie_slices: Vec<PieSliceLayout>,
+    pub pie_legend: Vec<PieLegendItem>,
+    pub pie_center: (f32, f32),
+    pub pie_radius: f32,
+    pub pie_title: Option<PieTitleLayout>,
     pub width: f32,
     pub height: f32,
 }
@@ -235,10 +265,148 @@ fn is_region_subgraph(sub: &crate::ir::Subgraph) -> bool {
 pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
     match graph.kind {
         crate::ir::DiagramKind::Sequence => compute_sequence_layout(graph, theme, config),
+        crate::ir::DiagramKind::Pie => compute_pie_layout(graph, theme, config),
         crate::ir::DiagramKind::Class
         | crate::ir::DiagramKind::State
         | crate::ir::DiagramKind::Er
         | crate::ir::DiagramKind::Flowchart => compute_flowchart_layout(graph, theme, config),
+    }
+}
+
+fn compute_pie_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
+    let mut slices = Vec::new();
+    let mut legend = Vec::new();
+    let title_block = graph
+        .pie_title
+        .as_ref()
+        .map(|title| measure_label(title, theme, config));
+
+    let palette = pie_palette(theme);
+    let total: f32 = graph
+        .pie_slices
+        .iter()
+        .map(|slice| slice.value.max(0.0))
+        .sum();
+    let fallback_total = graph.pie_slices.len().max(1) as f32;
+    let total = if total > 0.0 { total } else { fallback_total };
+
+    let mut angle = -std::f32::consts::PI / 2.0;
+    for (idx, slice) in graph.pie_slices.iter().enumerate() {
+        let value = slice.value.max(0.0);
+        let span = if total > 0.0 {
+            value / total * std::f32::consts::PI * 2.0
+        } else {
+            std::f32::consts::PI * 2.0 / fallback_total
+        };
+        let label_text = if graph.pie_show_data {
+            format!("{}: {}", slice.label, format_pie_value(value))
+        } else {
+            slice.label.clone()
+        };
+        let label = measure_label(&label_text, theme, config);
+        slices.push(PieSliceLayout {
+            label,
+            value,
+            start_angle: angle,
+            end_angle: angle + span,
+            color: palette[idx % palette.len()].clone(),
+        });
+        angle += span;
+    }
+
+    let marker_size = (theme.font_size * 0.8).max(8.0);
+    let legend_gap = (theme.font_size * 0.6).max(6.0);
+    let mut legend_width: f32 = 0.0;
+    let mut legend_height: f32 = 0.0;
+    for slice in &slices {
+        legend_width = legend_width.max(slice.label.width);
+        legend_height += slice.label.height;
+    }
+    if !slices.is_empty() {
+        legend_height += legend_gap * (slices.len() - 1) as f32;
+    }
+    legend_width += marker_size + theme.font_size * 0.6;
+
+    let title_height = title_block
+        .as_ref()
+        .map(|title| title.height + theme.font_size)
+        .unwrap_or(0.0);
+
+    let mut radius = (theme.font_size * 7.0).max(90.0);
+    if legend_height > 0.0 {
+        radius = radius.max(legend_height / 2.0);
+    }
+    if radius < 20.0 {
+        radius = 20.0;
+    }
+
+    let center_x = radius + theme.font_size * 2.0;
+    let center_y = title_height + radius + theme.font_size * 1.5;
+    let legend_x = center_x + radius + theme.font_size * 1.5;
+    let mut legend_y = center_y - legend_height / 2.0;
+
+    for slice in &slices {
+        let item_y = legend_y + slice.label.height / 2.0;
+        legend.push(PieLegendItem {
+            x: legend_x,
+            y: item_y,
+            label: slice.label.clone(),
+            color: slice.color.clone(),
+            marker_size,
+        });
+        legend_y += slice.label.height + legend_gap;
+    }
+
+    let width = legend_x + legend_width + theme.font_size * 2.0;
+    let height = title_height + radius * 2.0 + theme.font_size * 2.0;
+    let title_layout = title_block.map(|text| PieTitleLayout {
+        x: width / 2.0,
+        y: theme.font_size + text.height / 2.0,
+        text,
+    });
+
+    Layout {
+        kind: graph.kind,
+        nodes: BTreeMap::new(),
+        edges: Vec::new(),
+        subgraphs: Vec::new(),
+        lifelines: Vec::new(),
+        sequence_footboxes: Vec::new(),
+        sequence_boxes: Vec::new(),
+        sequence_frames: Vec::new(),
+        sequence_notes: Vec::new(),
+        sequence_activations: Vec::new(),
+        sequence_numbers: Vec::new(),
+        state_notes: Vec::new(),
+        pie_slices: slices,
+        pie_legend: legend,
+        pie_center: (center_x, center_y),
+        pie_radius: radius,
+        pie_title: title_layout,
+        width: width.max(200.0),
+        height: height.max(200.0),
+    }
+}
+
+fn pie_palette(theme: &Theme) -> Vec<String> {
+    vec![
+        theme.primary_color.clone(),
+        theme.secondary_color.clone(),
+        theme.tertiary_color.clone(),
+        "#A3D5FF".to_string(),
+        "#FFB6B6".to_string(),
+        "#B9FBC0".to_string(),
+        "#FFD6A5".to_string(),
+        "#CABFFD".to_string(),
+    ]
+}
+
+fn format_pie_value(value: f32) -> String {
+    let rounded = (value * 100.0).round() / 100.0;
+    if (rounded - rounded.round()).abs() < 0.001 {
+        format!("{:.0}", rounded)
+    } else {
+        format!("{:.2}", rounded)
     }
 }
 
@@ -598,6 +766,11 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         sequence_activations: Vec::new(),
         sequence_numbers: Vec::new(),
         state_notes,
+        pie_slices: Vec::new(),
+        pie_legend: Vec::new(),
+        pie_center: (0.0, 0.0),
+        pie_radius: 0.0,
+        pie_title: None,
         width,
         height,
     }
@@ -1640,6 +1813,11 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         sequence_activations,
         sequence_numbers,
         state_notes: Vec::new(),
+        pie_slices: Vec::new(),
+        pie_legend: Vec::new(),
+        pie_center: (0.0, 0.0),
+        pie_radius: 0.0,
+        pie_title: None,
         width,
         height,
     }

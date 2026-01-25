@@ -46,6 +46,7 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
         DiagramKind::State => parse_state_diagram(input),
         DiagramKind::Sequence => parse_sequence_diagram(input),
         DiagramKind::Er => parse_er_diagram(input),
+        DiagramKind::Pie => parse_pie_diagram(input),
         DiagramKind::Flowchart => parse_flowchart(input),
     }
 }
@@ -78,6 +79,9 @@ fn detect_diagram_kind(input: &str) -> DiagramKind {
         }
         if lower.starts_with("erdiagram") {
             return DiagramKind::Er;
+        }
+        if lower.starts_with("pie") {
+            return DiagramKind::Pie;
         }
         if lower.starts_with("flowchart") || lower.starts_with("graph") {
             return DiagramKind::Flowchart;
@@ -1356,6 +1360,56 @@ fn parse_er_diagram(input: &str) -> Result<ParseOutput> {
     }
 
     Ok(ParseOutput { graph, init_config })
+}
+
+fn parse_pie_diagram(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::Pie;
+    let (lines, init_config) = preprocess_input(input)?;
+
+    for raw_line in lines {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("pie") {
+            if lower.contains("showdata") {
+                graph.pie_show_data = true;
+            }
+            continue;
+        }
+        if lower.starts_with("showdata") {
+            graph.pie_show_data = true;
+            continue;
+        }
+        if lower.starts_with("title") {
+            let title = line.get(5..).unwrap_or("").trim();
+            if !title.is_empty() {
+                graph.pie_title = Some(title.to_string());
+            }
+            continue;
+        }
+        if let Some((label, value)) = parse_pie_slice_line(line) {
+            graph.pie_slices.push(crate::ir::PieSlice { label, value });
+        }
+    }
+
+    Ok(ParseOutput { graph, init_config })
+}
+
+fn parse_pie_slice_line(line: &str) -> Option<(String, f32)> {
+    let (label_part, value_part) = line.split_once(':')?;
+    let label = strip_quotes(label_part.trim());
+    if label.is_empty() {
+        return None;
+    }
+    let value_str = value_part.trim();
+    if value_str.is_empty() {
+        return None;
+    }
+    let value = value_str.parse::<f32>().ok()?;
+    Some((label, value))
 }
 
 fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
@@ -2720,6 +2774,8 @@ fn strip_quotes(input: &str) -> String {
     let trimmed = input.trim();
     if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
         trimmed[1..trimmed.len() - 1].to_string()
+    } else if trimmed.starts_with('\'') && trimmed.ends_with('\'') && trimmed.len() >= 2 {
+        trimmed[1..trimmed.len() - 1].to_string()
     } else {
         trimmed.to_string()
     }
@@ -2930,6 +2986,18 @@ mod tests {
         let customer = parsed.graph.nodes.get("CUSTOMER").unwrap();
         assert!(customer.label.contains("CUSTOMER"));
         assert!(customer.label.contains("string id"));
+    }
+
+    #[test]
+    fn parse_pie_diagram_basic() {
+        let input = "pie showData\n  title Pets\n  \"Dogs\" : 10\n  Cats : 5";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::Pie);
+        assert!(parsed.graph.pie_show_data);
+        assert_eq!(parsed.graph.pie_title.as_deref(), Some("Pets"));
+        assert_eq!(parsed.graph.pie_slices.len(), 2);
+        assert_eq!(parsed.graph.pie_slices[0].label, "Dogs");
+        assert_eq!(parsed.graph.pie_slices[0].value, 10.0);
     }
 
     #[test]

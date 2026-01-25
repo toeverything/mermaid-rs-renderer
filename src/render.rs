@@ -14,6 +14,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
     let is_sequence = !layout.sequence_footboxes.is_empty();
     let is_state = layout.kind == crate::ir::DiagramKind::State;
     let is_class = layout.kind == crate::ir::DiagramKind::Class;
+    let is_pie = layout.kind == crate::ir::DiagramKind::Pie;
     let has_links = layout
         .nodes
         .values()
@@ -97,6 +98,12 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         }
     }
     svg.push_str("</defs>");
+
+    if is_pie {
+        svg.push_str(&render_pie(layout, theme, config));
+        svg.push_str("</svg>");
+        return svg;
+    }
 
     for subgraph in &layout.subgraphs {
         let label_empty = subgraph.label.trim().is_empty();
@@ -906,6 +913,92 @@ fn points_to_path(points: &[(f32, f32)]) -> String {
     }
 
     d
+}
+
+fn render_pie(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
+    let mut svg = String::new();
+    let (cx, cy) = layout.pie_center;
+    let radius = layout.pie_radius;
+    if radius <= 0.0 {
+        return svg;
+    }
+
+    for slice in &layout.pie_slices {
+        let span = (slice.end_angle - slice.start_angle).abs();
+        if span <= 0.0001 {
+            continue;
+        }
+        if span >= std::f32::consts::PI * 2.0 - 0.001 {
+            svg.push_str(&format!(
+                "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\"/>",
+                cx,
+                cy,
+                radius,
+                slice.color,
+                theme.line_color
+            ));
+            continue;
+        }
+        let path = pie_slice_path(cx, cy, radius, slice.start_angle, slice.end_angle);
+        svg.push_str(&format!(
+            "<path d=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\"/>",
+            path, slice.color, theme.line_color
+        ));
+    }
+
+    for item in &layout.pie_legend {
+        let rect_x = item.x - item.marker_size / 2.0;
+        let rect_y = item.y - item.marker_size / 2.0;
+        svg.push_str(&format!(
+            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\"/>",
+            rect_x,
+            rect_y,
+            item.marker_size,
+            item.marker_size,
+            item.color,
+            theme.line_color
+        ));
+        let label_x = item.x + item.marker_size / 2.0 + theme.font_size * 0.4;
+        svg.push_str(&text_block_svg_anchor(
+            label_x,
+            item.y,
+            &item.label,
+            theme,
+            config,
+            "start",
+            Some(theme.primary_text_color.as_str()),
+        ));
+    }
+
+    if let Some(title) = &layout.pie_title {
+        svg.push_str(&text_block_svg(
+            title.x,
+            title.y,
+            &title.text,
+            theme,
+            config,
+            false,
+            Some(theme.primary_text_color.as_str()),
+        ));
+    }
+
+    svg
+}
+
+fn pie_slice_path(cx: f32, cy: f32, radius: f32, start_angle: f32, end_angle: f32) -> String {
+    let sx = cx + radius * start_angle.cos();
+    let sy = cy + radius * start_angle.sin();
+    let ex = cx + radius * end_angle.cos();
+    let ey = cy + radius * end_angle.sin();
+    let large_arc = if (end_angle - start_angle).abs() > std::f32::consts::PI {
+        1
+    } else {
+        0
+    };
+    let sweep = 1;
+    format!(
+        "M {cx:.2} {cy:.2} L {sx:.2} {sy:.2} A {radius:.2} {radius:.2} 0 {large_arc} {sweep} {ex:.2} {ey:.2} Z"
+    )
 }
 
 fn text_block_svg(

@@ -15,6 +15,7 @@ pub enum DiagramKind {
     State,
     Sequence,
     Er,
+    Pie,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,6 +61,12 @@ pub struct SequenceNote {
     pub participants: Vec<String>,
     pub label: String,
     pub index: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct PieSlice {
+    pub label: String,
+    pub value: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -179,6 +186,9 @@ pub struct Graph {
     pub sequence_autonumber: Option<usize>,
     pub sequence_boxes: Vec<SequenceBox>,
     pub state_notes: Vec<StateNote>,
+    pub pie_slices: Vec<PieSlice>,
+    pub pie_title: Option<String>,
+    pub pie_show_data: bool,
     pub class_defs: HashMap<String, NodeStyle>,
     pub node_classes: HashMap<String, Vec<String>>,
     pub node_styles: HashMap<String, NodeStyle>,
@@ -226,6 +236,9 @@ impl Graph {
             sequence_autonumber: None,
             sequence_boxes: Vec::new(),
             state_notes: Vec::new(),
+            pie_slices: Vec::new(),
+            pie_title: None,
+            pie_show_data: false,
             class_defs: HashMap::new(),
             node_classes: HashMap::new(),
             node_styles: HashMap::new(),
