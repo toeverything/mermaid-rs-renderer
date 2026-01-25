@@ -47,6 +47,7 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
         DiagramKind::Sequence => parse_sequence_diagram(input),
         DiagramKind::Er => parse_er_diagram(input),
         DiagramKind::Pie => parse_pie_diagram(input),
+        DiagramKind::Mindmap => parse_mindmap_diagram(input),
         DiagramKind::Flowchart => parse_flowchart(input),
     }
 }
@@ -83,6 +84,9 @@ fn detect_diagram_kind(input: &str) -> DiagramKind {
         if lower.starts_with("pie") {
             return DiagramKind::Pie;
         }
+        if lower.starts_with("mindmap") {
+            return DiagramKind::Mindmap;
+        }
         if lower.starts_with("flowchart") || lower.starts_with("graph") {
             return DiagramKind::Flowchart;
         }
@@ -117,6 +121,38 @@ fn preprocess_input(input: &str) -> Result<(Vec<String>, Option<serde_json::Valu
             continue;
         }
         lines.push(without_comment.to_string());
+    }
+
+    Ok((lines, init_config))
+}
+
+fn preprocess_input_keep_indent(input: &str) -> Result<(Vec<String>, Option<serde_json::Value>)> {
+    let mut init_config: Option<serde_json::Value> = None;
+    let mut lines = Vec::new();
+
+    for raw_line in input.lines() {
+        let trimmed_line = raw_line.trim();
+        if trimmed_line.is_empty() {
+            continue;
+        }
+        if let Some(caps) = INIT_RE.captures(trimmed_line) {
+            if let Some(json_str) = caps.get(1).map(|m| m.as_str()) {
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str) {
+                    init_config = Some(value);
+                } else if let Ok(value) = json5::from_str::<serde_json::Value>(json_str) {
+                    init_config = Some(value);
+                }
+            }
+            continue;
+        }
+        if trimmed_line.starts_with("%%") {
+            continue;
+        }
+        let without_comment = strip_trailing_comment_keep_indent(raw_line);
+        if without_comment.trim().is_empty() {
+            continue;
+        }
+        lines.push(without_comment);
     }
 
     Ok((lines, init_config))
@@ -1412,6 +1448,72 @@ fn parse_pie_slice_line(line: &str) -> Option<(String, f32)> {
     Some((label, value))
 }
 
+fn parse_mindmap_diagram(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::Mindmap;
+    graph.direction = Direction::LeftRight;
+    let (lines, init_config) = preprocess_input_keep_indent(input)?;
+    let mut stack: Vec<String> = Vec::new();
+    let mut base_indent: Option<usize> = None;
+
+    for raw_line in lines {
+        let trimmed = raw_line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let lower = trimmed.to_ascii_lowercase();
+        if lower.starts_with("mindmap") {
+            continue;
+        }
+
+        let indent = count_indent(&raw_line);
+        let base = *base_indent.get_or_insert(indent);
+        let rel_indent = indent.saturating_sub(base);
+        let mut level = rel_indent / 2;
+        if level > stack.len() {
+            level = stack.len();
+        }
+
+        let (mut id, label, shape, classes) = parse_node_token(trimmed);
+        if graph.nodes.contains_key(&id) {
+            id = format!("{}_{}", id, graph.nodes.len());
+        }
+        graph.ensure_node(&id, label, shape);
+        if !classes.is_empty() {
+            apply_node_classes(&mut graph, &id, &classes);
+        }
+
+        if level > 0 {
+            if stack.len() > level {
+                stack.truncate(level);
+            }
+            if let Some(parent) = stack.last().cloned() {
+                graph.edges.push(crate::ir::Edge {
+                    from: parent,
+                    to: id.clone(),
+                    label: None,
+                    start_label: None,
+                    end_label: None,
+                    directed: false,
+                    arrow_start: false,
+                    arrow_end: false,
+                    arrow_start_kind: None,
+                    arrow_end_kind: None,
+                    start_decoration: None,
+                    end_decoration: None,
+                    style: crate::ir::EdgeStyle::Solid,
+                });
+            }
+        } else {
+            stack.clear();
+        }
+
+        stack.push(id);
+    }
+
+    Ok(ParseOutput { graph, init_config })
+}
+
 fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
     let mut graph = Graph::new();
     graph.kind = DiagramKind::State;
@@ -2111,6 +2213,33 @@ fn strip_trailing_comment(line: &str) -> String {
     out.trim().to_string()
 }
 
+fn strip_trailing_comment_keep_indent(line: &str) -> String {
+    let mut quote: Option<char> = None;
+    let mut chars = line.chars().peekable();
+    let mut out = String::new();
+    while let Some(ch) = chars.next() {
+        if let Some(q) = quote {
+            if ch == q {
+                quote = None;
+            }
+            out.push(ch);
+            continue;
+        }
+        if ch == '"' || ch == '\'' {
+            quote = Some(ch);
+            out.push(ch);
+            continue;
+        }
+        if ch == '%'
+            && let Some('%') = chars.peek().copied()
+        {
+            break;
+        }
+        out.push(ch);
+    }
+    out.trim_end().to_string()
+}
+
 fn extract_leading_decoration(right: &str) -> Option<(char, String)> {
     let mut chars = right.chars();
     let first = chars.next()?;
@@ -2781,6 +2910,18 @@ fn strip_quotes(input: &str) -> String {
     }
 }
 
+fn count_indent(line: &str) -> usize {
+    let mut count = 0;
+    for ch in line.chars() {
+        match ch {
+            ' ' => count += 1,
+            '\t' => count += 2,
+            _ => break,
+        }
+    }
+    count
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2998,6 +3139,15 @@ mod tests {
         assert_eq!(parsed.graph.pie_slices.len(), 2);
         assert_eq!(parsed.graph.pie_slices[0].label, "Dogs");
         assert_eq!(parsed.graph.pie_slices[0].value, 10.0);
+    }
+
+    #[test]
+    fn parse_mindmap_basic() {
+        let input = "mindmap\n  root((Root))\n    Child A\n    Child B\n      Grandchild";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::Mindmap);
+        assert!(parsed.graph.nodes.len() >= 4);
+        assert_eq!(parsed.graph.edges.len(), 3);
     }
 
     #[test]

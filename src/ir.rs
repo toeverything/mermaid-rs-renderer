@@ -16,6 +16,7 @@ pub enum DiagramKind {
     Sequence,
     Er,
     Pie,
+    Mindmap,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
