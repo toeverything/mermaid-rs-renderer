@@ -1678,7 +1678,10 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
         if lower.starts_with("autonumber") {
             let parts = line.split_whitespace().collect::<Vec<_>>();
             if parts.len() >= 2 {
-                if let Ok(start) = parts[1].parse::<usize>() {
+                let token = parts[1].to_ascii_lowercase();
+                if token == "off" || token == "stop" || token == "disable" {
+                    graph.sequence_autonumber = None;
+                } else if let Ok(start) = parts[1].parse::<usize>() {
                     graph.sequence_autonumber = Some(start);
                 } else {
                     graph.sequence_autonumber = Some(1);
@@ -2782,6 +2785,13 @@ mod tests {
         let parsed = parse_mermaid(input).unwrap();
         let node = parsed.graph.nodes.get("DB").unwrap();
         assert_eq!(node.shape, crate::ir::NodeShape::Cylinder);
+    }
+
+    #[test]
+    fn parse_sequence_autonumber_off() {
+        let input = "sequenceDiagram\nautonumber off\nA->>B: ping";
+        let parsed = parse_mermaid(input).unwrap();
+        assert!(parsed.graph.sequence_autonumber.is_none());
     }
 
     #[test]
