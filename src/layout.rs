@@ -272,6 +272,7 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         | crate::ir::DiagramKind::Mindmap
         | crate::ir::DiagramKind::Journey
         | crate::ir::DiagramKind::Timeline
+        | crate::ir::DiagramKind::Gantt
         | crate::ir::DiagramKind::Flowchart => compute_flowchart_layout(graph, theme, config),
     }
 }

@@ -19,6 +19,7 @@ pub enum DiagramKind {
     Mindmap,
     Journey,
     Timeline,
+    Gantt,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

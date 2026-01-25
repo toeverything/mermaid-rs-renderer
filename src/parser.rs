@@ -50,6 +50,7 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
         DiagramKind::Mindmap => parse_mindmap_diagram(input),
         DiagramKind::Journey => parse_journey_diagram(input),
         DiagramKind::Timeline => parse_timeline_diagram(input),
+        DiagramKind::Gantt => parse_gantt_diagram(input),
         DiagramKind::Flowchart => parse_flowchart(input),
     }
 }
@@ -94,6 +95,9 @@ fn detect_diagram_kind(input: &str) -> DiagramKind {
         }
         if lower.starts_with("timeline") {
             return DiagramKind::Timeline;
+        }
+        if lower.starts_with("gantt") {
+            return DiagramKind::Gantt;
         }
         if lower.starts_with("flowchart") || lower.starts_with("graph") {
             return DiagramKind::Flowchart;
@@ -1716,6 +1720,164 @@ fn parse_timeline_event_line(line: &str) -> Option<(String, String)> {
     } else {
         Some((trimmed.to_string(), String::new()))
     }
+}
+
+fn parse_gantt_diagram(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::Gantt;
+    graph.direction = Direction::LeftRight;
+    let (lines, init_config) = preprocess_input(input)?;
+
+    let mut current_section: Option<usize> = None;
+    let mut last_task: Option<String> = None;
+
+    for raw_line in lines {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("gantt") {
+            continue;
+        }
+        if lower.starts_with("title")
+            || lower.starts_with("dateformat")
+            || lower.starts_with("axisformat")
+            || lower.starts_with("tickinterval")
+            || lower.starts_with("todaymarker")
+            || lower.starts_with("excludes")
+            || lower.starts_with("includes")
+        {
+            continue;
+        }
+        if lower.starts_with("section") {
+            let label = line.get(7..).unwrap_or("").trim();
+            let id = format!("section_{}", graph.subgraphs.len());
+            graph.subgraphs.push(Subgraph {
+                id: Some(id),
+                label: label.to_string(),
+                nodes: Vec::new(),
+                direction: None,
+            });
+            current_section = Some(graph.subgraphs.len() - 1);
+            last_task = None;
+            continue;
+        }
+
+        if let Some((task_label, meta)) = line.split_once(':') {
+            let label = task_label.trim();
+            if label.is_empty() {
+                continue;
+            }
+            let (id, details, after) = parse_gantt_task_meta(meta);
+            let node_id = id.unwrap_or_else(|| format!("gantt_{}", graph.nodes.len()));
+            let mut node_label = label.to_string();
+            if !details.is_empty() {
+                node_label.push_str(&format!("\n{}", details.join(" | ")));
+            }
+            graph.ensure_node(
+                &node_id,
+                Some(node_label),
+                Some(crate::ir::NodeShape::Rectangle),
+            );
+            if let Some(idx) = current_section {
+                if let Some(subgraph) = graph.subgraphs.get_mut(idx) {
+                    subgraph.nodes.push(node_id.clone());
+                }
+            }
+
+            if let Some(after_id) = after {
+                graph.ensure_node(&after_id, None, Some(crate::ir::NodeShape::Rectangle));
+                graph.edges.push(crate::ir::Edge {
+                    from: after_id,
+                    to: node_id.clone(),
+                    label: None,
+                    start_label: None,
+                    end_label: None,
+                    directed: true,
+                    arrow_start: false,
+                    arrow_end: true,
+                    arrow_start_kind: None,
+                    arrow_end_kind: None,
+                    start_decoration: None,
+                    end_decoration: None,
+                    style: crate::ir::EdgeStyle::Solid,
+                });
+            } else if let Some(prev) = last_task.take() {
+                graph.edges.push(crate::ir::Edge {
+                    from: prev,
+                    to: node_id.clone(),
+                    label: None,
+                    start_label: None,
+                    end_label: None,
+                    directed: false,
+                    arrow_start: false,
+                    arrow_end: false,
+                    arrow_start_kind: None,
+                    arrow_end_kind: None,
+                    start_decoration: None,
+                    end_decoration: None,
+                    style: crate::ir::EdgeStyle::Solid,
+                });
+            }
+
+            last_task = Some(node_id);
+        }
+    }
+
+    Ok(ParseOutput { graph, init_config })
+}
+
+fn parse_gantt_task_meta(meta: &str) -> (Option<String>, Vec<String>, Option<String>) {
+    let mut id: Option<String> = None;
+    let mut details: Vec<String> = Vec::new();
+    let mut after: Option<String> = None;
+
+    for raw_token in meta.split(',') {
+        let token = raw_token.trim();
+        if token.is_empty() {
+            continue;
+        }
+        let lower = token.to_ascii_lowercase();
+        if let Some(rest) = lower.strip_prefix("after ") {
+            let dep = rest.trim().to_string();
+            if !dep.is_empty() {
+                after = Some(dep);
+            }
+            continue;
+        }
+        if is_gantt_status_token(&lower) {
+            details.push(token.to_string());
+            continue;
+        }
+        if looks_like_date(token) || looks_like_duration(token) {
+            details.push(token.to_string());
+            continue;
+        }
+        if id.is_none() {
+            id = Some(token.to_string());
+        } else {
+            details.push(token.to_string());
+        }
+    }
+
+    (id, details, after)
+}
+
+fn is_gantt_status_token(token: &str) -> bool {
+    matches!(token, "done" | "active" | "crit" | "milestone")
+}
+
+fn looks_like_date(token: &str) -> bool {
+    token.contains('-') || token.contains('/') || token.contains('.')
+}
+
+fn looks_like_duration(token: &str) -> bool {
+    let lower = token.to_ascii_lowercase();
+    matches!(
+        lower.chars().last(),
+        Some('d') | Some('h') | Some('w') | Some('m') | Some('y')
+    )
 }
 
 fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
@@ -3370,6 +3532,15 @@ mod tests {
         let parsed = parse_mermaid(input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::Timeline);
         assert_eq!(parsed.graph.nodes.len(), 2);
+        assert_eq!(parsed.graph.edges.len(), 1);
+    }
+
+    #[test]
+    fn parse_gantt_basic() {
+        let input = "gantt\n  title Plan\n  section Alpha\n  Task A : done, a1, 2020-01-01, 5d\n  Task B : after a1, 3d";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::Gantt);
+        assert!(parsed.graph.nodes.len() >= 2);
         assert_eq!(parsed.graph.edges.len(), 1);
     }
 

@@ -51,6 +51,10 @@ fn fixture(name: &str) -> &'static str {
             env!("CARGO_MANIFEST_DIR"),
             "/benches/fixtures/timeline_medium.mmd"
         )),
+        "gantt_medium" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/gantt_medium.mmd"
+        )),
         _ => panic!("unknown fixture"),
     }
 }
@@ -69,6 +73,7 @@ fn bench_parse(c: &mut Criterion) {
         "mindmap_medium",
         "journey_medium",
         "timeline_medium",
+        "gantt_medium",
     ] {
         let input = fixture(name);
         group.bench_with_input(BenchmarkId::from_parameter(name), input, |b, data| {
@@ -96,6 +101,7 @@ fn bench_layout(c: &mut Criterion) {
         "mindmap_medium",
         "journey_medium",
         "timeline_medium",
+        "gantt_medium",
     ] {
         let parsed = parse_mermaid(fixture(name)).expect("parse failed");
         group.bench_with_input(
@@ -127,6 +133,7 @@ fn bench_render(c: &mut Criterion) {
         "mindmap_medium",
         "journey_medium",
         "timeline_medium",
+        "gantt_medium",
     ] {
         let parsed = parse_mermaid(fixture(name)).expect("parse failed");
         let layout = compute_layout(&parsed.graph, &theme, &config);
@@ -155,6 +162,7 @@ fn bench_end_to_end(c: &mut Criterion) {
         "mindmap_medium",
         "journey_medium",
         "timeline_medium",
+        "gantt_medium",
     ] {
         let input = fixture(name);
         group.bench_with_input(BenchmarkId::from_parameter(name), input, |b, data| {
