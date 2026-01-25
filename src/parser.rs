@@ -579,6 +579,9 @@ fn parse_state_description_line(line: &str) -> Option<(String, String, Vec<Strin
     if trimmed.is_empty() {
         return None;
     }
+    if trimmed.to_ascii_lowercase().starts_with("note ") {
+        return None;
+    }
     let rest = if trimmed.starts_with("state ") {
         trimmed[6..].trim()
     } else {
@@ -618,6 +621,32 @@ fn parse_state_description_line(line: &str) -> Option<(String, String, Vec<Strin
 fn parse_state_id_with_classes(input: &str) -> (String, Vec<String>) {
     let (base, classes) = split_inline_classes(input);
     (strip_quotes(base.trim()), classes)
+}
+
+fn parse_state_note(
+    line: &str,
+) -> Option<(crate::ir::StateNotePosition, String, String)> {
+    let trimmed = line.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if !lower.starts_with("note ") {
+        return None;
+    }
+    let rest = trimmed[4..].trim();
+    let lower_rest = rest.to_ascii_lowercase();
+    let (position, targets_part) = if lower_rest.starts_with("right of ") {
+        (crate::ir::StateNotePosition::RightOf, rest[9..].trim())
+    } else if lower_rest.starts_with("left of ") {
+        (crate::ir::StateNotePosition::LeftOf, rest[8..].trim())
+    } else {
+        return None;
+    };
+    let (target, label) = targets_part.split_once(':')?;
+    let target = target.trim();
+    let label = label.trim();
+    if target.is_empty() || label.is_empty() {
+        return None;
+    }
+    Some((position, target.to_string(), label.to_string()))
 }
 
 fn parse_state_transition(line: &str) -> Option<(String, EdgeMeta, String, Option<String>)> {
@@ -1327,6 +1356,28 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
                 apply_node_classes(&mut graph, &id, &classes);
                 add_node_to_subgraphs(&mut graph, &subgraph_stack, &id);
                 record_region_node(&mut composite_stack, &id);
+                continue;
+            }
+
+            if let Some((position, target_raw, label)) = parse_state_note(line) {
+                let (target, classes) = parse_state_id_with_classes(&target_raw);
+                if target.is_empty() {
+                    continue;
+                }
+                let shape = if graph.nodes.contains_key(&target) {
+                    None
+                } else {
+                    Some(crate::ir::NodeShape::RoundRect)
+                };
+                graph.ensure_node(&target, labels.get(&target).cloned(), shape);
+                apply_node_classes(&mut graph, &target, &classes);
+                graph.state_notes.push(crate::ir::StateNote {
+                    position,
+                    target: target.clone(),
+                    label,
+                });
+                add_node_to_subgraphs(&mut graph, &subgraph_stack, &target);
+                record_region_node(&mut composite_stack, &target);
                 continue;
             }
 
@@ -2631,6 +2682,17 @@ mod tests {
         let parsed = parse_mermaid(input).unwrap();
         let classes = parsed.graph.node_classes.get("Idle").unwrap();
         assert!(classes.iter().any(|c| c == "hot"));
+    }
+
+    #[test]
+    fn parse_state_note() {
+        let input = "stateDiagram-v2\nstate Idle\nnote right of Idle: waiting";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.state_notes.len(), 1);
+        let note = &parsed.graph.state_notes[0];
+        assert_eq!(note.target, "Idle");
+        assert_eq!(note.label, "waiting");
+        assert_eq!(note.position, crate::ir::StateNotePosition::RightOf);
     }
 
     #[test]

@@ -126,6 +126,17 @@ pub struct SequenceNoteLayout {
 }
 
 #[derive(Debug, Clone)]
+pub struct StateNoteLayout {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub label: TextBlock,
+    pub position: crate::ir::StateNotePosition,
+    pub target: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct SequenceActivationLayout {
     pub x: f32,
     pub y: f32,
@@ -154,6 +165,7 @@ pub struct Layout {
     pub sequence_notes: Vec<SequenceNoteLayout>,
     pub sequence_activations: Vec<SequenceActivationLayout>,
     pub sequence_numbers: Vec<SequenceNumberLayout>,
+    pub state_notes: Vec<StateNoteLayout>,
     pub width: f32,
     pub height: f32,
 }
@@ -525,7 +537,41 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     }
 
     normalize_layout(&mut nodes, &mut edges, &mut subgraphs);
-    let (width, height) = bounds_from_layout(&nodes, &subgraphs);
+    let mut state_notes = Vec::new();
+    if graph.kind == crate::ir::DiagramKind::State && !graph.state_notes.is_empty() {
+        let note_pad_x = theme.font_size * 0.75;
+        let note_pad_y = theme.font_size * 0.5;
+        let note_gap = (theme.font_size * 0.9).max(10.0);
+        for note in &graph.state_notes {
+            let Some(target) = nodes.get(&note.target) else {
+                continue;
+            };
+            let label = measure_label(&note.label, theme, config);
+            let width = label.width + note_pad_x * 2.0;
+            let height = label.height + note_pad_y * 2.0;
+            let y = target.y + target.height / 2.0 - height / 2.0;
+            let x = match note.position {
+                crate::ir::StateNotePosition::LeftOf => target.x - note_gap - width,
+                crate::ir::StateNotePosition::RightOf => target.x + target.width + note_gap,
+            };
+            state_notes.push(StateNoteLayout {
+                x,
+                y,
+                width,
+                height,
+                label,
+                position: note.position,
+                target: note.target.clone(),
+            });
+        }
+    }
+    let (mut max_x, mut max_y) = bounds_without_padding(&nodes, &subgraphs);
+    for note in &state_notes {
+        max_x = max_x.max(note.x + note.width);
+        max_y = max_y.max(note.y + note.height);
+    }
+    let width = max_x + 60.0;
+    let height = max_y + 60.0;
 
     Layout {
         kind: graph.kind,
@@ -538,6 +584,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         sequence_notes: Vec::new(),
         sequence_activations: Vec::new(),
         sequence_numbers: Vec::new(),
+        state_notes,
         width,
         height,
     }
@@ -1540,6 +1587,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         sequence_notes,
         sequence_activations,
         sequence_numbers,
+        state_notes: Vec::new(),
         width,
         height,
     }
