@@ -1398,7 +1398,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
                     y: y0,
                     width: activation_width,
                     height,
-                    participant,
+                    participant: participant.clone(),
                     depth,
                 });
             }

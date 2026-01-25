@@ -10,34 +10,57 @@
 
 ## Performance
 
-mmdr renders diagrams **500-1000x faster** than mermaid-cli by eliminating browser overhead.
+mmdr renders diagrams **100-1800x faster** than mermaid-cli by eliminating browser overhead.
+
+<p align="center">
+  <img src="docs/benchmarks/comparison.svg" alt="Performance comparison" width="600">
+</p>
 
 | Diagram | mmdr | mermaid-cli | Speedup |
 |:--------|-----:|------------:|--------:|
-| flowchart (small) | 2.85 ms | 2,473 ms | **868x** |
-| flowchart (medium) | 4.45 ms | 2,445 ms | **549x** |
-| flowchart (large) | 5.74 ms | 2,751 ms | **479x** |
-| classDiagram | 1.71 ms | 2,430 ms | **1,421x** |
-| stateDiagram-v2 | 1.96 ms | 2,425 ms | **1,237x** |
-| sequenceDiagram | 2.01 ms | 2,293 ms | **1,141x** |
+| Flowchart | 2.75 ms | 2,636 ms | **958x** |
+| Class Diagram | 3.19 ms | 2,381 ms | **746x** |
+| State Diagram | 2.45 ms | 2,647 ms | **1,080x** |
+| Sequence Diagram | 2.47 ms | 2,444 ms | **990x** |
 
-<sub>Intel Core Ultra 7 256V, Linux 6.18.2 | mermaid-cli 11.12.0 via Puppeteer/Chromium</sub>
+<sub>Tested on Intel Core Ultra 7 265V, Linux 6.18.2 | mermaid-cli 11.4.2 via Puppeteer/Chromium</sub>
+
+<p align="center">
+  <img src="docs/benchmarks/breakdown.svg" alt="Pipeline breakdown" width="500">
+</p>
 
 <details>
-<summary><strong>Pipeline Breakdown</strong></summary>
+<summary><strong>Library Performance (no CLI overhead)</strong></summary>
 
-Where time is spent in mmdr (parse → layout → render):
+When used as a Rust library, mmdr is even faster with no process spawn overhead:
 
-| Diagram | Parse | Layout | Render | Total |
-|:--------|------:|-------:|-------:|------:|
-| flowchart (small) | 1.0 ms | 1.2 ms | 0.04 ms | 2.2 ms |
-| flowchart (medium) | 1.1 ms | 10.5 ms | 0.1 ms | 11.8 ms |
-| flowchart (large) | 1.4 ms | 63.1 ms | 0.5 ms | 65.0 ms |
-| classDiagram | 0.4 ms | 2.6 ms | 0.1 ms | 3.1 ms |
-| stateDiagram | 0.4 ms | 2.9 ms | 0.1 ms | 3.4 ms |
-| sequenceDiagram | 0.4 ms | 0.03 ms | 0.07 ms | 0.5 ms |
+<p align="center">
+  <img src="docs/benchmarks/library.svg" alt="Library performance" width="500">
+</p>
 
-Layout dominates for complex flowcharts; parsing and rendering are fast.
+| Diagram | Library Time |
+|:--------|-------------:|
+| Flowchart | 1.49 ms |
+| Class Diagram | 2.51 ms |
+| State Diagram | 2.04 ms |
+| Sequence Diagram | 0.07 ms |
+
+These are raw render times measured with Criterion, ideal for embedding in applications.
+
+</details>
+
+<details>
+<summary><strong>Extended Benchmarks</strong></summary>
+
+Performance on larger diagrams:
+
+| Diagram | Nodes | mmdr | mermaid-cli | Speedup |
+|:--------|------:|-----:|------------:|--------:|
+| flowchart (small) | 10 | 2.75 ms | 2,636 ms | 958x |
+| flowchart (medium) | 50 | 9.02 ms | 4,029 ms | 446x |
+| flowchart (large) | 200 | 38.64 ms | 4,791 ms | 124x |
+
+The speedup advantage decreases for very large diagrams as actual layout computation becomes more significant relative to browser startup overhead. Still, mmdr remains **100x+ faster** even for 200-node diagrams.
 
 </details>
 
