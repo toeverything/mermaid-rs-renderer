@@ -1451,7 +1451,6 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
             });
         }
     }
-
     let activation_width = (theme.font_size * 0.75).max(10.0);
     let activation_offset = (activation_width * 0.6).max(4.0);
     let activation_end_default = message_ys
