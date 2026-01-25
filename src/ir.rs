@@ -14,6 +14,7 @@ pub enum DiagramKind {
     Class,
     State,
     Sequence,
+    Er,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

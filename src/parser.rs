@@ -45,6 +45,7 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
         DiagramKind::Class => parse_class_diagram(input),
         DiagramKind::State => parse_state_diagram(input),
         DiagramKind::Sequence => parse_sequence_diagram(input),
+        DiagramKind::Er => parse_er_diagram(input),
         DiagramKind::Flowchart => parse_flowchart(input),
     }
 }
@@ -74,6 +75,9 @@ fn detect_diagram_kind(input: &str) -> DiagramKind {
         }
         if lower.starts_with("statediagram") {
             return DiagramKind::State;
+        }
+        if lower.starts_with("erdiagram") {
+            return DiagramKind::Er;
         }
         if lower.starts_with("flowchart") || lower.starts_with("graph") {
             return DiagramKind::Flowchart;
@@ -1144,6 +1148,209 @@ fn parse_class_diagram(input: &str) -> Result<ParseOutput> {
             } else {
                 lines.extend(methods);
             }
+        }
+        node.label = lines.join("\n");
+    }
+
+    Ok(ParseOutput { graph, init_config })
+}
+
+fn is_er_card_char(ch: char) -> bool {
+    matches!(ch, '|' | 'o' | '{' | '}')
+}
+
+fn split_er_cardinality_left(input: &str) -> (String, Option<String>) {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return (String::new(), None);
+    }
+    let chars: Vec<char> = trimmed.chars().collect();
+    let len = chars.len();
+    if len >= 2 {
+        let last_two = &chars[len - 2..];
+        if last_two.iter().all(|ch| is_er_card_char(*ch)) {
+            let entity = chars[..len - 2].iter().collect::<String>();
+            let token = last_two.iter().collect::<String>();
+            return (entity.trim().to_string(), Some(token));
+        }
+    }
+    if let Some(&last) = chars.last()
+        && is_er_card_char(last)
+    {
+        let entity = chars[..len - 1].iter().collect::<String>();
+        return (entity.trim().to_string(), Some(last.to_string()));
+    }
+    (trimmed.to_string(), None)
+}
+
+fn split_er_cardinality_right(input: &str) -> (String, Option<String>) {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return (String::new(), None);
+    }
+    let chars: Vec<char> = trimmed.chars().collect();
+    let len = chars.len();
+    if len >= 2 {
+        let first_two = &chars[..2];
+        if first_two.iter().all(|ch| is_er_card_char(*ch)) {
+            let entity = chars[2..].iter().collect::<String>();
+            let token = first_two.iter().collect::<String>();
+            return (entity.trim().to_string(), Some(token));
+        }
+    }
+    if is_er_card_char(chars[0]) {
+        let entity = chars[1..].iter().collect::<String>();
+        return (entity.trim().to_string(), Some(chars[0].to_string()));
+    }
+    (trimmed.to_string(), None)
+}
+
+fn normalize_er_cardinality(token: &str) -> String {
+    let trimmed = token.trim();
+    match trimmed {
+        "||" | "|" => "1".to_string(),
+        "o|" | "|o" | "o" => "0..1".to_string(),
+        "|{" | "}|" => "1..*".to_string(),
+        "o{" | "}o" | "}" | "{" => "0..*".to_string(),
+        _ => trimmed.to_string(),
+    }
+}
+
+fn parse_er_relation_line(
+    line: &str,
+) -> Option<(String, String, Option<String>, Option<String>, Option<String>, crate::ir::EdgeStyle)> {
+    let (relation_part, label) = if let Some((before, after)) = line.split_once(':') {
+        let label = after.trim();
+        let label = if label.is_empty() {
+            None
+        } else {
+            Some(label.to_string())
+        };
+        (before.trim(), label)
+    } else {
+        (line.trim(), None)
+    };
+
+    let (sep, style) = if let Some(idx) = relation_part.find("--") {
+        (idx, crate::ir::EdgeStyle::Solid)
+    } else if let Some(idx) = relation_part.find("..") {
+        (idx, crate::ir::EdgeStyle::Dotted)
+    } else {
+        return None;
+    };
+    let left_part = relation_part[..sep].trim();
+    let right_part = relation_part[sep + 2..].trim();
+    if left_part.is_empty() || right_part.is_empty() {
+        return None;
+    }
+    let (left_entity, left_card) = split_er_cardinality_left(left_part);
+    let (right_entity, right_card) = split_er_cardinality_right(right_part);
+    if left_entity.is_empty() || right_entity.is_empty() {
+        return None;
+    }
+    let left_id = strip_quotes(left_entity.trim());
+    let right_id = strip_quotes(right_entity.trim());
+    if left_id.is_empty() || right_id.is_empty() {
+        return None;
+    }
+    let left_label = left_card.map(|token| normalize_er_cardinality(&token));
+    let right_label = right_card.map(|token| normalize_er_cardinality(&token));
+    Some((left_id, right_id, label, left_label, right_label, style))
+}
+
+fn parse_er_diagram(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::Er;
+    graph.direction = Direction::TopDown;
+    let (lines, init_config) = preprocess_input(input)?;
+
+    let mut members: HashMap<String, Vec<String>> = HashMap::new();
+    let mut current_entity: Option<String> = None;
+
+    for raw_line in lines {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("erdiagram") {
+            continue;
+        }
+        if let Some(direction) = parse_direction_line(line) {
+            graph.direction = direction;
+            continue;
+        }
+
+        if let Some(active) = current_entity.clone() {
+            if let Some(end_idx) = line.find('}') {
+                let fragment = line[..end_idx].trim();
+                if !fragment.is_empty() {
+                    members.entry(active.clone()).or_default().push(fragment.to_string());
+                }
+                current_entity = None;
+            } else {
+                members.entry(active.clone()).or_default().push(line.to_string());
+            }
+            continue;
+        }
+
+        if let Some((left, right, label, left_label, right_label, style)) =
+            parse_er_relation_line(line)
+        {
+            graph.ensure_node(&left, None, Some(crate::ir::NodeShape::Rectangle));
+            graph.ensure_node(&right, None, Some(crate::ir::NodeShape::Rectangle));
+            graph.edges.push(crate::ir::Edge {
+                from: left,
+                to: right,
+                label,
+                start_label: left_label,
+                end_label: right_label,
+                directed: false,
+                arrow_start: false,
+                arrow_end: false,
+                arrow_start_kind: None,
+                arrow_end_kind: None,
+                start_decoration: None,
+                end_decoration: None,
+                style,
+            });
+            continue;
+        }
+
+        if let Some(open_idx) = line.find('{') {
+            let name = line[..open_idx].trim();
+            let name = strip_quotes(name);
+            if !name.is_empty() {
+                graph.ensure_node(&name, None, Some(crate::ir::NodeShape::Rectangle));
+                current_entity = Some(name.clone());
+                let tail = line[open_idx + 1..].trim();
+                if let Some(close_idx) = tail.find('}') {
+                    let fragment = tail[..close_idx].trim();
+                    if !fragment.is_empty() {
+                        members.entry(name).or_default().push(fragment.to_string());
+                    }
+                    current_entity = None;
+                } else if !tail.is_empty() {
+                    members.entry(name).or_default().push(tail.to_string());
+                }
+            }
+            continue;
+        }
+
+        let entity = strip_quotes(line);
+        if !entity.is_empty() {
+            graph.ensure_node(&entity, None, Some(crate::ir::NodeShape::Rectangle));
+        }
+    }
+
+    for (id, node) in graph.nodes.iter_mut() {
+        let mut lines = Vec::new();
+        lines.push(node.label.clone());
+        if let Some(attrs) = members.get(id)
+            && !attrs.is_empty()
+        {
+            lines.push("---".to_string());
+            lines.extend(attrs.clone());
         }
         node.label = lines.join("\n");
     }
@@ -2708,6 +2915,21 @@ mod tests {
         assert_eq!(edge.start_label.as_deref(), Some("1"));
         assert_eq!(edge.end_label.as_deref(), Some("many"));
         assert_eq!(edge.label.as_deref(), Some("contains"));
+    }
+
+    #[test]
+    fn parse_er_diagram_basic() {
+        let input = "erDiagram\nCUSTOMER ||--o{ ORDER : places\nCUSTOMER {\nstring id\nstring name\n}";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::Er);
+        assert_eq!(parsed.graph.edges.len(), 1);
+        let edge = &parsed.graph.edges[0];
+        assert_eq!(edge.label.as_deref(), Some("places"));
+        assert_eq!(edge.start_label.as_deref(), Some("1"));
+        assert_eq!(edge.end_label.as_deref(), Some("0..*"));
+        let customer = parsed.graph.nodes.get("CUSTOMER").unwrap();
+        assert!(customer.label.contains("CUSTOMER"));
+        assert!(customer.label.contains("string id"));
     }
 
     #[test]

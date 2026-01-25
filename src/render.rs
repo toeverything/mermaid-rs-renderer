@@ -523,7 +523,9 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             compute_edge_label_positions(&layout.edges, &layout.nodes, &layout.subgraphs);
 
         let base_edge_width = match layout.kind {
-            crate::ir::DiagramKind::Class | crate::ir::DiagramKind::State => 1.0,
+            crate::ir::DiagramKind::Class
+            | crate::ir::DiagramKind::State
+            | crate::ir::DiagramKind::Er => 1.0,
             _ => 2.0,
         };
         for (idx, edge) in layout.edges.iter().enumerate() {
