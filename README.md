@@ -16,6 +16,8 @@ mmdr renders diagrams **100-1800x faster** than mermaid-cli by eliminating brows
   <img src="docs/benchmarks/comparison.svg" alt="Performance comparison" width="600">
 </p>
 
+<div align="center">
+
 | Diagram | mmdr | mermaid-cli | Speedup |
 |:--------|-----:|------------:|--------:|
 | Flowchart | 2.75 ms | 2,636 ms | **958x** |
@@ -24,6 +26,8 @@ mmdr renders diagrams **100-1800x faster** than mermaid-cli by eliminating brows
 | Sequence Diagram | 2.47 ms | 2,444 ms | **990x** |
 
 <sub>Tested on Intel Core Ultra 7 265V, Linux 6.18.2 | mermaid-cli 11.4.2 via Puppeteer/Chromium</sub>
+
+</div>
 
 <p align="center">
   <img src="docs/benchmarks/breakdown.svg" alt="Pipeline breakdown" width="500">

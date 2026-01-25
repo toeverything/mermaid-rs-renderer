@@ -1,13 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 320">
   <style>
-    .title { font: bold 18px system-ui, sans-serif; fill: #1f2937; }
-    .label { font: 13px system-ui, sans-serif; fill: #374151; }
+    .title { font: bold 18px system-ui, sans-serif; fill: #111827; }
+    .label { font: bold 13px system-ui, sans-serif; fill: #111827; }
     .value { font: bold 11px system-ui, sans-serif; fill: white; }
-    .value-dark { font: bold 11px system-ui, sans-serif; fill: #374151; }
-    .axis { font: 11px system-ui, sans-serif; fill: #6b7280; }
+    .value-dark { font: bold 11px system-ui, sans-serif; fill: #111827; }
+    .axis { font: 11px system-ui, sans-serif; fill: #374151; }
     .bar-mmdr { fill: #10b981; }
     .bar-cli { fill: #f97316; }
-    .speedup { font: bold 12px system-ui, sans-serif; fill: #059669; }
+    .speedup { font: bold 13px system-ui, sans-serif; fill: #047857; }
   </style>
 
   <text x="300" y="28" text-anchor="middle" class="title">Render Time Comparison (ms)</text>
