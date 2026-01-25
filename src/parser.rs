@@ -51,6 +51,7 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
         DiagramKind::Journey => parse_journey_diagram(input),
         DiagramKind::Timeline => parse_timeline_diagram(input),
         DiagramKind::Gantt => parse_gantt_diagram(input),
+        DiagramKind::Requirement => parse_requirement_diagram(input),
         DiagramKind::Flowchart => parse_flowchart(input),
     }
 }
@@ -98,6 +99,9 @@ fn detect_diagram_kind(input: &str) -> DiagramKind {
         }
         if lower.starts_with("gantt") {
             return DiagramKind::Gantt;
+        }
+        if lower.starts_with("requirementdiagram") {
+            return DiagramKind::Requirement;
         }
         if lower.starts_with("flowchart") || lower.starts_with("graph") {
             return DiagramKind::Flowchart;
@@ -1880,6 +1884,129 @@ fn looks_like_duration(token: &str) -> bool {
     )
 }
 
+fn parse_requirement_diagram(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::Requirement;
+    graph.direction = Direction::LeftRight;
+    let (lines, init_config) = preprocess_input(input)?;
+
+    let mut attributes: HashMap<String, Vec<String>> = HashMap::new();
+    let mut current_id: Option<String> = None;
+
+    for raw_line in lines {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("requirementdiagram") {
+            continue;
+        }
+
+        if let Some(active) = current_id.clone() {
+            if let Some(end_idx) = line.find('}') {
+                let fragment = line[..end_idx].trim();
+                if !fragment.is_empty() {
+                    attributes.entry(active.clone()).or_default().push(fragment.to_string());
+                }
+                current_id = None;
+            } else {
+                attributes.entry(active.clone()).or_default().push(line.to_string());
+            }
+            continue;
+        }
+
+        if let Some((from, rel, to)) = parse_requirement_relation_line(line) {
+            graph.ensure_node(&from, None, Some(crate::ir::NodeShape::Rectangle));
+            graph.ensure_node(&to, None, Some(crate::ir::NodeShape::Rectangle));
+            graph.edges.push(crate::ir::Edge {
+                from,
+                to,
+                label: Some(rel),
+                start_label: None,
+                end_label: None,
+                directed: true,
+                arrow_start: false,
+                arrow_end: true,
+                arrow_start_kind: None,
+                arrow_end_kind: None,
+                start_decoration: None,
+                end_decoration: None,
+                style: crate::ir::EdgeStyle::Solid,
+            });
+            continue;
+        }
+
+        if let Some(open_idx) = line.find('{') {
+            let header = line[..open_idx].trim();
+            let mut parts = header.split_whitespace();
+            let kind = parts.next().unwrap_or("").to_string();
+            let id = parts.next().unwrap_or("").to_string();
+            if !id.is_empty() {
+                let label = if kind.is_empty() {
+                    id.clone()
+                } else {
+                    format!("{}\n<<{}>>", id, kind)
+                };
+                graph.ensure_node(&id, Some(label), Some(crate::ir::NodeShape::Rectangle));
+                current_id = Some(id.clone());
+                let tail = line[open_idx + 1..].trim();
+                if let Some(close_idx) = tail.find('}') {
+                    let fragment = tail[..close_idx].trim();
+                    if !fragment.is_empty() {
+                        attributes.entry(id).or_default().push(fragment.to_string());
+                    }
+                    current_id = None;
+                } else if !tail.is_empty() {
+                    attributes.entry(id).or_default().push(tail.to_string());
+                }
+            }
+            continue;
+        }
+
+        let mut parts = line.split_whitespace();
+        let kind = parts.next().unwrap_or("");
+        let id = parts.next().unwrap_or("");
+        if !id.is_empty() {
+            let label = if kind.is_empty() {
+                id.to_string()
+            } else {
+                format!("{}\n<<{}>>", id, kind)
+            };
+            graph.ensure_node(id, Some(label), Some(crate::ir::NodeShape::Rectangle));
+        }
+    }
+
+    for (id, node) in graph.nodes.iter_mut() {
+        if let Some(attrs) = attributes.get(id)
+            && !attrs.is_empty()
+        {
+            let mut lines = Vec::new();
+            lines.push(node.label.clone());
+            lines.extend(attrs.clone());
+            node.label = lines.join("\n");
+        }
+    }
+
+    Ok(ParseOutput { graph, init_config })
+}
+
+fn parse_requirement_relation_line(line: &str) -> Option<(String, String, String)> {
+    let (left, right) = line.split_once("->")?;
+    let to = right.trim();
+    if to.is_empty() {
+        return None;
+    }
+    let left = left.trim();
+    let (from_part, rel_part) = left.split_once('-')?;
+    let from = from_part.trim();
+    let rel = rel_part.trim().trim_matches('-').trim();
+    if from.is_empty() || rel.is_empty() {
+        return None;
+    }
+    Some((from.to_string(), rel.to_string(), to.to_string()))
+}
+
 fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
     let mut graph = Graph::new();
     graph.kind = DiagramKind::State;
@@ -3542,6 +3669,16 @@ mod tests {
         assert_eq!(parsed.graph.kind, DiagramKind::Gantt);
         assert!(parsed.graph.nodes.len() >= 2);
         assert_eq!(parsed.graph.edges.len(), 1);
+    }
+
+    #[test]
+    fn parse_requirement_basic() {
+        let input = "requirementDiagram\n  requirement req1 {\n    id: 1\n    text: Login\n  }\n  requirement req2\n  req1 - satisfies -> req2";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::Requirement);
+        assert_eq!(parsed.graph.nodes.len(), 2);
+        assert_eq!(parsed.graph.edges.len(), 1);
+        assert_eq!(parsed.graph.edges[0].label.as_deref(), Some("satisfies"));
     }
 
     #[test]
