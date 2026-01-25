@@ -53,6 +53,7 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
         DiagramKind::Gantt => parse_gantt_diagram(input),
         DiagramKind::Requirement => parse_requirement_diagram(input),
         DiagramKind::GitGraph => parse_gitgraph_diagram(input),
+        DiagramKind::C4 => parse_c4_diagram(input),
         DiagramKind::Flowchart => parse_flowchart(input),
     }
 }
@@ -106,6 +107,9 @@ fn detect_diagram_kind(input: &str) -> DiagramKind {
         }
         if lower.starts_with("gitgraph") {
             return DiagramKind::GitGraph;
+        }
+        if lower.starts_with("c4") {
+            return DiagramKind::C4;
         }
         if lower.starts_with("flowchart") || lower.starts_with("graph") {
             return DiagramKind::Flowchart;
@@ -2159,6 +2163,173 @@ fn extract_gitgraph_attr(line: &str, key: &str) -> Option<String> {
     Some(rest[..end].to_string())
 }
 
+fn parse_c4_diagram(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::C4;
+    graph.direction = Direction::LeftRight;
+    let (lines, init_config) = preprocess_input(input)?;
+    let mut boundary_stack: Vec<usize> = Vec::new();
+
+    for raw_line in lines {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("c4") {
+            continue;
+        }
+        if line == "}" || lower == "end" {
+            boundary_stack.pop();
+            continue;
+        }
+
+        if let Some(brace_idx) = line.find('{') {
+            let before = line[..brace_idx].trim();
+            let after = line[brace_idx + 1..].trim();
+            if !before.is_empty() {
+                process_c4_line(before, &mut graph, &mut boundary_stack);
+            }
+            if !after.is_empty() {
+                let closes = after.ends_with('}');
+                let after_trimmed = after.trim_end_matches('}').trim();
+                if !after_trimmed.is_empty() {
+                    process_c4_line(after_trimmed, &mut graph, &mut boundary_stack);
+                }
+                if closes {
+                    boundary_stack.pop();
+                }
+            }
+            continue;
+        }
+
+        process_c4_line(line, &mut graph, &mut boundary_stack);
+    }
+
+    Ok(ParseOutput { graph, init_config })
+}
+
+fn process_c4_line(line: &str, graph: &mut Graph, boundary_stack: &mut Vec<usize>) {
+    if let Some((func, args)) = parse_function_call(line) {
+        let func_lower = func.to_ascii_lowercase();
+        if func_lower.contains("boundary") {
+            let id = args
+                .get(0)
+                .cloned()
+                .unwrap_or_else(|| format!("boundary_{}", graph.subgraphs.len()));
+            let label = args.get(1).cloned().unwrap_or_else(|| id.clone());
+            graph.subgraphs.push(Subgraph {
+                id: Some(id),
+                label,
+                nodes: Vec::new(),
+                direction: None,
+            });
+            boundary_stack.push(graph.subgraphs.len() - 1);
+            return;
+        }
+        if func_lower.starts_with("rel") {
+            if args.len() >= 2 {
+                let from = args[0].clone();
+                let to = args[1].clone();
+                let label = args.get(2).cloned();
+                graph.ensure_node(&from, None, Some(crate::ir::NodeShape::Rectangle));
+                graph.ensure_node(&to, None, Some(crate::ir::NodeShape::Rectangle));
+                graph.edges.push(crate::ir::Edge {
+                    from,
+                    to,
+                    label,
+                    start_label: None,
+                    end_label: None,
+                    directed: true,
+                    arrow_start: false,
+                    arrow_end: true,
+                    arrow_start_kind: None,
+                    arrow_end_kind: None,
+                    start_decoration: None,
+                    end_decoration: None,
+                    style: crate::ir::EdgeStyle::Solid,
+                });
+            }
+            return;
+        }
+
+        if let Some(id) = args.get(0).cloned() {
+            let label = args.get(1).cloned().unwrap_or_else(|| id.clone());
+            let shape = c4_shape_for(&func_lower);
+            graph.ensure_node(&id, Some(label), Some(shape));
+            if let Some(idx) = boundary_stack.last().copied() {
+                if let Some(subgraph) = graph.subgraphs.get_mut(idx) {
+                    subgraph.nodes.push(id);
+                }
+            }
+        }
+    }
+}
+
+fn parse_function_call(line: &str) -> Option<(String, Vec<String>)> {
+    let trimmed = line.trim();
+    let open = trimmed.find('(')?;
+    let close = trimmed.rfind(')')?;
+    if close <= open {
+        return None;
+    }
+    let func = trimmed[..open].trim();
+    let args_str = &trimmed[open + 1..close];
+    let args = split_args(args_str)
+        .into_iter()
+        .map(|arg| strip_quotes(arg.trim()))
+        .collect();
+    if func.is_empty() {
+        None
+    } else {
+        Some((func.to_string(), args))
+    }
+}
+
+fn split_args(input: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    for ch in input.chars() {
+        if let Some(q) = quote {
+            if ch == q {
+                quote = None;
+            }
+            current.push(ch);
+            continue;
+        }
+        if ch == '"' || ch == '\'' {
+            quote = Some(ch);
+            current.push(ch);
+            continue;
+        }
+        if ch == ',' {
+            let trimmed = current.trim();
+            if !trimmed.is_empty() {
+                args.push(trimmed.to_string());
+            }
+            current.clear();
+            continue;
+        }
+        current.push(ch);
+    }
+    let trimmed = current.trim();
+    if !trimmed.is_empty() {
+        args.push(trimmed.to_string());
+    }
+    args
+}
+
+fn c4_shape_for(kind: &str) -> crate::ir::NodeShape {
+    if kind.contains("person") {
+        return crate::ir::NodeShape::ActorBox;
+    }
+    if kind.contains("db") || kind.contains("database") {
+        return crate::ir::NodeShape::Cylinder;
+    }
+    crate::ir::NodeShape::Rectangle
+}
+
 fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
     let mut graph = Graph::new();
     graph.kind = DiagramKind::State;
@@ -3840,6 +4011,16 @@ mod tests {
         assert_eq!(parsed.graph.kind, DiagramKind::GitGraph);
         assert!(parsed.graph.nodes.len() >= 3);
         assert!(parsed.graph.edges.len() >= 2);
+    }
+
+    #[test]
+    fn parse_c4_basic() {
+        let input = "C4Context\n  Person(admin, \"Admin\")\n  System(sys, \"System\")\n  Rel(admin, sys, \"Uses\")\n  Boundary(b0, \"Boundary\") { SystemDb(db, \"DB\") }";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::C4);
+        assert!(parsed.graph.nodes.len() >= 3);
+        assert_eq!(parsed.graph.edges.len(), 1);
+        assert_eq!(parsed.graph.subgraphs.len(), 1);
     }
 
     #[test]

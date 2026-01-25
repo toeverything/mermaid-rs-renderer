@@ -275,6 +275,7 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         | crate::ir::DiagramKind::Gantt
         | crate::ir::DiagramKind::Requirement
         | crate::ir::DiagramKind::GitGraph
+        | crate::ir::DiagramKind::C4
         | crate::ir::DiagramKind::Flowchart => compute_flowchart_layout(graph, theme, config),
     }
 }
