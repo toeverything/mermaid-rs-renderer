@@ -25,6 +25,14 @@ pub enum DiagramKind {
     C4,
     Sankey,
     Quadrant,
+    ZenUML,
+    Block,
+    Packet,
+    Kanban,
+    Architecture,
+    Radar,
+    Treemap,
+    XYChart,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

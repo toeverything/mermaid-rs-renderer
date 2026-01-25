@@ -56,6 +56,14 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
         DiagramKind::C4 => parse_c4_diagram(input),
         DiagramKind::Sankey => parse_sankey_diagram(input),
         DiagramKind::Quadrant => parse_quadrant_diagram(input),
+        DiagramKind::ZenUML => parse_zenuml_diagram(input),
+        DiagramKind::Block => parse_block_diagram(input),
+        DiagramKind::Packet => parse_packet_diagram(input),
+        DiagramKind::Kanban => parse_kanban_diagram(input),
+        DiagramKind::Architecture => parse_architecture_diagram(input),
+        DiagramKind::Radar => parse_radar_diagram(input),
+        DiagramKind::Treemap => parse_treemap_diagram(input),
+        DiagramKind::XYChart => parse_xy_chart_diagram(input),
         DiagramKind::Flowchart => parse_flowchart(input),
     }
 }
@@ -118,6 +126,30 @@ fn detect_diagram_kind(input: &str) -> DiagramKind {
         }
         if lower.starts_with("quadrantchart") {
             return DiagramKind::Quadrant;
+        }
+        if lower.starts_with("zenuml") {
+            return DiagramKind::ZenUML;
+        }
+        if lower.starts_with("block") {
+            return DiagramKind::Block;
+        }
+        if lower.starts_with("packet") {
+            return DiagramKind::Packet;
+        }
+        if lower.starts_with("kanban") {
+            return DiagramKind::Kanban;
+        }
+        if lower.starts_with("architecture") {
+            return DiagramKind::Architecture;
+        }
+        if lower.starts_with("radar") {
+            return DiagramKind::Radar;
+        }
+        if lower.starts_with("treemap") {
+            return DiagramKind::Treemap;
+        }
+        if lower.starts_with("xychart") {
+            return DiagramKind::XYChart;
         }
         if lower.starts_with("flowchart") || lower.starts_with("graph") {
             return DiagramKind::Flowchart;
@@ -2440,6 +2472,633 @@ fn parse_quadrant_point(line: &str) -> Option<(String, String)> {
     Some((label.to_string(), format!("{}, {}", x, y)))
 }
 
+fn parse_zenuml_diagram(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::ZenUML;
+    let (lines, init_config) = preprocess_input(input)?;
+    let mut order: Vec<String> = Vec::new();
+    let labels: HashMap<String, String> = HashMap::new();
+
+    for raw_line in lines {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("zenuml") || lower.starts_with("title") {
+            continue;
+        }
+        if let Some((from, to, label, style)) = parse_zenuml_message_line(line) {
+            ensure_sequence_node(&mut graph, &labels, &from, None);
+            ensure_sequence_node(&mut graph, &labels, &to, None);
+            if !order.contains(&from) {
+                order.push(from.clone());
+            }
+            if !order.contains(&to) {
+                order.push(to.clone());
+            }
+            graph.edges.push(crate::ir::Edge {
+                from,
+                to,
+                label,
+                start_label: None,
+                end_label: None,
+                directed: true,
+                arrow_start: false,
+                arrow_end: true,
+                arrow_start_kind: None,
+                arrow_end_kind: None,
+                start_decoration: None,
+                end_decoration: None,
+                style,
+            });
+        }
+    }
+
+    graph.sequence_participants = order;
+
+    Ok(ParseOutput { graph, init_config })
+}
+
+fn parse_zenuml_message_line(
+    line: &str,
+) -> Option<(String, String, Option<String>, crate::ir::EdgeStyle)> {
+    let arrows = ["-->>", "->>", "-->", "->", "==>", "=>"];
+    let mut found = None;
+    for arrow in &arrows {
+        if let Some(idx) = line.find(arrow) {
+            found = Some((idx, *arrow));
+            break;
+        }
+    }
+    let (idx, arrow) = found?;
+    let left = line[..idx].trim();
+    let rest = line[idx + arrow.len()..].trim();
+    if left.is_empty() || rest.is_empty() {
+        return None;
+    }
+    let (right, label) = if let Some((r, l)) = rest.split_once(':') {
+        let lbl = l.trim();
+        let lbl = if lbl.is_empty() { None } else { Some(lbl.to_string()) };
+        (r.trim(), lbl)
+    } else {
+        (rest, None)
+    };
+    if right.is_empty() {
+        return None;
+    }
+    let style = if arrow.contains("--") {
+        crate::ir::EdgeStyle::Dotted
+    } else {
+        crate::ir::EdgeStyle::Solid
+    };
+    Some((left.to_string(), right.to_string(), label, style))
+}
+
+fn parse_block_diagram(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::Block;
+    graph.direction = Direction::LeftRight;
+    let (lines, init_config) = preprocess_input(input)?;
+
+    for raw_line in lines {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("block") {
+            continue;
+        }
+        if let Some((left, label, right, edge_meta)) = parse_edge_line(line) {
+            let sources: Vec<&str> = left
+                .split('&')
+                .map(|part| part.trim())
+                .filter(|part| !part.is_empty())
+                .collect();
+            let targets: Vec<&str> = right
+                .split('&')
+                .map(|part| part.trim())
+                .filter(|part| !part.is_empty())
+                .collect();
+
+            for source in &sources {
+                let (source_id, source_label, source_shape, source_classes) =
+                    parse_node_token(source);
+                graph.ensure_node(&source_id, source_label, source_shape);
+                if !source_classes.is_empty() {
+                    apply_node_classes(&mut graph, &source_id, &source_classes);
+                }
+            }
+            for target in &targets {
+                let (target_id, target_label, target_shape, target_classes) =
+                    parse_node_token(target);
+                graph.ensure_node(&target_id, target_label, target_shape);
+                if !target_classes.is_empty() {
+                    apply_node_classes(&mut graph, &target_id, &target_classes);
+                }
+            }
+
+            for source in &sources {
+                let (source_id, _, _, _) = parse_node_token(source);
+                for target in &targets {
+                    let (target_id, _, _, _) = parse_node_token(target);
+                    graph.edges.push(crate::ir::Edge {
+                        from: source_id.clone(),
+                        to: target_id.clone(),
+                        label: label.clone(),
+                        start_label: None,
+                        end_label: None,
+                        directed: edge_meta.directed,
+                        arrow_start: edge_meta.arrow_start,
+                        arrow_end: edge_meta.arrow_end,
+                        arrow_start_kind: edge_meta.arrow_start_kind,
+                        arrow_end_kind: edge_meta.arrow_end_kind,
+                        start_decoration: edge_meta.start_decoration,
+                        end_decoration: edge_meta.end_decoration,
+                        style: edge_meta.style,
+                    });
+                }
+            }
+            continue;
+        }
+
+        let (id, label, shape, classes) = parse_node_token(line);
+        graph.ensure_node(&id, label, shape);
+        if !classes.is_empty() {
+            apply_node_classes(&mut graph, &id, &classes);
+        }
+    }
+
+    Ok(ParseOutput { graph, init_config })
+}
+
+fn parse_packet_diagram(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::Packet;
+    graph.direction = Direction::LeftRight;
+    let (lines, init_config) = preprocess_input(input)?;
+    let mut last_node: Option<String> = None;
+
+    for raw_line in lines {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("packet") || lower.starts_with("title") {
+            continue;
+        }
+        if let Some((range, label)) = line.split_once(':') {
+            let range = range.trim();
+            let label = strip_quotes(label.trim());
+            if range.is_empty() {
+                continue;
+            }
+            let node_id = format!("packet_{}", graph.nodes.len());
+            let node_label = if label.is_empty() {
+                range.to_string()
+            } else {
+                format!("{}\n{}", range, label)
+            };
+            graph.ensure_node(
+                &node_id,
+                Some(node_label),
+                Some(crate::ir::NodeShape::Rectangle),
+            );
+            if let Some(prev) = last_node.take() {
+                graph.edges.push(crate::ir::Edge {
+                    from: prev,
+                    to: node_id.clone(),
+                    label: None,
+                    start_label: None,
+                    end_label: None,
+                    directed: false,
+                    arrow_start: false,
+                    arrow_end: false,
+                    arrow_start_kind: None,
+                    arrow_end_kind: None,
+                    start_decoration: None,
+                    end_decoration: None,
+                    style: crate::ir::EdgeStyle::Solid,
+                });
+            }
+            last_node = Some(node_id);
+        }
+    }
+
+    Ok(ParseOutput { graph, init_config })
+}
+
+fn parse_kanban_diagram(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::Kanban;
+    graph.direction = Direction::LeftRight;
+    let (lines, init_config) = preprocess_input_keep_indent(input)?;
+    let mut current_section: Option<usize> = None;
+    let mut base_indent: Option<usize> = None;
+
+    for raw_line in lines {
+        let trimmed = raw_line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let lower = trimmed.to_ascii_lowercase();
+        if lower.starts_with("kanban") {
+            continue;
+        }
+        let indent = count_indent(&raw_line);
+        let base = *base_indent.get_or_insert(indent);
+        if indent <= base {
+            let (id, label, _shape, _classes) = parse_node_token(trimmed);
+            let col_label = label.unwrap_or_else(|| id.clone());
+            graph.subgraphs.push(Subgraph {
+                id: Some(id),
+                label: col_label,
+                nodes: Vec::new(),
+                direction: None,
+            });
+            current_section = Some(graph.subgraphs.len() - 1);
+            continue;
+        }
+
+        let (task_part, meta) = if let Some((left, right)) = trimmed.split_once("@{") {
+            let meta = right.trim_end_matches('}').trim();
+            (left.trim(), Some(meta.to_string()))
+        } else {
+            (trimmed, None)
+        };
+        let (mut id, label, _shape, _classes) = parse_node_token(task_part);
+        if graph.nodes.contains_key(&id) {
+            id = format!("{}_{}", id, graph.nodes.len());
+        }
+        let mut node_label = label.unwrap_or_else(|| id.clone());
+        if let Some(meta) = meta {
+            if !meta.is_empty() {
+                node_label.push_str(&format!("\n{}", meta));
+            }
+        }
+        graph.ensure_node(
+            &id,
+            Some(node_label),
+            Some(crate::ir::NodeShape::Rectangle),
+        );
+        if let Some(idx) = current_section {
+            if let Some(subgraph) = graph.subgraphs.get_mut(idx) {
+                subgraph.nodes.push(id);
+            }
+        }
+    }
+
+    Ok(ParseOutput { graph, init_config })
+}
+
+fn parse_architecture_diagram(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::Architecture;
+    graph.direction = Direction::LeftRight;
+    let (lines, init_config) = preprocess_input(input)?;
+    let mut groups: HashMap<String, usize> = HashMap::new();
+
+    for raw_line in lines {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("architecture") {
+            continue;
+        }
+        if lower.starts_with("group ") || lower.starts_with("service ") {
+            if let Some((kind, id, label, parent)) = parse_architecture_node(line) {
+                if kind == "group" {
+                    graph.subgraphs.push(Subgraph {
+                        id: Some(id.clone()),
+                        label: label.clone(),
+                        nodes: Vec::new(),
+                        direction: None,
+                    });
+                    groups.insert(id, graph.subgraphs.len() - 1);
+                } else {
+                    graph.ensure_node(&id, Some(label), Some(crate::ir::NodeShape::Rectangle));
+                    if let Some(parent_id) = parent {
+                        if let Some(idx) = groups.get(&parent_id).copied() {
+                            if let Some(subgraph) = graph.subgraphs.get_mut(idx) {
+                                subgraph.nodes.push(id.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+        if let Some((from, to)) = parse_architecture_edge(line) {
+            graph.ensure_node(&from, None, Some(crate::ir::NodeShape::Rectangle));
+            graph.ensure_node(&to, None, Some(crate::ir::NodeShape::Rectangle));
+            graph.edges.push(crate::ir::Edge {
+                from,
+                to,
+                label: None,
+                start_label: None,
+                end_label: None,
+                directed: true,
+                arrow_start: false,
+                arrow_end: true,
+                arrow_start_kind: None,
+                arrow_end_kind: None,
+                start_decoration: None,
+                end_decoration: None,
+                style: crate::ir::EdgeStyle::Solid,
+            });
+        }
+    }
+
+    Ok(ParseOutput { graph, init_config })
+}
+
+fn parse_architecture_node(line: &str) -> Option<(String, String, String, Option<String>)> {
+    let mut parts = line.splitn(2, ' ');
+    let kind = parts.next()?.trim().to_ascii_lowercase();
+    let rest = parts.next()?.trim();
+    let (node_part, parent) = if let Some((left, right)) = rest.split_once(" in ") {
+        (left.trim(), Some(right.trim().to_string()))
+    } else {
+        (rest, None)
+    };
+    let label = if let Some(start) = node_part.find('[') {
+        if let Some(end) = node_part.rfind(']') {
+            strip_quotes(node_part[start + 1..end].trim())
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+    let id_part = node_part
+        .split('[')
+        .next()
+        .unwrap_or(node_part)
+        .trim();
+    let id = id_part
+        .split('(')
+        .next()
+        .unwrap_or(id_part)
+        .trim()
+        .to_string();
+    if id.is_empty() {
+        return None;
+    }
+    let label = if label.is_empty() { id.clone() } else { label };
+    Some((kind, id, label, parent))
+}
+
+fn parse_architecture_edge(line: &str) -> Option<(String, String)> {
+    let arrows = ["-->", "--", "->"];
+    for arrow in &arrows {
+        if let Some(idx) = line.find(arrow) {
+            let left = line[..idx].trim();
+            let right = line[idx + arrow.len()..].trim();
+            let from = strip_arch_port(left);
+            let to = strip_arch_port(right);
+            if from.is_empty() || to.is_empty() {
+                return None;
+            }
+            return Some((from.to_string(), to.to_string()));
+        }
+    }
+    None
+}
+
+fn strip_arch_port(token: &str) -> &str {
+    token.split(':').last().unwrap_or(token).trim()
+}
+
+fn parse_radar_diagram(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::Radar;
+    graph.direction = Direction::LeftRight;
+    let (lines, init_config) = preprocess_input(input)?;
+    let mut axes: Vec<String> = Vec::new();
+
+    for raw_line in lines {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("radar") || lower.starts_with("title") {
+            continue;
+        }
+        if lower.starts_with("axis") {
+            let rest = line.get(4..).unwrap_or("").trim();
+            axes = split_args(rest)
+                .into_iter()
+                .map(|value| strip_quotes(value.trim()))
+                .filter(|value| !value.is_empty())
+                .collect();
+            continue;
+        }
+        if lower.starts_with("curve") {
+            if let Some((name, values)) = parse_radar_curve(line) {
+                let node_id = format!("radar_{}", graph.nodes.len());
+                let mut label_lines = Vec::new();
+                label_lines.push(name);
+                if !values.is_empty() {
+                    for (idx, value) in values.iter().enumerate() {
+                        if let Some(axis) = axes.get(idx) {
+                            label_lines.push(format!("{}: {}", axis, value));
+                        } else {
+                            label_lines.push(value.to_string());
+                        }
+                    }
+                }
+                graph.ensure_node(
+                    &node_id,
+                    Some(label_lines.join("\n")),
+                    Some(crate::ir::NodeShape::Circle),
+                );
+            }
+        }
+    }
+
+    Ok(ParseOutput { graph, init_config })
+}
+
+fn parse_radar_curve(line: &str) -> Option<(String, Vec<String>)> {
+    let rest = line.get(5..).unwrap_or("").trim();
+    let (name_part, values_part) = rest.split_once('{')?;
+    let name = strip_quotes(name_part.trim());
+    let values_raw = values_part.split_once('}')?.0;
+    let values = split_args(values_raw)
+        .into_iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    if name.is_empty() {
+        return None;
+    }
+    Some((name, values))
+}
+
+fn parse_treemap_diagram(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::Treemap;
+    graph.direction = Direction::LeftRight;
+    let (lines, init_config) = preprocess_input_keep_indent(input)?;
+    let mut stack: Vec<String> = Vec::new();
+    let mut base_indent: Option<usize> = None;
+
+    for raw_line in lines {
+        let trimmed = raw_line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let lower = trimmed.to_ascii_lowercase();
+        if lower.starts_with("treemap") {
+            continue;
+        }
+        let indent = count_indent(&raw_line);
+        let base = *base_indent.get_or_insert(indent);
+        let rel_indent = indent.saturating_sub(base);
+        let mut level = rel_indent / 2;
+        if level > stack.len() {
+            level = stack.len();
+        }
+
+        let (label, value) = parse_treemap_item(trimmed);
+        let node_id = format!("treemap_{}", graph.nodes.len());
+        let node_label = if let Some(value) = value {
+            format!("{}\n{}", label, value)
+        } else {
+            label.clone()
+        };
+        graph.ensure_node(
+            &node_id,
+            Some(node_label),
+            Some(crate::ir::NodeShape::Rectangle),
+        );
+
+        if level > 0 {
+            if stack.len() > level {
+                stack.truncate(level);
+            }
+            if let Some(parent) = stack.last().cloned() {
+                graph.edges.push(crate::ir::Edge {
+                    from: parent,
+                    to: node_id.clone(),
+                    label: None,
+                    start_label: None,
+                    end_label: None,
+                    directed: false,
+                    arrow_start: false,
+                    arrow_end: false,
+                    arrow_start_kind: None,
+                    arrow_end_kind: None,
+                    start_decoration: None,
+                    end_decoration: None,
+                    style: crate::ir::EdgeStyle::Solid,
+                });
+            }
+        } else {
+            stack.clear();
+        }
+        stack.push(node_id);
+    }
+
+    Ok(ParseOutput { graph, init_config })
+}
+
+fn parse_treemap_item(line: &str) -> (String, Option<String>) {
+    if let Some((left, right)) = line.split_once(':') {
+        let label = strip_quotes(left.trim());
+        let value = right.trim();
+        let value = if value.is_empty() {
+            None
+        } else {
+            Some(value.to_string())
+        };
+        return (if label.is_empty() { left.trim().to_string() } else { label }, value);
+    }
+    (strip_quotes(line.trim()), None)
+}
+
+fn parse_xy_chart_diagram(input: &str) -> Result<ParseOutput> {
+    let mut graph = Graph::new();
+    graph.kind = DiagramKind::XYChart;
+    graph.direction = Direction::LeftRight;
+    let (lines, init_config) = preprocess_input(input)?;
+    let mut x_labels: Vec<String> = Vec::new();
+    let mut y_label: Option<String> = None;
+
+    for raw_line in lines {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("xychart") || lower.starts_with("title") {
+            continue;
+        }
+        if lower.starts_with("x-axis") {
+            let rest = line.get(6..).unwrap_or("").trim();
+            x_labels = split_args(rest)
+                .into_iter()
+                .map(|value| strip_quotes(value.trim()))
+                .filter(|value| !value.is_empty())
+                .collect();
+            continue;
+        }
+        if lower.starts_with("y-axis") {
+            let rest = line.get(6..).unwrap_or("").trim();
+            if !rest.is_empty() {
+                y_label = Some(strip_quotes(rest));
+            }
+            continue;
+        }
+        if let Some((series, values)) = parse_xy_series_line(line) {
+            let node_id = format!("xy_{}", graph.nodes.len());
+            let mut label_lines = Vec::new();
+            label_lines.push(series);
+            if let Some(y_label) = y_label.as_ref() {
+                label_lines.push(y_label.clone());
+            }
+            if !values.is_empty() {
+                if !x_labels.is_empty() && x_labels.len() == values.len() {
+                    for (idx, value) in values.iter().enumerate() {
+                        label_lines.push(format!("{}: {}", x_labels[idx], value));
+                    }
+                } else {
+                    label_lines.push(values.join(", "));
+                }
+            }
+            graph.ensure_node(
+                &node_id,
+                Some(label_lines.join("\n")),
+                Some(crate::ir::NodeShape::Rectangle),
+            );
+        }
+    }
+
+    Ok(ParseOutput { graph, init_config })
+}
+
+fn parse_xy_series_line(line: &str) -> Option<(String, Vec<String>)> {
+    let mut parts = line.splitn(2, ' ');
+    let series = parts.next()?.trim().to_string();
+    let rest = parts.next()?.trim();
+    let values = rest
+        .trim_matches(|ch| ch == '[' || ch == ']')
+        .split(',')
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    if series.is_empty() {
+        None
+    } else {
+        Some((series, values))
+    }
+}
+
 fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
     let mut graph = Graph::new();
     graph.kind = DiagramKind::State;
@@ -4147,6 +4806,76 @@ mod tests {
         let parsed = parse_mermaid(input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::Quadrant);
         assert_eq!(parsed.graph.nodes.len(), 2);
+    }
+
+    #[test]
+    fn parse_zenuml_basic() {
+        let input = "zenuml\n  Alice->Bob: Hello\n  Bob-->Alice: Reply";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::ZenUML);
+        assert_eq!(parsed.graph.sequence_participants.len(), 2);
+        assert_eq!(parsed.graph.edges.len(), 2);
+    }
+
+    #[test]
+    fn parse_block_basic() {
+        let input = "block\n  A --> B";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::Block);
+        assert_eq!(parsed.graph.edges.len(), 1);
+    }
+
+    #[test]
+    fn parse_packet_basic() {
+        let input = "packet\n  0-7: \"Type\"\n  8-15: \"Len\"";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::Packet);
+        assert_eq!(parsed.graph.nodes.len(), 2);
+        assert_eq!(parsed.graph.edges.len(), 1);
+    }
+
+    #[test]
+    fn parse_kanban_basic() {
+        let input = "kanban\n  todo[To Do]\n    t1[Task 1]\n  done[Done]\n    t2[Task 2]";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::Kanban);
+        assert_eq!(parsed.graph.subgraphs.len(), 2);
+        assert_eq!(parsed.graph.nodes.len(), 2);
+    }
+
+    #[test]
+    fn parse_architecture_basic() {
+        let input =
+            "architecture-beta\n  group api(icon)[API]\n  service web(icon)[Web] in api\n  service db(icon)[DB] in api\n  web:R --> L:db";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::Architecture);
+        assert_eq!(parsed.graph.subgraphs.len(), 1);
+        assert_eq!(parsed.graph.edges.len(), 1);
+    }
+
+    #[test]
+    fn parse_radar_basic() {
+        let input = "radar-beta\n  axis A, B, C\n  curve Alpha {1,2,3}";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::Radar);
+        assert_eq!(parsed.graph.nodes.len(), 1);
+    }
+
+    #[test]
+    fn parse_treemap_basic() {
+        let input = "treemap-beta\n  Root: 100\n    Child: 40";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::Treemap);
+        assert_eq!(parsed.graph.nodes.len(), 2);
+        assert_eq!(parsed.graph.edges.len(), 1);
+    }
+
+    #[test]
+    fn parse_xy_chart_basic() {
+        let input = "xychart-beta\n  x-axis Q1, Q2\n  y-axis Units\n  bar [10, 20]";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::XYChart);
+        assert_eq!(parsed.graph.nodes.len(), 1);
     }
 
     #[test]

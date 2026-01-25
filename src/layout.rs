@@ -264,7 +264,9 @@ fn is_region_subgraph(sub: &crate::ir::Subgraph) -> bool {
 
 pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
     match graph.kind {
-        crate::ir::DiagramKind::Sequence => compute_sequence_layout(graph, theme, config),
+        crate::ir::DiagramKind::Sequence | crate::ir::DiagramKind::ZenUML => {
+            compute_sequence_layout(graph, theme, config)
+        }
         crate::ir::DiagramKind::Pie => compute_pie_layout(graph, theme, config),
         crate::ir::DiagramKind::Class
         | crate::ir::DiagramKind::State
@@ -278,6 +280,13 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         | crate::ir::DiagramKind::C4
         | crate::ir::DiagramKind::Sankey
         | crate::ir::DiagramKind::Quadrant
+        | crate::ir::DiagramKind::Block
+        | crate::ir::DiagramKind::Packet
+        | crate::ir::DiagramKind::Kanban
+        | crate::ir::DiagramKind::Architecture
+        | crate::ir::DiagramKind::Radar
+        | crate::ir::DiagramKind::Treemap
+        | crate::ir::DiagramKind::XYChart
         | crate::ir::DiagramKind::Flowchart => compute_flowchart_layout(graph, theme, config),
     }
 }

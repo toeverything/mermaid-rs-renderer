@@ -75,6 +75,38 @@ fn fixture(name: &str) -> &'static str {
             env!("CARGO_MANIFEST_DIR"),
             "/benches/fixtures/quadrant_medium.mmd"
         )),
+        "zenuml_medium" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/zenuml_medium.mmd"
+        )),
+        "block_medium" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/block_medium.mmd"
+        )),
+        "packet_medium" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/packet_medium.mmd"
+        )),
+        "kanban_medium" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/kanban_medium.mmd"
+        )),
+        "architecture_medium" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/architecture_medium.mmd"
+        )),
+        "radar_medium" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/radar_medium.mmd"
+        )),
+        "treemap_medium" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/treemap_medium.mmd"
+        )),
+        "xychart_medium" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/xychart_medium.mmd"
+        )),
         _ => panic!("unknown fixture"),
     }
 }
@@ -99,6 +131,14 @@ fn bench_parse(c: &mut Criterion) {
         "c4_medium",
         "sankey_medium",
         "quadrant_medium",
+        "zenuml_medium",
+        "block_medium",
+        "packet_medium",
+        "kanban_medium",
+        "architecture_medium",
+        "radar_medium",
+        "treemap_medium",
+        "xychart_medium",
     ] {
         let input = fixture(name);
         group.bench_with_input(BenchmarkId::from_parameter(name), input, |b, data| {
@@ -132,6 +172,14 @@ fn bench_layout(c: &mut Criterion) {
         "c4_medium",
         "sankey_medium",
         "quadrant_medium",
+        "zenuml_medium",
+        "block_medium",
+        "packet_medium",
+        "kanban_medium",
+        "architecture_medium",
+        "radar_medium",
+        "treemap_medium",
+        "xychart_medium",
     ] {
         let parsed = parse_mermaid(fixture(name)).expect("parse failed");
         group.bench_with_input(
@@ -169,6 +217,14 @@ fn bench_render(c: &mut Criterion) {
         "c4_medium",
         "sankey_medium",
         "quadrant_medium",
+        "zenuml_medium",
+        "block_medium",
+        "packet_medium",
+        "kanban_medium",
+        "architecture_medium",
+        "radar_medium",
+        "treemap_medium",
+        "xychart_medium",
     ] {
         let parsed = parse_mermaid(fixture(name)).expect("parse failed");
         let layout = compute_layout(&parsed.graph, &theme, &config);
@@ -203,6 +259,14 @@ fn bench_end_to_end(c: &mut Criterion) {
         "c4_medium",
         "sankey_medium",
         "quadrant_medium",
+        "zenuml_medium",
+        "block_medium",
+        "packet_medium",
+        "kanban_medium",
+        "architecture_medium",
+        "radar_medium",
+        "treemap_medium",
+        "xychart_medium",
     ] {
         let input = fixture(name);
         group.bench_with_input(BenchmarkId::from_parameter(name), input, |b, data| {
