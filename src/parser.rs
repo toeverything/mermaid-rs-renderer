@@ -513,7 +513,7 @@ fn normalize_class_id(token: &str) -> (String, Option<String>) {
     (trimmed.to_string(), None)
 }
 
-fn parse_state_alias_line(line: &str) -> Option<(String, String)> {
+fn parse_state_alias_line(line: &str) -> Option<(String, String, Vec<String>)> {
     let trimmed = line.trim();
     if !trimmed.starts_with("state ") {
         return None;
@@ -532,10 +532,11 @@ fn parse_state_alias_line(line: &str) -> Option<(String, String)> {
         return None;
     }
     let id = remaining[3..].trim();
+    let (id, classes) = parse_state_id_with_classes(id);
     if id.is_empty() {
         return None;
     }
-    Some((id.to_string(), label))
+    Some((id, label, classes))
 }
 
 fn parse_state_stereotype(
@@ -573,7 +574,7 @@ fn parse_state_stereotype(
     (cleaned, shape, label_override)
 }
 
-fn parse_state_description_line(line: &str) -> Option<(String, String)> {
+fn parse_state_description_line(line: &str) -> Option<(String, String, Vec<String>)> {
     let trimmed = line.trim();
     if trimmed.is_empty() {
         return None;
@@ -586,13 +587,37 @@ fn parse_state_description_line(line: &str) -> Option<(String, String)> {
     if rest.to_ascii_lowercase().contains(" as ") {
         return None;
     }
-    let (id_part, desc_part) = rest.split_once(':')?;
-    let id = strip_quotes(id_part.trim());
+    let mut sep = None;
+    let bytes = rest.as_bytes();
+    let mut idx = 0;
+    while idx < bytes.len() {
+        if bytes[idx] == b':' {
+            if idx + 2 < bytes.len()
+                && bytes[idx + 1] == b':'
+                && bytes[idx + 2] == b':'
+            {
+                idx += 3;
+                continue;
+            }
+            sep = Some(idx);
+            break;
+        }
+        idx += 1;
+    }
+    let sep = sep?;
+    let (id_part, desc_part) = rest.split_at(sep);
+    let desc_part = desc_part.get(1..).unwrap_or("");
+    let (id, classes) = parse_state_id_with_classes(id_part.trim());
     let desc = strip_quotes(desc_part.trim());
     if id.is_empty() || desc.is_empty() {
         return None;
     }
-    Some((id, desc))
+    Some((id, desc, classes))
+}
+
+fn parse_state_id_with_classes(input: &str) -> (String, Vec<String>) {
+    let (base, classes) = split_inline_classes(input);
+    (strip_quotes(base.trim()), classes)
 }
 
 fn parse_state_transition(line: &str) -> Option<(String, EdgeMeta, String, Option<String>)> {
@@ -660,7 +685,7 @@ fn normalize_state_token(
     (strip_quotes(trimmed), crate::ir::NodeShape::RoundRect, None)
 }
 
-fn parse_state_simple(line: &str) -> Option<String> {
+fn parse_state_simple(line: &str) -> Option<(String, Vec<String>)> {
     let trimmed = line.trim();
     if !trimmed.starts_with("state ") {
         return None;
@@ -678,7 +703,11 @@ fn parse_state_simple(line: &str) -> Option<String> {
     if rest.is_empty() {
         return None;
     }
-    Some(strip_quotes(rest))
+    let (id, classes) = parse_state_id_with_classes(rest);
+    if id.is_empty() {
+        return None;
+    }
+    Some((id, classes))
 }
 
 fn parse_state_container_header(line: &str) -> Option<(Option<String>, String, String)> {
@@ -1130,6 +1159,26 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
                 continue;
             }
 
+            if let Some(direction) = parse_direction_line(line) {
+                graph.direction = direction;
+                continue;
+            }
+
+            if line.starts_with("classDef") {
+                parse_class_def(line, &mut graph);
+                continue;
+            }
+
+            if line.starts_with("class ") {
+                parse_class_line(line, &mut graph);
+                continue;
+            }
+
+            if line.starts_with("style ") {
+                parse_style_line(line, &mut graph);
+                continue;
+            }
+
             if line == "}" {
                 if let Some(ctx) = composite_stack.pop() {
                     if let Some(idx) = subgraph_stack.pop() {
@@ -1187,7 +1236,7 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
                 continue;
             }
 
-            if let Some((id, label)) = parse_state_alias_line(line) {
+            if let Some((id, label, classes)) = parse_state_alias_line(line) {
                 let label = label_override.clone().unwrap_or(label);
                 labels.insert(id.clone(), label);
                 graph.ensure_node(
@@ -1195,6 +1244,7 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
                     labels.get(&id).cloned(),
                     state_shape.or(Some(crate::ir::NodeShape::RoundRect)),
                 );
+                apply_node_classes(&mut graph, &id, &classes);
                 add_node_to_subgraphs(&mut graph, &subgraph_stack, &id);
                 record_region_node(&mut composite_stack, &id);
                 continue;
@@ -1207,10 +1257,22 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
                     .and_then(|&idx| graph.subgraphs.get(idx))
                     .and_then(|sub| sub.id.clone())
                     .unwrap_or_else(|| "root".to_string());
-                let (left_id, left_shape, left_label_override) =
-                    normalize_state_token(&left, true, &mut start_counter, &mut end_states, &scope);
-                let (right_id, right_shape, right_label_override) =
-                    normalize_state_token(&right, false, &mut start_counter, &mut end_states, &scope);
+                let (left_token, left_classes) = split_inline_classes(&left);
+                let (right_token, right_classes) = split_inline_classes(&right);
+                let (left_id, left_shape, left_label_override) = normalize_state_token(
+                    &left_token,
+                    true,
+                    &mut start_counter,
+                    &mut end_states,
+                    &scope,
+                );
+                let (right_id, right_shape, right_label_override) = normalize_state_token(
+                    &right_token,
+                    false,
+                    &mut start_counter,
+                    &mut end_states,
+                    &scope,
+                );
 
                 let left_label = left_label_override.or_else(|| labels.get(&left_id).cloned());
                 let right_label = right_label_override.or_else(|| labels.get(&right_id).cloned());
@@ -1230,6 +1292,8 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
                 };
                 graph.ensure_node(&left_id, left_label, left_shape);
                 graph.ensure_node(&right_id, right_label, right_shape);
+                apply_node_classes(&mut graph, &left_id, &left_classes);
+                apply_node_classes(&mut graph, &right_id, &right_classes);
                 add_node_to_subgraphs(&mut graph, &subgraph_stack, &left_id);
                 add_node_to_subgraphs(&mut graph, &subgraph_stack, &right_id);
                 record_region_node(&mut composite_stack, &left_id);
@@ -1252,7 +1316,7 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
                 continue;
             }
 
-            if let Some((id, label)) = parse_state_description_line(line) {
+            if let Some((id, label, classes)) = parse_state_description_line(line) {
                 let label = label_override.clone().unwrap_or(label);
                 labels.insert(id.clone(), label);
                 graph.ensure_node(
@@ -1260,12 +1324,13 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
                     labels.get(&id).cloned(),
                     state_shape.or(Some(crate::ir::NodeShape::RoundRect)),
                 );
+                apply_node_classes(&mut graph, &id, &classes);
                 add_node_to_subgraphs(&mut graph, &subgraph_stack, &id);
                 record_region_node(&mut composite_stack, &id);
                 continue;
             }
 
-            if let Some(id) = parse_state_simple(line) {
+            if let Some((id, classes)) = parse_state_simple(line) {
                 if let Some(label) = label_override.clone() {
                     labels.insert(id.clone(), label);
                 }
@@ -1274,6 +1339,7 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
                     labels.get(&id).cloned(),
                     state_shape.or(Some(crate::ir::NodeShape::RoundRect)),
                 );
+                apply_node_classes(&mut graph, &id, &classes);
                 add_node_to_subgraphs(&mut graph, &subgraph_stack, &id);
                 record_region_node(&mut composite_stack, &id);
                 continue;
@@ -2557,6 +2623,14 @@ mod tests {
         let node = parsed.graph.nodes.get("Fork").unwrap();
         assert_eq!(node.shape, crate::ir::NodeShape::ForkJoin);
         assert!(node.label.trim().is_empty());
+    }
+
+    #[test]
+    fn parse_state_inline_class() {
+        let input = "stateDiagram-v2\nclassDef hot fill:#f00\nstate Idle:::hot";
+        let parsed = parse_mermaid(input).unwrap();
+        let classes = parsed.graph.node_classes.get("Idle").unwrap();
+        assert!(classes.iter().any(|c| c == "hot"));
     }
 
     #[test]
