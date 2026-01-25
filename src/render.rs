@@ -1340,10 +1340,7 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme) -> String {
             } else {
                 (fill.as_str(), stroke.as_str())
             };
-            let stroke_width =
-                node.style
-                    .stroke_width
-                    .unwrap_or(if label_empty { 1.0 } else { 1.0 });
+            let stroke_width = node.style.stroke_width.unwrap_or(1.0);
             let cx = x + w / 2.0;
             let cy = y + h / 2.0;
             let r = (w.min(h)) / 2.0;

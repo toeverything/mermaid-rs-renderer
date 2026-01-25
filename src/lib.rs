@@ -1,3 +1,10 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(clippy::manual_strip)]
+#![allow(clippy::needless_range_loop)]
+#![allow(clippy::redundant_locals)]
+#![allow(clippy::manual_clamp)]
+#![allow(clippy::question_mark)]
+
 //! # mmdr - Fast Mermaid Diagram Renderer
 //!
 //! A pure Rust implementation of Mermaid diagram rendering, providing 500-1000x

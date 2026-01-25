@@ -110,10 +110,10 @@ pub fn run() -> Result<()> {
         let layout = compute_layout(&parsed.graph, &config.theme, &config.layout);
         let layout_us = t_layout_start.elapsed().as_micros();
 
-        if let Some(outputs) = layout_outputs.as_ref() {
-            if let Some(path) = outputs.first() {
-                write_layout_dump(path, &layout, &parsed.graph)?;
-            }
+        if let Some(outputs) = layout_outputs.as_ref()
+            && let Some(path) = outputs.first()
+        {
+            write_layout_dump(path, &layout, &parsed.graph)?;
         }
 
         let t_render_start = std::time::Instant::now();
@@ -157,10 +157,10 @@ pub fn run() -> Result<()> {
             config = merge_init_config(config, init_cfg);
         }
         let layout = compute_layout(&parsed.graph, &config.theme, &config.layout);
-        if let Some(outputs) = layout_outputs.as_ref() {
-            if let Some(path) = outputs.get(idx) {
-                write_layout_dump(path, &layout, &parsed.graph)?;
-            }
+        if let Some(outputs) = layout_outputs.as_ref()
+            && let Some(path) = outputs.get(idx)
+        {
+            write_layout_dump(path, &layout, &parsed.graph)?;
         }
         let svg = render_svg(&layout, &config.theme, &config.layout);
         match args.output_format {

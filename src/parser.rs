@@ -647,9 +647,7 @@ fn parse_sequence_message(
             if token.starts_with('<') {
                 std::mem::swap(&mut from, &mut to);
             }
-            let trimmed = token
-                .trim_start_matches('<')
-                .trim_end_matches(|c| c == '+' || c == '-');
+            let trimmed = token.trim_start_matches('<').trim_end_matches(['+', '-']);
             let style = if trimmed.starts_with("--") {
                 crate::ir::EdgeStyle::Dotted
             } else {
@@ -735,10 +733,10 @@ fn parse_class_diagram(input: &str) -> Result<ParseOutput> {
         let lower = line.to_ascii_lowercase();
         if lower.starts_with("classdiagram") {
             let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() > 1 {
-                if let Some(dir) = Direction::from_token(parts[1]) {
-                    graph.direction = dir;
-                }
+            if parts.len() > 1
+                && let Some(dir) = Direction::from_token(parts[1])
+            {
+                graph.direction = dir;
             }
             continue;
         }
@@ -953,10 +951,10 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
 
             if line == "}" {
                 if let Some(ctx) = composite_stack.pop() {
-                    if let Some(idx) = subgraph_stack.pop() {
-                        if idx != ctx.subgraph_idx {
-                            subgraph_stack.push(idx);
-                        }
+                    if let Some(idx) = subgraph_stack.pop()
+                        && idx != ctx.subgraph_idx
+                    {
+                        subgraph_stack.push(idx);
                     }
                     finalize_regions(ctx, &mut graph, &mut region_counter);
                 }
@@ -1295,17 +1293,17 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
                 end_decoration: None,
                 style,
             });
-            if let Some(kind) = activation {
-                if let Some(last) = graph.edges.len().checked_sub(1) {
-                    let participant = graph.edges[last].to.clone();
-                    graph
-                        .sequence_activations
-                        .push(crate::ir::SequenceActivation {
-                            participant,
-                            index: last,
-                            kind,
-                        });
-                }
+            if let Some(kind) = activation
+                && let Some(last) = graph.edges.len().checked_sub(1)
+            {
+                let participant = graph.edges[last].to.clone();
+                graph
+                    .sequence_activations
+                    .push(crate::ir::SequenceActivation {
+                        participant,
+                        index: last,
+                        kind,
+                    });
             }
         }
     }

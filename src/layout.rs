@@ -271,10 +271,10 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             if anchored_indices.contains(&idx) {
                 continue;
             }
-            if let Some(anchor_child) = pick_subgraph_anchor_child(sub, graph, &anchor_ids) {
-                if anchor_child != anchor_id {
-                    edge_redirects.insert(anchor_id.to_string(), anchor_child);
-                }
+            if let Some(anchor_child) = pick_subgraph_anchor_child(sub, graph, &anchor_ids)
+                && anchor_child != anchor_id
+            {
+                edge_redirects.insert(anchor_id.to_string(), anchor_child);
             }
         }
     }
@@ -629,10 +629,10 @@ fn assign_positions_dagre(
                     }
                 }
             }
-            if let Some(parent_idx) = best_parent {
-                if let Some(parent_anchor) = anchor_ids.get(&parent_idx) {
-                    let _ = dagre_graph.set_parent(child_anchor, Some(parent_anchor.clone()));
-                }
+            if let Some(parent_idx) = best_parent
+                && let Some(parent_anchor) = anchor_ids.get(&parent_idx)
+            {
+                let _ = dagre_graph.set_parent(child_anchor, Some(parent_anchor.clone()));
             }
         }
 
@@ -735,10 +735,10 @@ fn assign_positions_dagre_subset(
         let mut node = DagreNode::default();
         node.width = layout.width;
         node.height = layout.height;
-        if let Some(order_map) = node_order {
-            if let Some(order) = order_map.get(node_id) {
-                node.order = Some(*order);
-            }
+        if let Some(order_map) = node_order
+            && let Some(order) = order_map.get(node_id)
+        {
+            node.order = Some(*order);
         }
         dagre_graph.set_node(node_id.clone(), Some(node));
     }
@@ -1137,10 +1137,8 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         };
 
         let mut override_style = resolve_edge_style(idx, graph);
-        if edge.style == crate::ir::EdgeStyle::Dotted {
-            if override_style.dasharray.is_none() {
-                override_style.dasharray = Some("3 3".to_string());
-            }
+        if edge.style == crate::ir::EdgeStyle::Dotted && override_style.dasharray.is_none() {
+            override_style.dasharray = Some("3 3".to_string());
         }
         edges.push(EdgeLayout {
             from: edge.from.clone(),
@@ -1357,27 +1355,27 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
                 stack.push((y, depth));
             }
             crate::ir::SequenceActivationKind::Deactivate => {
-                if let Some((start_y, depth)) = stack.pop() {
-                    if let Some(node) = nodes.get(&event.participant) {
-                        let base_x = node.x + node.width / 2.0 - activation_width / 2.0;
-                        let x = base_x + depth as f32 * activation_offset;
-                        let mut y0 = start_y.min(y);
-                        let mut height = (y - start_y).abs();
-                        if height < base_spacing * 0.6 {
-                            height = base_spacing * 0.6;
-                        }
-                        if y0 < lifeline_start {
-                            y0 = lifeline_start;
-                        }
-                        sequence_activations.push(SequenceActivationLayout {
-                            x,
-                            y: y0,
-                            width: activation_width,
-                            height,
-                            participant: event.participant.clone(),
-                            depth,
-                        });
+                if let Some((start_y, depth)) = stack.pop()
+                    && let Some(node) = nodes.get(&event.participant)
+                {
+                    let base_x = node.x + node.width / 2.0 - activation_width / 2.0;
+                    let x = base_x + depth as f32 * activation_offset;
+                    let mut y0 = start_y.min(y);
+                    let mut height = (y - start_y).abs();
+                    if height < base_spacing * 0.6 {
+                        height = base_spacing * 0.6;
                     }
+                    if y0 < lifeline_start {
+                        y0 = lifeline_start;
+                    }
+                    sequence_activations.push(SequenceActivationLayout {
+                        x,
+                        y: y0,
+                        width: activation_width,
+                        height,
+                        participant: event.participant.clone(),
+                        depth,
+                    });
                 }
             }
         }
@@ -2008,10 +2006,10 @@ fn subgraph_is_anchorable(
     let anchor_id = subgraph_anchor_id(sub, nodes);
     let set: HashSet<&str> = sub.nodes.iter().map(|id| id.as_str()).collect();
     for edge in &graph.edges {
-        if let Some(anchor) = anchor_id {
-            if edge.from == anchor || edge.to == anchor {
-                return false;
-            }
+        if let Some(anchor) = anchor_id
+            && (edge.from == anchor || edge.to == anchor)
+        {
+            return false;
         }
         let from_in = set.contains(edge.from.as_str());
         let to_in = set.contains(edge.to.as_str());
@@ -2045,10 +2043,11 @@ fn subgraph_anchor_id<'a>(
     sub: &'a crate::ir::Subgraph,
     nodes: &BTreeMap<String, NodeLayout>,
 ) -> Option<&'a str> {
-    if let Some(id) = sub.id.as_deref() {
-        if nodes.contains_key(id) && !sub.nodes.iter().any(|node_id| node_id == id) {
-            return Some(id);
-        }
+    if let Some(id) = sub.id.as_deref()
+        && nodes.contains_key(id)
+        && !sub.nodes.iter().any(|node_id| node_id == id)
+    {
+        return Some(id);
     }
     let label = sub.label.as_str();
     if nodes.contains_key(label) && !sub.nodes.iter().any(|node_id| node_id == label) {
@@ -2833,7 +2832,7 @@ fn ray_polygon_intersection(
         }
         let t = (qx * sy - qy * sx) / denom;
         let u = (qx * ry - qy * rx) / denom;
-        if t >= 0.0 && u >= 0.0 && u <= 1.0 {
+        if t >= 0.0 && (0.0..=1.0).contains(&u) {
             match best_t {
                 Some(best) if t >= best => {}
                 _ => best_t = Some(t),
@@ -2902,10 +2901,10 @@ fn anchor_point_for_node(node: &NodeLayout, side: EdgeSide, offset: f32) -> (f32
         _ => {}
     }
 
-    if let Some(poly) = shape_polygon_points(node) {
-        if let Some(point) = ray_polygon_intersection(origin, dir, &poly) {
-            return point;
-        }
+    if let Some(poly) = shape_polygon_points(node)
+        && let Some(point) = ray_polygon_intersection(origin, dir, &poly)
+    {
+        return point;
     }
 
     // Fallback to bounding box anchor.
@@ -2939,10 +2938,10 @@ fn route_edge_with_avoidance(ctx: &RouteContext<'_>) -> Vec<(f32, f32)> {
             if obstacle.id == ctx.from_id || obstacle.id == ctx.to_id {
                 continue;
             }
-            if let Some(members) = &obstacle.members {
-                if members.contains(ctx.from_id) || members.contains(ctx.to_id) {
-                    continue;
-                }
+            if let Some(members) = &obstacle.members
+                && (members.contains(ctx.from_id) || members.contains(ctx.to_id))
+            {
+                continue;
             }
             // Check if obstacle vertically overlaps the edge path
             let obs_top = obstacle.y;
@@ -3404,12 +3403,10 @@ fn build_subgraph_layouts(
         let label_height = if label_empty { 0.0 } else { label_block.height };
         let top_padding = if label_empty {
             padding
+        } else if graph.kind == crate::ir::DiagramKind::State {
+            (label_height + theme.font_size * 0.4).max(18.0)
         } else {
-            if graph.kind == crate::ir::DiagramKind::State {
-                (label_height + theme.font_size * 0.4).max(18.0)
-            } else {
-                padding + label_height + 8.0
-            }
+            padding + label_height + 8.0
         };
 
         subgraphs.push(SubgraphLayout {
