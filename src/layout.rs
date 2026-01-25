@@ -1348,7 +1348,9 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
     };
     for (_, _, event) in events {
         let y = activation_y_for(event.index);
-        let stack = activation_stacks.entry(event.participant.clone()).or_default();
+        let stack = activation_stacks
+            .entry(event.participant.clone())
+            .or_default();
         match event.kind {
             crate::ir::SequenceActivationKind::Activate => {
                 let depth = stack.len();
@@ -1409,9 +1411,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
     if let Some(start) = graph.sequence_autonumber {
         let mut value = start;
         for (idx, edge) in graph.edges.iter().enumerate() {
-            if let (Some(from), Some(y)) =
-                (nodes.get(&edge.from), message_ys.get(idx).copied())
-            {
+            if let (Some(from), Some(y)) = (nodes.get(&edge.from), message_ys.get(idx).copied()) {
                 let from_x = from.x + from.width / 2.0;
                 let to_x = nodes
                     .get(&edge.to)
@@ -2736,12 +2736,7 @@ fn shape_polygon_points(node: &NodeLayout) -> Option<Vec<(f32, f32)>> {
         | crate::ir::NodeShape::ActorBox
         | crate::ir::NodeShape::Stadium
         | crate::ir::NodeShape::Subroutine
-        | crate::ir::NodeShape::Text => Some(vec![
-            (x, y),
-            (x + w, y),
-            (x + w, y + h),
-            (x, y + h),
-        ]),
+        | crate::ir::NodeShape::Text => Some(vec![(x, y), (x + w, y), (x + w, y + h), (x, y + h)]),
         crate::ir::NodeShape::Diamond => {
             let cx = x + w / 2.0;
             let cy = y + h / 2.0;
@@ -2963,12 +2958,7 @@ fn route_edge_with_avoidance(ctx: &RouteContext<'_>) -> Vec<(f32, f32)> {
         // Try routing around the right side first
         if max_right > 0.0 {
             let route_x = max_right + pad;
-            let points = vec![
-                start,
-                (route_x, start.1),
-                (route_x, end.1),
-                end,
-            ];
+            let points = vec![start, (route_x, start.1), (route_x, end.1), end];
             if !path_intersects_obstacles(&points, ctx.obstacles, ctx.from_id, ctx.to_id) {
                 return points;
             }
@@ -2977,12 +2967,7 @@ fn route_edge_with_avoidance(ctx: &RouteContext<'_>) -> Vec<(f32, f32)> {
         // Try routing around the left side
         if min_left < f32::MAX {
             let route_x = min_left - pad;
-            let points = vec![
-                start,
-                (route_x, start.1),
-                (route_x, end.1),
-                end,
-            ];
+            let points = vec![start, (route_x, start.1), (route_x, end.1), end];
             if !path_intersects_obstacles(&points, ctx.obstacles, ctx.from_id, ctx.to_id) {
                 return points;
             }

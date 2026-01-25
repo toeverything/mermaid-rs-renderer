@@ -1,0 +1,39 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "title": {"text": "Render Time: mmdr vs mermaid-cli", "fontSize": 18},
+  "width": 140,
+  "height": 300,
+  "data": {
+    "values": [
+      {"diagram": "Flowchart", "tool": "mmdr", "time": 2.75},
+      {"diagram": "Flowchart", "tool": "mermaid-cli", "time": 2636},
+      {"diagram": "Class", "tool": "mmdr", "time": 3.19},
+      {"diagram": "Class", "tool": "mermaid-cli", "time": 2381},
+      {"diagram": "State", "tool": "mmdr", "time": 2.45},
+      {"diagram": "State", "tool": "mermaid-cli", "time": 2647},
+      {"diagram": "Sequence", "tool": "mmdr", "time": 2.47},
+      {"diagram": "Sequence", "tool": "mermaid-cli", "time": 2444}
+    ]
+  },
+  "facet": {"column": {"field": "diagram", "type": "nominal", "title": null}},
+  "spec": {
+    "width": 80,
+    "mark": {"type": "bar", "cornerRadiusEnd": 4, "width": 30},
+    "encoding": {
+      "x": {"field": "tool", "type": "nominal", "axis": null},
+      "y": {
+        "field": "time",
+        "type": "quantitative",
+        "scale": {"type": "log", "domain": [1, 10000]},
+        "axis": {"title": "Time (ms)", "grid": true}
+      },
+      "color": {
+        "field": "tool",
+        "type": "nominal",
+        "scale": {"domain": ["mmdr", "mermaid-cli"], "range": ["#10b981", "#f97316"]},
+        "legend": {"title": null, "orient": "top"}
+      }
+    }
+  },
+  "config": {"view": {"stroke": null}}
+}

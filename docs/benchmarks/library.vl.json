@@ -1,0 +1,38 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "title": {
+    "text": "Library Performance (no CLI overhead)",
+    "fontSize": 16
+  },
+  "width": 400,
+  "height": 200,
+  "data": {
+    "values": [
+      {"diagram": "Flowchart", "time": 1.49, "order": 1},
+      {"diagram": "Class", "time": 2.51, "order": 2},
+      {"diagram": "State", "time": 2.04, "order": 3},
+      {"diagram": "Sequence", "time": 0.072, "order": 4}
+    ]
+  },
+  "mark": {"type": "bar", "cornerRadiusEnd": 4, "color": "#10b981"},
+  "encoding": {
+    "x": {
+      "field": "diagram",
+      "type": "nominal",
+      "axis": {"title": null, "labelFontSize": 12},
+      "sort": {"field": "order"}
+    },
+    "y": {
+      "field": "time",
+      "type": "quantitative",
+      "axis": {"title": "Time (ms)", "labelFontSize": 11}
+    },
+    "tooltip": [
+      {"field": "diagram"},
+      {"field": "time", "title": "Time (ms)", "format": ".3f"}
+    ]
+  },
+  "config": {
+    "view": {"stroke": null}
+  }
+}

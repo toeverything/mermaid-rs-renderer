@@ -631,10 +631,7 @@ fn parse_sequence_message(
     Option<crate::ir::SequenceActivationKind>,
 )> {
     let tokens = [
-        "-->>+", "->>+", "-->+", "->+",
-        "-->>-", "->>-", "-->-", "->-",
-        "<--+", "<-+",
-        "<--", "<-",
+        "-->>+", "->>+", "-->+", "->+", "-->>-", "->>-", "-->-", "->-", "<--+", "<-+", "<--", "<-",
         "-->>", "->>", "-->", "->",
     ];
     for token in tokens {
@@ -1032,8 +1029,13 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
                     .unwrap_or_else(|| "root".to_string());
                 let (left_id, left_shape, left_label_override) =
                     normalize_state_token(&left, true, &mut start_counter, &mut end_states, &scope);
-                let (right_id, right_shape, right_label_override) =
-                    normalize_state_token(&right, false, &mut start_counter, &mut end_states, &scope);
+                let (right_id, right_shape, right_label_override) = normalize_state_token(
+                    &right,
+                    false,
+                    &mut start_counter,
+                    &mut end_states,
+                    &scope,
+                );
 
                 let left_label = left_label_override.or_else(|| labels.get(&left_id).cloned());
                 let right_label = right_label_override.or_else(|| labels.get(&right_id).cloned());
@@ -1217,11 +1219,13 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
                     labels.get(&id).cloned(),
                     Some(crate::ir::NodeShape::RoundRect),
                 );
-                graph.sequence_activations.push(crate::ir::SequenceActivation {
-                    participant: id,
-                    index: graph.edges.len(),
-                    kind: crate::ir::SequenceActivationKind::Activate,
-                });
+                graph
+                    .sequence_activations
+                    .push(crate::ir::SequenceActivation {
+                        participant: id,
+                        index: graph.edges.len(),
+                        kind: crate::ir::SequenceActivationKind::Activate,
+                    });
             }
             continue;
         }
@@ -1237,11 +1241,13 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
                     labels.get(&id).cloned(),
                     Some(crate::ir::NodeShape::RoundRect),
                 );
-                graph.sequence_activations.push(crate::ir::SequenceActivation {
-                    participant: id,
-                    index: graph.edges.len(),
-                    kind: crate::ir::SequenceActivationKind::Deactivate,
-                });
+                graph
+                    .sequence_activations
+                    .push(crate::ir::SequenceActivation {
+                        participant: id,
+                        index: graph.edges.len(),
+                        kind: crate::ir::SequenceActivationKind::Deactivate,
+                    });
             }
             continue;
         }
@@ -1292,11 +1298,13 @@ fn parse_sequence_diagram(input: &str) -> Result<ParseOutput> {
             if let Some(kind) = activation {
                 if let Some(last) = graph.edges.len().checked_sub(1) {
                     let participant = graph.edges[last].to.clone();
-                    graph.sequence_activations.push(crate::ir::SequenceActivation {
-                        participant,
-                        index: last,
-                        kind,
-                    });
+                    graph
+                        .sequence_activations
+                        .push(crate::ir::SequenceActivation {
+                            participant,
+                            index: last,
+                            kind,
+                        });
                 }
             }
         }

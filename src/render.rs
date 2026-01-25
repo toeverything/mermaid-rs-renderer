@@ -413,7 +413,9 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             let mut stroke = theme.line_color.clone();
             let (mut dash, mut stroke_width) = match edge.style {
                 crate::ir::EdgeStyle::Solid => (String::new(), base_edge_width),
-                crate::ir::EdgeStyle::Dotted => ("stroke-dasharray=\"2\"".to_string(), base_edge_width),
+                crate::ir::EdgeStyle::Dotted => {
+                    ("stroke-dasharray=\"2\"".to_string(), base_edge_width)
+                }
                 crate::ir::EdgeStyle::Thick => (String::new(), 3.5),
             };
 
@@ -449,9 +451,9 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                         Some(crate::ir::EdgeArrowhead::OpenTriangle) => {
                             format!("marker-start=\"url(#arrow-class-open-start-{marker_id})\"")
                         }
-                        Some(crate::ir::EdgeArrowhead::ClassDependency) => format!(
-                            "marker-start=\"url(#arrow-class-dep-start-{marker_id})\""
-                        ),
+                        Some(crate::ir::EdgeArrowhead::ClassDependency) => {
+                            format!("marker-start=\"url(#arrow-class-dep-start-{marker_id})\"")
+                        }
                         None => format!("marker-start=\"url(#arrow-start-{marker_id})\""),
                     },
                     _ => format!("marker-start=\"url(#arrow-start-{marker_id})\""),
@@ -1224,9 +1226,7 @@ fn edge_decoration_svg(
             )
         }
     };
-    format!(
-        "<g transform=\"translate({x:.2} {y:.2}) rotate({angle:.2})\">{shape}</g>"
-    )
+    format!("<g transform=\"translate({x:.2} {y:.2}) rotate({angle:.2})\">{shape}</g>")
 }
 
 fn edge_endpoint_angle(points: &[(f32, f32)], start: bool) -> f32 {

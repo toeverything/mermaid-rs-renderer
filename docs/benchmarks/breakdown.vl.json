@@ -1,0 +1,54 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "title": {
+    "text": "mmdr Pipeline Breakdown",
+    "fontSize": 16
+  },
+  "width": 400,
+  "height": 250,
+  "data": {
+    "values": [
+      {"diagram": "Flowchart", "stage": "Parse", "time": 1.04, "order": 1},
+      {"diagram": "Flowchart", "stage": "Layout", "time": 0.05, "order": 1},
+      {"diagram": "Flowchart", "stage": "Render", "time": 0.05, "order": 1},
+      {"diagram": "Class", "stage": "Parse", "time": 0.36, "order": 2},
+      {"diagram": "Class", "stage": "Layout", "time": 0.23, "order": 2},
+      {"diagram": "Class", "stage": "Render", "time": 0.15, "order": 2},
+      {"diagram": "State", "stage": "Parse", "time": 0.39, "order": 3},
+      {"diagram": "State", "stage": "Layout", "time": 0.18, "order": 3},
+      {"diagram": "State", "stage": "Render", "time": 0.10, "order": 3},
+      {"diagram": "Sequence", "stage": "Parse", "time": 0.37, "order": 4},
+      {"diagram": "Sequence", "stage": "Layout", "time": 0.03, "order": 4},
+      {"diagram": "Sequence", "stage": "Render", "time": 0.07, "order": 4}
+    ]
+  },
+  "mark": {"type": "bar", "cornerRadiusEnd": 3},
+  "encoding": {
+    "x": {
+      "field": "diagram",
+      "type": "nominal",
+      "axis": {"title": null, "labelFontSize": 12},
+      "sort": {"field": "order"}
+    },
+    "y": {
+      "field": "time",
+      "type": "quantitative",
+      "axis": {"title": "Time (ms)", "labelFontSize": 11}
+    },
+    "color": {
+      "field": "stage",
+      "type": "nominal",
+      "scale": {"range": ["#3b82f6", "#10b981", "#8b5cf6"]},
+      "legend": {"title": null}
+    },
+    "order": {"field": "stage", "sort": "descending"},
+    "tooltip": [
+      {"field": "diagram"},
+      {"field": "stage"},
+      {"field": "time", "title": "Time (ms)", "format": ".2f"}
+    ]
+  },
+  "config": {
+    "view": {"stroke": null}
+  }
+}
