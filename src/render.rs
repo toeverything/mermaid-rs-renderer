@@ -12,84 +12,78 @@ use std::path::Path;
 
 pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
     let mut svg = String::new();
-    let (
-        mut width,
-        mut height,
-        mut viewbox_x,
-        mut viewbox_y,
-        mut viewbox_width,
-        mut viewbox_height,
-    ) = if let Some(error) = layout.error.as_ref() {
-        (
-            error.render_width,
-            error.render_height,
-            0.0,
-            0.0,
-            error.viewbox_width,
-            error.viewbox_height,
-        )
-    } else if layout.kind == crate::ir::DiagramKind::Requirement {
-        let pad_x = config.requirement.render_padding_x;
-        let pad_y = config.requirement.render_padding_y;
-        let mut width = layout.width + pad_x * 2.0;
-        let mut height = layout.height + pad_y * 2.0;
-        width = width.max(1.0);
-        height = height.max(1.0);
-        (width, height, 0.0, 0.0, width, height)
-    } else if let Some(c4) = layout.c4.as_ref() {
-        let width = layout.width.max(1.0);
-        let height = layout.height.max(1.0);
-        (
-            width,
-            height,
-            c4.viewbox_x,
-            c4.viewbox_y,
-            c4.viewbox_width,
-            c4.viewbox_height,
-        )
-    } else if let Some(gitgraph) = layout.gitgraph.as_ref() {
-        let width = layout.width.max(1.0);
-        let height = layout.height.max(1.0);
-        let viewbox_x = -gitgraph.offset_x;
-        let viewbox_y = -gitgraph.offset_y;
-        (
-            width,
-            height,
-            viewbox_x,
-            viewbox_y,
-            gitgraph.width,
-            gitgraph.height,
-        )
-    } else if layout.kind == crate::ir::DiagramKind::Mindmap {
-        let pad = config.mindmap.padding;
-        let mut min_x = f32::MAX;
-        let mut min_y = f32::MAX;
-        let mut max_x = f32::MIN;
-        let mut max_y = f32::MIN;
-        for node in layout.nodes.values() {
-            min_x = min_x.min(node.x);
-            min_y = min_y.min(node.y);
-            max_x = max_x.max(node.x + node.width);
-            max_y = max_y.max(node.y + node.height);
-        }
-        if min_x == f32::MAX {
-            min_x = 0.0;
-            max_x = 1.0;
-        }
-        if min_y == f32::MAX {
-            min_y = 0.0;
-            max_y = 1.0;
-        }
-        let width = (max_x - min_x + pad * 2.0).max(1.0);
-        let height = (max_y - min_y + pad * 2.0).max(1.0);
-        let viewbox_x = min_x - pad;
-        let viewbox_y = min_y - pad;
-        (width, height, viewbox_x, viewbox_y, width, height)
-    } else {
-        let width = layout.width.max(1.0);
-        let height = layout.height.max(1.0);
-        (width, height, 0.0, 0.0, width, height)
-    };
+    let (width, height, viewbox_x, viewbox_y, viewbox_width, viewbox_height) =
+        if let Some(error) = layout.error.as_ref() {
+            (
+                error.render_width,
+                error.render_height,
+                0.0,
+                0.0,
+                error.viewbox_width,
+                error.viewbox_height,
+            )
+        } else if layout.kind == crate::ir::DiagramKind::Requirement {
+            let pad_x = config.requirement.render_padding_x;
+            let pad_y = config.requirement.render_padding_y;
+            let mut width = layout.width + pad_x * 2.0;
+            let mut height = layout.height + pad_y * 2.0;
+            width = width.max(1.0);
+            height = height.max(1.0);
+            (width, height, 0.0, 0.0, width, height)
+        } else if let Some(c4) = layout.c4.as_ref() {
+            let width = layout.width.max(1.0);
+            let height = layout.height.max(1.0);
+            (
+                width,
+                height,
+                c4.viewbox_x,
+                c4.viewbox_y,
+                c4.viewbox_width,
+                c4.viewbox_height,
+            )
+        } else if let Some(gitgraph) = layout.gitgraph.as_ref() {
+            let width = layout.width.max(1.0);
+            let height = layout.height.max(1.0);
+            let viewbox_x = -gitgraph.offset_x;
+            let viewbox_y = -gitgraph.offset_y;
+            (
+                width,
+                height,
+                viewbox_x,
+                viewbox_y,
+                gitgraph.width,
+                gitgraph.height,
+            )
+        } else if layout.kind == crate::ir::DiagramKind::Mindmap {
+            let pad = config.mindmap.padding;
+            let mut min_x = f32::MAX;
+            let mut min_y = f32::MAX;
+            let mut max_x = f32::MIN;
+            let mut max_y = f32::MIN;
+            for node in layout.nodes.values() {
+                min_x = min_x.min(node.x);
+                min_y = min_y.min(node.y);
+                max_x = max_x.max(node.x + node.width);
+                max_y = max_y.max(node.y + node.height);
+            }
+            if min_x == f32::MAX {
+                min_x = 0.0;
+                max_x = 1.0;
+            }
+            if min_y == f32::MAX {
+                min_y = 0.0;
+                max_y = 1.0;
+            }
+            let width = (max_x - min_x + pad * 2.0).max(1.0);
+            let height = (max_y - min_y + pad * 2.0).max(1.0);
+            let viewbox_x = min_x - pad;
+            let viewbox_y = min_y - pad;
+            (width, height, viewbox_x, viewbox_y, width, height)
+        } else {
+            let width = layout.width.max(1.0);
+            let height = layout.height.max(1.0);
+            (width, height, 0.0, 0.0, width, height)
+        };
     let is_sequence = !layout.sequence_footboxes.is_empty();
     let is_state = layout.kind == crate::ir::DiagramKind::State;
     let is_class = layout.kind == crate::ir::DiagramKind::Class;
@@ -2932,25 +2926,25 @@ fn render_c4_shape(shape: &C4ShapeLayout, conf: &crate::config::C4Config) -> Str
         escape_xml(&shape.type_label.text)
     ));
 
-    if let Some(image_y) = shape.image_y {
-        if matches!(
+    if let Some(image_y) = shape.image_y
+        && matches!(
             shape.kind,
             crate::ir::C4ShapeKind::Person | crate::ir::C4ShapeKind::ExternalPerson
-        ) {
-            let icon = match shape.kind {
-                crate::ir::C4ShapeKind::ExternalPerson => C4_EXTERNAL_PERSON_ICON,
-                crate::ir::C4ShapeKind::Person => C4_PERSON_ICON,
-                _ => C4_PERSON_ICON,
-            };
-            svg.push_str(&format!(
-                "<image width=\"{:.0}\" height=\"{:.0}\" x=\"{:.0}\" y=\"{:.0}\" xlink:href=\"{}\"/>",
-                conf.person_icon_size,
-                conf.person_icon_size,
-                shape.x + shape.width / 2.0 - conf.person_icon_size / 2.0,
-                shape.y + image_y,
-                icon
-            ));
-        }
+        )
+    {
+        let icon = match shape.kind {
+            crate::ir::C4ShapeKind::ExternalPerson => C4_EXTERNAL_PERSON_ICON,
+            crate::ir::C4ShapeKind::Person => C4_PERSON_ICON,
+            _ => C4_PERSON_ICON,
+        };
+        svg.push_str(&format!(
+            "<image width=\"{:.0}\" height=\"{:.0}\" x=\"{:.0}\" y=\"{:.0}\" xlink:href=\"{}\"/>",
+            conf.person_icon_size,
+            conf.person_icon_size,
+            shape.x + shape.width / 2.0 - conf.person_icon_size / 2.0,
+            shape.y + image_y,
+            icon
+        ));
     }
 
     let label_font_size = c4_shape_font_size(conf, shape.kind) + 2.0;

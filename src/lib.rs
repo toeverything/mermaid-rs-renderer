@@ -4,6 +4,7 @@
 #![allow(clippy::redundant_locals)]
 #![allow(clippy::manual_clamp)]
 #![allow(clippy::question_mark)]
+#![allow(clippy::if_same_then_else)]
 
 //! # mmdr - Fast Mermaid Diagram Renderer
 //!

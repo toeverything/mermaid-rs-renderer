@@ -933,11 +933,11 @@ fn merge_init_config(mut config: Config, init: serde_json::Value) -> Config {
         if let Some(val) = gitgraph.get("branchDasharray").and_then(|v| v.as_str()) {
             config.layout.gitgraph.branch_dasharray = val.to_string();
         }
-        if let Some(val) = gitgraph.get("commitSpacing").and_then(|v| v.as_f64()) {
-            if !commit_step_set {
-                let step = (val as f32 - config.layout.gitgraph.layout_offset).max(1.0);
-                config.layout.gitgraph.commit_step = step;
-            }
+        if let Some(val) = gitgraph.get("commitSpacing").and_then(|v| v.as_f64())
+            && !commit_step_set
+        {
+            let step = (val as f32 - config.layout.gitgraph.layout_offset).max(1.0);
+            config.layout.gitgraph.commit_step = step;
         }
     }
     if let Some(c4) = init.get("c4").and_then(|v| v.as_object()) {

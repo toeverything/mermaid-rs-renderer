@@ -861,6 +861,7 @@ impl C4Bounds {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn layout_c4_boundaries(
     parent_bounds: &mut C4Bounds,
     boundary_ids: &[String],
@@ -1568,17 +1569,17 @@ fn mindmap_subtree_height(
         return 0.0;
     };
     let mut height = node.height;
-    if let Some(node_info) = info.get(node_id) {
-        if !node_info.children.is_empty() {
-            let mut total = 0.0;
-            for child in &node_info.children {
-                total += mindmap_subtree_height(child, info, nodes, memo, spacing);
-            }
-            if node_info.children.len() > 1 {
-                total += spacing * (node_info.children.len() as f32 - 1.0);
-            }
-            height = height.max(total);
+    if let Some(node_info) = info.get(node_id)
+        && !node_info.children.is_empty()
+    {
+        let mut total = 0.0;
+        for child in &node_info.children {
+            total += mindmap_subtree_height(child, info, nodes, memo, spacing);
         }
+        if node_info.children.len() > 1 {
+            total += spacing * (node_info.children.len() as f32 - 1.0);
+        }
+        height = height.max(total);
     }
     memo.insert(node_id.to_string(), height);
     height
@@ -1788,7 +1789,7 @@ fn compute_mindmap_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -
                     .get(child_id)
                     .and_then(|child| child.section)
                     .unwrap_or(0);
-                if section % 2 == 0 {
+                if section.is_multiple_of(2) {
                     right_children.push(child_id.clone());
                 } else {
                     left_children.push(child_id.clone());
@@ -2272,7 +2273,7 @@ fn compute_gitgraph_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
                     let mut color_index =
                         branch_pos.get(&commit_b.branch).map(|v| v.1).unwrap_or(0);
                     if commit_b.commit_type == crate::ir::GitGraphCommitType::Merge
-                        && commit_a.id != commit_b.parents.get(0).cloned().unwrap_or_default()
+                        && commit_a.id != commit_b.parents.first().cloned().unwrap_or_default()
                     {
                         color_index = branch_pos
                             .get(&commit_a.branch)
@@ -2495,11 +2496,11 @@ fn gitgraph_find_closest_parent_bt(
     let mut chosen: Option<String> = None;
     let mut max_pos = f32::INFINITY;
     for parent in parents {
-        if let Some((_x, y)) = commit_pos.get(parent) {
-            if *y <= max_pos {
-                max_pos = *y;
-                chosen = Some(parent.clone());
-            }
+        if let Some((_x, y)) = commit_pos.get(parent)
+            && *y <= max_pos
+        {
+            max_pos = *y;
+            chosen = Some(parent.clone());
         }
     }
     chosen
@@ -2579,23 +2580,21 @@ fn gitgraph_set_parallel_bt_pos(
         gitgraph_set_root_position(commit, cur_pos, default_pos, branch_pos, commit_pos);
     }
     for commit in commits {
-        if !commit.parents.is_empty() {
-            if let Some(closest_parent) =
+        if !commit.parents.is_empty()
+            && let Some(closest_parent) =
                 gitgraph_find_closest_parent_bt(&commit.parents, commit_pos)
-            {
-                if let Some((_x, y)) = commit_pos.get(&closest_parent) {
-                    cur_pos = *y - commit_step;
-                    if cur_pos <= max_position {
-                        max_position = cur_pos;
-                    }
-                    let x = branch_pos
-                        .get(&commit.branch)
-                        .map(|value| value.0)
-                        .unwrap_or(0.0);
-                    let y = cur_pos - layout_offset;
-                    commit_pos.insert(commit.id.clone(), (x, y));
-                }
+            && let Some((_x, y)) = commit_pos.get(&closest_parent)
+        {
+            cur_pos = *y - commit_step;
+            if cur_pos <= max_position {
+                max_position = cur_pos;
             }
+            let x = branch_pos
+                .get(&commit.branch)
+                .map(|value| value.0)
+                .unwrap_or(0.0);
+            let y = cur_pos - layout_offset;
+            commit_pos.insert(commit.id.clone(), (x, y));
         }
     }
 }
@@ -2846,7 +2845,12 @@ fn gitgraph_arrow_path(
         Direction::TopDown => {
             if p1x < p2x {
                 if commit_b.commit_type == crate::ir::GitGraphCommitType::Merge
-                    && commit_a.id != commit_b.parents.get(0).cloned().unwrap_or_else(String::new)
+                    && commit_a.id
+                        != commit_b
+                            .parents
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(String::new)
                 {
                     line_def = format!(
                         "M {p1x} {p1y} L {p1x} {y1} {arc} {x1} {p2y} L {p2x} {p2y}",
@@ -2863,7 +2867,12 @@ fn gitgraph_arrow_path(
             }
             if p1x > p2x {
                 if commit_b.commit_type == crate::ir::GitGraphCommitType::Merge
-                    && commit_a.id != commit_b.parents.get(0).cloned().unwrap_or_else(String::new)
+                    && commit_a.id
+                        != commit_b
+                            .parents
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(String::new)
                 {
                     line_def = format!(
                         "M {p1x} {p1y} L {p1x} {y1} {arc2} {x1} {p2y} L {p2x} {p2y}",
@@ -2885,7 +2894,12 @@ fn gitgraph_arrow_path(
         Direction::BottomTop => {
             if p1x < p2x {
                 if commit_b.commit_type == crate::ir::GitGraphCommitType::Merge
-                    && commit_a.id != commit_b.parents.get(0).cloned().unwrap_or_else(String::new)
+                    && commit_a.id
+                        != commit_b
+                            .parents
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(String::new)
                 {
                     line_def = format!(
                         "M {p1x} {p1y} L {p1x} {y1} {arc2} {x1} {p2y} L {p2x} {p2y}",
@@ -2902,7 +2916,12 @@ fn gitgraph_arrow_path(
             }
             if p1x > p2x {
                 if commit_b.commit_type == crate::ir::GitGraphCommitType::Merge
-                    && commit_a.id != commit_b.parents.get(0).cloned().unwrap_or_else(String::new)
+                    && commit_a.id
+                        != commit_b
+                            .parents
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(String::new)
                 {
                     line_def = format!(
                         "M {p1x} {p1y} L {p1x} {y1} {arc} {x1} {p2y} L {p2x} {p2y}",
@@ -2924,7 +2943,12 @@ fn gitgraph_arrow_path(
         _ => {
             if p1y < p2y {
                 if commit_b.commit_type == crate::ir::GitGraphCommitType::Merge
-                    && commit_a.id != commit_b.parents.get(0).cloned().unwrap_or_else(String::new)
+                    && commit_a.id
+                        != commit_b
+                            .parents
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(String::new)
                 {
                     line_def = format!(
                         "M {p1x} {p1y} L {x1} {p1y} {arc2} {p2x} {y1} L {p2x} {p2y}",
@@ -2941,7 +2965,12 @@ fn gitgraph_arrow_path(
             }
             if p1y > p2y {
                 if commit_b.commit_type == crate::ir::GitGraphCommitType::Merge
-                    && commit_a.id != commit_b.parents.get(0).cloned().unwrap_or_else(String::new)
+                    && commit_a.id
+                        != commit_b
+                            .parents
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(String::new)
                 {
                     line_def = format!(
                         "M {p1x} {p1y} L {x1} {p1y} {arc} {p2x} {y1} L {p2x} {p2y}",
@@ -3417,6 +3446,7 @@ fn pie_palette(theme: &Theme) -> Vec<String> {
     theme.pie_colors.to_vec()
 }
 
+#[allow(dead_code)]
 fn format_pie_value(value: f32) -> String {
     let rounded = (value * 100.0).round() / 100.0;
     if (rounded - rounded.round()).abs() < 0.001 {
@@ -4261,7 +4291,7 @@ fn compute_xychart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -
         .max(1);
     let bar_width = (bar_group_width - bar_padding * 2.0) / bar_count as f32;
 
-    let colors = vec![
+    let colors = [
         "#4e79a7".to_string(),
         "#f28e2c".to_string(),
         "#e15759".to_string(),

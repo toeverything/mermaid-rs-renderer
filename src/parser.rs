@@ -999,7 +999,7 @@ fn parse_sequence_box_line(line: &str) -> Option<(Option<String>, Option<String>
         None
     };
     let label = label.filter(|value| !value.trim().is_empty());
-    let color = color.filter(|value| value.to_ascii_lowercase() != "transparent");
+    let color = color.filter(|value| !value.eq_ignore_ascii_case("transparent"));
     Some((color, label))
 }
 
@@ -1735,9 +1735,7 @@ fn parse_mindmap_node_token(
     let mut label = trimmed.to_string();
     let mut node_type = crate::ir::MindmapNodeType::Default;
 
-    let shape_start = trimmed
-        .find(|ch: char| ch == '[' || ch == '(' || ch == '{')
-        .unwrap_or(0);
+    let shape_start = trimmed.find(['[', '(', '{']).unwrap_or(0);
     if shape_start > 0 && !trimmed[..shape_start].contains(' ') {
         id = trimmed[..shape_start].trim().to_string();
         let raw = trimmed[shape_start..].trim();
@@ -1791,10 +1789,8 @@ fn sanitize_id(input: &str) -> String {
     for ch in input.chars() {
         if ch.is_alphanumeric() {
             out.push(ch);
-        } else if ch.is_whitespace() || ch == '-' || ch == '_' {
-            if !out.ends_with('_') {
-                out.push('_');
-            }
+        } else if (ch.is_whitespace() || ch == '-' || ch == '_') && !out.ends_with('_') {
+            out.push('_');
         }
     }
     out.trim_matches('_').to_string()
@@ -1849,10 +1845,10 @@ fn parse_journey_diagram(input: &str) -> Result<ParseOutput> {
                 Some(node_label),
                 Some(crate::ir::NodeShape::Rectangle),
             );
-            if let Some(idx) = current_section {
-                if let Some(subgraph) = graph.subgraphs.get_mut(idx) {
-                    subgraph.nodes.push(node_id.clone());
-                }
+            if let Some(idx) = current_section
+                && let Some(subgraph) = graph.subgraphs.get_mut(idx)
+            {
+                subgraph.nodes.push(node_id.clone());
             }
             if let Some(prev) = last_task.take() {
                 graph.edges.push(crate::ir::Edge {
@@ -1888,7 +1884,7 @@ fn parse_journey_task_line(line: &str) -> Option<(String, Option<String>, Vec<St
         return None;
     }
     let score = parts
-        .get(0)
+        .first()
         .map(|value| value.to_string())
         .filter(|value| !value.is_empty());
     let actors = if parts.len() >= 2 {
@@ -2076,10 +2072,10 @@ fn parse_gantt_diagram(input: &str) -> Result<ParseOutput> {
                 Some(node_label),
                 Some(crate::ir::NodeShape::Rectangle),
             );
-            if let Some(idx) = current_section {
-                if let Some(subgraph) = graph.subgraphs.get_mut(idx) {
-                    subgraph.nodes.push(node_id.clone());
-                }
+            if let Some(idx) = current_section
+                && let Some(subgraph) = graph.subgraphs.get_mut(idx)
+            {
+                subgraph.nodes.push(node_id.clone());
             }
 
             if let Some(after_id) = after {
@@ -2743,10 +2739,8 @@ fn parse_c4_diagram(input: &str) -> Result<ParseOutput> {
                 if !after_trimmed.is_empty() {
                     process_c4_line(after_trimmed, &mut graph.c4, &mut boundary_stack);
                 }
-                if closes {
-                    if boundary_stack.len() > 1 {
-                        boundary_stack.pop();
-                    }
+                if closes && boundary_stack.len() > 1 {
+                    boundary_stack.pop();
                 }
             }
             continue;
@@ -2764,7 +2758,7 @@ fn process_c4_line(line: &str, c4: &mut crate::ir::C4Data, boundary_stack: &mut 
         let (positional, kv) = parse_c4_args(&args);
         if is_c4_boundary(&func_lower) {
             let id = positional
-                .get(0)
+                .first()
                 .cloned()
                 .unwrap_or_else(|| format!("boundary_{}", c4.boundaries.len()));
             let label = positional.get(1).cloned().unwrap_or_else(|| id.clone());
@@ -2842,7 +2836,7 @@ fn process_c4_line(line: &str, c4: &mut crate::ir::C4Data, boundary_stack: &mut 
             || func_lower == "updateelstyle"
         {
             let element = positional
-                .get(0)
+                .first()
                 .cloned()
                 .or_else(|| get_c4_kv(&kv, "element"));
             if let Some(element) = element {
@@ -2889,34 +2883,32 @@ fn process_c4_line(line: &str, c4: &mut crate::ir::C4Data, boundary_stack: &mut 
 
         if func_lower == "updaterelstyle" || func_lower == "update_rel_style" {
             let from = positional
-                .get(0)
+                .first()
                 .cloned()
                 .or_else(|| get_c4_kv(&kv, "from"));
             let to = positional.get(1).cloned().or_else(|| get_c4_kv(&kv, "to"));
-            if let (Some(from), Some(to)) = (from, to) {
-                if let Some(rel) = c4.rels.iter_mut().find(|r| r.from == from && r.to == to) {
-                    let text_color =
-                        get_c4_kv(&kv, "textColor").or_else(|| positional.get(2).cloned());
-                    let line_color =
-                        get_c4_kv(&kv, "lineColor").or_else(|| positional.get(3).cloned());
-                    let offset_x = get_c4_kv(&kv, "offsetX").or_else(|| positional.get(4).cloned());
-                    let offset_y = get_c4_kv(&kv, "offsetY").or_else(|| positional.get(5).cloned());
-                    if let Some(val) = text_color {
-                        rel.text_color = Some(val);
-                    }
-                    if let Some(val) = line_color {
-                        rel.line_color = Some(val);
-                    }
-                    if let Some(val) = offset_x {
-                        if let Ok(num) = val.trim().parse::<f32>() {
-                            rel.offset_x = num;
-                        }
-                    }
-                    if let Some(val) = offset_y {
-                        if let Ok(num) = val.trim().parse::<f32>() {
-                            rel.offset_y = num;
-                        }
-                    }
+            if let (Some(from), Some(to)) = (from, to)
+                && let Some(rel) = c4.rels.iter_mut().find(|r| r.from == from && r.to == to)
+            {
+                let text_color = get_c4_kv(&kv, "textColor").or_else(|| positional.get(2).cloned());
+                let line_color = get_c4_kv(&kv, "lineColor").or_else(|| positional.get(3).cloned());
+                let offset_x = get_c4_kv(&kv, "offsetX").or_else(|| positional.get(4).cloned());
+                let offset_y = get_c4_kv(&kv, "offsetY").or_else(|| positional.get(5).cloned());
+                if let Some(val) = text_color {
+                    rel.text_color = Some(val);
+                }
+                if let Some(val) = line_color {
+                    rel.line_color = Some(val);
+                }
+                if let Some(val) = offset_x
+                    && let Ok(num) = val.trim().parse::<f32>()
+                {
+                    rel.offset_x = num;
+                }
+                if let Some(val) = offset_y
+                    && let Ok(num) = val.trim().parse::<f32>()
+                {
+                    rel.offset_y = num;
                 }
             }
             return;
@@ -2924,103 +2916,101 @@ fn process_c4_line(line: &str, c4: &mut crate::ir::C4Data, boundary_stack: &mut 
 
         if func_lower == "updatelayoutconfig" || func_lower == "update_layout_config" {
             let shape_in_row =
-                get_c4_kv(&kv, "c4ShapeInRow").or_else(|| positional.get(0).cloned());
+                get_c4_kv(&kv, "c4ShapeInRow").or_else(|| positional.first().cloned());
             let boundary_in_row =
                 get_c4_kv(&kv, "c4BoundaryInRow").or_else(|| positional.get(1).cloned());
-            if let Some(val) = shape_in_row {
-                if let Ok(num) = val.trim().parse::<usize>() {
-                    if num >= 1 {
-                        c4.c4_shape_in_row_override = Some(num);
-                    }
-                }
+            if let Some(val) = shape_in_row
+                && let Ok(num) = val.trim().parse::<usize>()
+                && num >= 1
+            {
+                c4.c4_shape_in_row_override = Some(num);
             }
-            if let Some(val) = boundary_in_row {
-                if let Ok(num) = val.trim().parse::<usize>() {
-                    if num >= 1 {
-                        c4.c4_boundary_in_row_override = Some(num);
-                    }
-                }
+            if let Some(val) = boundary_in_row
+                && let Ok(num) = val.trim().parse::<usize>()
+                && num >= 1
+            {
+                c4.c4_boundary_in_row_override = Some(num);
             }
             return;
         }
 
-        if let Some(kind) = c4_shape_kind_for(&func_lower) {
-            if let Some(id) = positional.get(0).cloned() {
-                let label = positional.get(1).cloned().unwrap_or_else(|| id.clone());
-                let mut type_label: Option<String> = None;
-                let mut techn: Option<String> = None;
-                let mut descr: Option<String> = None;
-                let mut sprite: Option<String> = None;
-                let mut tags: Option<String> = None;
-                let mut link: Option<String> = None;
-                if let Some(value) = kv.get("type") {
-                    type_label = Some(value.clone());
-                }
-                if let Some(value) = kv.get("techn").or_else(|| kv.get("technology")) {
-                    techn = Some(value.clone());
-                }
-                if let Some(value) = kv.get("descr").or_else(|| kv.get("description")) {
-                    descr = Some(value.clone());
-                }
-                if let Some(value) = kv.get("sprite") {
-                    sprite = Some(value.clone());
-                }
-                if let Some(value) = kv.get("tags") {
-                    tags = Some(value.clone());
-                }
-                if let Some(value) = kv.get("link") {
-                    link = Some(value.clone());
-                }
-                if kind_uses_techn(kind) {
-                    if techn.is_none() {
-                        techn = positional.get(2).cloned();
-                    }
-                    if descr.is_none() {
-                        descr = positional.get(3).cloned();
-                    }
-                    if sprite.is_none() {
-                        sprite = positional.get(4).cloned();
-                    }
-                    if tags.is_none() {
-                        tags = positional.get(5).cloned();
-                    }
-                    if link.is_none() {
-                        link = positional.get(6).cloned();
-                    }
-                } else {
-                    if type_label.is_none() {
-                        type_label = positional.get(2).cloned();
-                    }
-                    if descr.is_none() {
-                        descr = positional.get(3).cloned();
-                    }
-                    if sprite.is_none() {
-                        sprite = positional.get(4).cloned();
-                    }
-                    if tags.is_none() {
-                        tags = positional.get(5).cloned();
-                    }
-                    if link.is_none() {
-                        link = positional.get(6).cloned();
-                    }
-                }
-                let parent_boundary = boundary_stack.last().cloned().unwrap_or_default();
-                c4.shapes.push(crate::ir::C4Shape {
-                    id,
-                    label,
-                    type_label,
-                    techn,
-                    descr,
-                    sprite,
-                    tags,
-                    link,
-                    parent_boundary,
-                    kind,
-                    bg_color: None,
-                    border_color: None,
-                    font_color: None,
-                });
+        if let Some(kind) = c4_shape_kind_for(&func_lower)
+            && let Some(id) = positional.first().cloned()
+        {
+            let label = positional.get(1).cloned().unwrap_or_else(|| id.clone());
+            let mut type_label: Option<String> = None;
+            let mut techn: Option<String> = None;
+            let mut descr: Option<String> = None;
+            let mut sprite: Option<String> = None;
+            let mut tags: Option<String> = None;
+            let mut link: Option<String> = None;
+            if let Some(value) = kv.get("type") {
+                type_label = Some(value.clone());
             }
+            if let Some(value) = kv.get("techn").or_else(|| kv.get("technology")) {
+                techn = Some(value.clone());
+            }
+            if let Some(value) = kv.get("descr").or_else(|| kv.get("description")) {
+                descr = Some(value.clone());
+            }
+            if let Some(value) = kv.get("sprite") {
+                sprite = Some(value.clone());
+            }
+            if let Some(value) = kv.get("tags") {
+                tags = Some(value.clone());
+            }
+            if let Some(value) = kv.get("link") {
+                link = Some(value.clone());
+            }
+            if kind_uses_techn(kind) {
+                if techn.is_none() {
+                    techn = positional.get(2).cloned();
+                }
+                if descr.is_none() {
+                    descr = positional.get(3).cloned();
+                }
+                if sprite.is_none() {
+                    sprite = positional.get(4).cloned();
+                }
+                if tags.is_none() {
+                    tags = positional.get(5).cloned();
+                }
+                if link.is_none() {
+                    link = positional.get(6).cloned();
+                }
+            } else {
+                if type_label.is_none() {
+                    type_label = positional.get(2).cloned();
+                }
+                if descr.is_none() {
+                    descr = positional.get(3).cloned();
+                }
+                if sprite.is_none() {
+                    sprite = positional.get(4).cloned();
+                }
+                if tags.is_none() {
+                    tags = positional.get(5).cloned();
+                }
+                if link.is_none() {
+                    link = positional.get(6).cloned();
+                }
+            }
+            let parent_boundary = boundary_stack.last().cloned().unwrap_or_default();
+            c4.shapes.push(crate::ir::C4Shape {
+                id,
+                label,
+                type_label,
+                techn,
+                descr,
+                sprite,
+                tags,
+                link,
+                parent_boundary,
+                kind,
+                bg_color: None,
+                border_color: None,
+                font_color: None,
+            });
         }
     }
 }
@@ -3638,16 +3628,16 @@ fn parse_kanban_diagram(input: &str) -> Result<ParseOutput> {
             id = format!("{}_{}", id, graph.nodes.len());
         }
         let mut node_label = label.unwrap_or_else(|| id.clone());
-        if let Some(meta) = meta {
-            if !meta.is_empty() {
-                node_label.push_str(&format!("\n{}", meta));
-            }
+        if let Some(meta) = meta
+            && !meta.is_empty()
+        {
+            node_label.push_str(&format!("\n{}", meta));
         }
         graph.ensure_node(&id, Some(node_label), Some(crate::ir::NodeShape::Rectangle));
-        if let Some(idx) = current_section {
-            if let Some(subgraph) = graph.subgraphs.get_mut(idx) {
-                subgraph.nodes.push(id);
-            }
+        if let Some(idx) = current_section
+            && let Some(subgraph) = graph.subgraphs.get_mut(idx)
+        {
+            subgraph.nodes.push(id);
         }
     }
 
@@ -3682,12 +3672,11 @@ fn parse_architecture_diagram(input: &str) -> Result<ParseOutput> {
                     groups.insert(id, graph.subgraphs.len() - 1);
                 } else {
                     graph.ensure_node(&id, Some(label), Some(crate::ir::NodeShape::Rectangle));
-                    if let Some(parent_id) = parent {
-                        if let Some(idx) = groups.get(&parent_id).copied() {
-                            if let Some(subgraph) = graph.subgraphs.get_mut(idx) {
-                                subgraph.nodes.push(id.clone());
-                            }
-                        }
+                    if let Some(parent_id) = parent
+                        && let Some(idx) = groups.get(&parent_id).copied()
+                        && let Some(subgraph) = graph.subgraphs.get_mut(idx)
+                    {
+                        subgraph.nodes.push(id.clone());
                     }
                 }
             }
@@ -3767,7 +3756,7 @@ fn parse_architecture_edge(line: &str) -> Option<(String, String)> {
 }
 
 fn strip_arch_port(token: &str) -> &str {
-    token.split(':').last().unwrap_or(token).trim()
+    token.split(':').next_back().unwrap_or(token).trim()
 }
 
 fn parse_radar_diagram(input: &str) -> Result<ParseOutput> {
@@ -3795,26 +3784,26 @@ fn parse_radar_diagram(input: &str) -> Result<ParseOutput> {
                 .collect();
             continue;
         }
-        if lower.starts_with("curve") {
-            if let Some((name, values)) = parse_radar_curve(line) {
-                let node_id = format!("radar_{}", graph.nodes.len());
-                let mut label_lines = Vec::new();
-                label_lines.push(name);
-                if !values.is_empty() {
-                    for (idx, value) in values.iter().enumerate() {
-                        if let Some(axis) = axes.get(idx) {
-                            label_lines.push(format!("{}: {}", axis, value));
-                        } else {
-                            label_lines.push(value.to_string());
-                        }
+        if lower.starts_with("curve")
+            && let Some((name, values)) = parse_radar_curve(line)
+        {
+            let node_id = format!("radar_{}", graph.nodes.len());
+            let mut label_lines = Vec::new();
+            label_lines.push(name);
+            if !values.is_empty() {
+                for (idx, value) in values.iter().enumerate() {
+                    if let Some(axis) = axes.get(idx) {
+                        label_lines.push(format!("{}: {}", axis, value));
+                    } else {
+                        label_lines.push(value.to_string());
                     }
                 }
-                graph.ensure_node(
-                    &node_id,
-                    Some(label_lines.join("\n")),
-                    Some(crate::ir::NodeShape::Circle),
-                );
             }
+            graph.ensure_node(
+                &node_id,
+                Some(label_lines.join("\n")),
+                Some(crate::ir::NodeShape::Circle),
+            );
         }
     }
 
@@ -4082,6 +4071,7 @@ fn parse_xy_axis_categories(rest: &str) -> Vec<String> {
         .collect()
 }
 
+#[allow(dead_code)]
 fn parse_xy_series_line(line: &str) -> Option<(String, Vec<String>)> {
     let mut parts = line.splitn(2, ' ');
     let series = parts.next()?.trim().to_string();
@@ -5371,12 +5361,11 @@ fn parse_click_line(line: &str) -> Option<(String, crate::ir::NodeLink)> {
             idx += 1;
         }
     }
-    if target.is_none() {
-        if let Some(token) = tokens.get(idx) {
-            if token.starts_with('_') {
-                target = Some(token.clone());
-            }
-        }
+    if target.is_none()
+        && let Some(token) = tokens.get(idx)
+        && token.starts_with('_')
+    {
+        target = Some(token.clone());
     }
 
     Some((id, crate::ir::NodeLink { url, title, target }))

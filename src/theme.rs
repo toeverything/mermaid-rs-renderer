@@ -202,7 +202,7 @@ fn adjust_color(color: &str, delta_h: f32, delta_s: f32, delta_l: f32) -> String
     if h < 0.0 {
         h = (h % 360.0) + 360.0;
     } else if h >= 360.0 {
-        h = h % 360.0;
+        h %= 360.0;
     }
     let s = (s + delta_s).clamp(0.0, 100.0);
     let l = (l + delta_l).clamp(0.0, 100.0);

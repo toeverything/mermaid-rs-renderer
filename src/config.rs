@@ -606,27 +606,18 @@ impl Default for C4Config {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum TreemapRenderMode {
+    #[default]
     Error,
     Flowchart,
 }
 
-impl Default for TreemapRenderMode {
-    fn default() -> Self {
-        Self::Error
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum PieRenderMode {
+    #[default]
     Error,
     Chart,
-}
-
-impl Default for PieRenderMode {
-    fn default() -> Self {
-        Self::Error
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1461,26 +1452,26 @@ pub fn load_config(path: Option<&Path>) -> anyhow::Result<Config> {
         if let Some(v) = vars.pie12 {
             config.theme.pie_colors[11] = v;
         }
-        if let Some(v) = vars.pie_title_text_size {
-            if let Some(size) = v.as_f32() {
-                config.theme.pie_title_text_size = size;
-            }
+        if let Some(v) = vars.pie_title_text_size
+            && let Some(size) = v.as_f32()
+        {
+            config.theme.pie_title_text_size = size;
         }
         if let Some(v) = vars.pie_title_text_color {
             config.theme.pie_title_text_color = v;
         }
-        if let Some(v) = vars.pie_section_text_size {
-            if let Some(size) = v.as_f32() {
-                config.theme.pie_section_text_size = size;
-            }
+        if let Some(v) = vars.pie_section_text_size
+            && let Some(size) = v.as_f32()
+        {
+            config.theme.pie_section_text_size = size;
         }
         if let Some(v) = vars.pie_section_text_color {
             config.theme.pie_section_text_color = v;
         }
-        if let Some(v) = vars.pie_legend_text_size {
-            if let Some(size) = v.as_f32() {
-                config.theme.pie_legend_text_size = size;
-            }
+        if let Some(v) = vars.pie_legend_text_size
+            && let Some(size) = v.as_f32()
+        {
+            config.theme.pie_legend_text_size = size;
         }
         if let Some(v) = vars.pie_legend_text_color {
             config.theme.pie_legend_text_color = v;
@@ -1488,23 +1479,23 @@ pub fn load_config(path: Option<&Path>) -> anyhow::Result<Config> {
         if let Some(v) = vars.pie_stroke_color {
             config.theme.pie_stroke_color = v;
         }
-        if let Some(v) = vars.pie_stroke_width {
-            if let Some(width) = v.as_f32() {
-                config.theme.pie_stroke_width = width;
-            }
+        if let Some(v) = vars.pie_stroke_width
+            && let Some(width) = v.as_f32()
+        {
+            config.theme.pie_stroke_width = width;
         }
-        if let Some(v) = vars.pie_outer_stroke_width {
-            if let Some(width) = v.as_f32() {
-                config.theme.pie_outer_stroke_width = width;
-            }
+        if let Some(v) = vars.pie_outer_stroke_width
+            && let Some(width) = v.as_f32()
+        {
+            config.theme.pie_outer_stroke_width = width;
         }
         if let Some(v) = vars.pie_outer_stroke_color {
             config.theme.pie_outer_stroke_color = v;
         }
-        if let Some(v) = vars.pie_opacity {
-            if let Some(opacity) = v.as_f32() {
-                config.theme.pie_opacity = opacity;
-            }
+        if let Some(v) = vars.pie_opacity
+            && let Some(opacity) = v.as_f32()
+        {
+            config.theme.pie_opacity = opacity;
         }
     }
 
@@ -1976,11 +1967,11 @@ pub fn load_config(path: Option<&Path>) -> anyhow::Result<Config> {
         if let Some(v) = gg.branch_dasharray {
             config.layout.gitgraph.branch_dasharray = v;
         }
-        if let Some(v) = gg.commit_spacing {
-            if !commit_step_set {
-                let step = (v - config.layout.gitgraph.layout_offset).max(1.0);
-                config.layout.gitgraph.commit_step = step;
-            }
+        if let Some(v) = gg.commit_spacing
+            && !commit_step_set
+        {
+            let step = (v - config.layout.gitgraph.layout_offset).max(1.0);
+            config.layout.gitgraph.commit_step = step;
         }
     }
 
