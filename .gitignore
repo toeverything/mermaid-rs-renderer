@@ -10,3 +10,4 @@ benchmark_table*.png
 
 # Local comparison outputs (generated, not tracked)
 /comparison/
+node_modules/
