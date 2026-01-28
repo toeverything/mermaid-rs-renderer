@@ -56,8 +56,11 @@ pub fn network_simplex(g: &mut Graph<GraphConfig, GraphNode, GraphEdge>) {
     e.is_some()
   } {
     f = enter_edge(&t, &g, &e.clone().unwrap());
-    if f.is_some() {
-      exchange_edges(&mut t, g, &e.clone().unwrap(), f.unwrap());
+    if let Some(f_edge) = f {
+      exchange_edges(&mut t, g, &e.clone().unwrap(), f_edge);
+    } else {
+      // No entering edge found - cannot make progress, exit to avoid infinite loop
+      break;
     }
   }
 }
