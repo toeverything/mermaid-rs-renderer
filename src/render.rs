@@ -1044,56 +1044,83 @@ fn points_to_path(points: &[(f32, f32)]) -> String {
         );
     }
 
-    // Check if this is an orthogonal path (only horizontal/vertical segments)
-    let is_orthogonal = is_orthogonal_path(&simplified);
+    let smoothed = smooth_corner_points(&simplified, 6.0);
 
-    if is_orthogonal {
-        // Use rounded corners for orthogonal paths
-        return orthogonal_path_with_rounded_corners(&simplified, 8.0);
+    // Use d3.curveBasis for smooth, mermaid-like edges
+    basis_path(&smoothed)
+}
+
+/// Generate an SVG path using d3.curveBasis (B-spline) interpolation.
+fn basis_path(points: &[(f32, f32)]) -> String {
+    if points.is_empty() {
+        return String::new();
+    }
+    if points.len() == 1 {
+        return format!("M {:.3},{:.3}", points[0].0, points[0].1);
     }
 
-    // Use monotone cubic interpolation for non-orthogonal paths
     let mut d = String::new();
-    d.push_str(&format!("M {:.3},{:.3}", simplified[0].0, simplified[0].1));
+    let mut x0 = f32::NAN;
+    let mut y0 = f32::NAN;
+    let mut x1 = f32::NAN;
+    let mut y1 = f32::NAN;
+    let mut point_state = 0;
 
-    let n = simplified.len();
-    let mut tangents: Vec<(f32, f32)> = Vec::with_capacity(n);
-
-    for i in 0..n {
-        if i == 0 {
-            tangents.push((simplified[1].0 - simplified[0].0, simplified[1].1 - simplified[0].1));
-        } else if i == n - 1 {
-            tangents.push((
-                simplified[n - 1].0 - simplified[n - 2].0,
-                simplified[n - 1].1 - simplified[n - 2].1,
-            ));
-        } else {
-            let dx1 = simplified[i].0 - simplified[i - 1].0;
-            let dy1 = simplified[i].1 - simplified[i - 1].1;
-            let dx2 = simplified[i + 1].0 - simplified[i].0;
-            let dy2 = simplified[i + 1].1 - simplified[i].1;
-            tangents.push(((dx1 + dx2) * 0.5, (dy1 + dy2) * 0.5));
+    for &(x, y) in points {
+        match point_state {
+            0 => {
+                point_state = 1;
+                d.push_str(&format!("M {:.3},{:.3}", x, y));
+            }
+            1 => {
+                point_state = 2;
+            }
+            2 => {
+                point_state = 3;
+                d.push_str(&format!(
+                    "L {:.3},{:.3}",
+                    (5.0 * x0 + x1) / 6.0,
+                    (5.0 * y0 + y1) / 6.0
+                ));
+                d.push_str(&basis_curve_segment(x0, y0, x1, y1, x, y));
+            }
+            _ => {
+                d.push_str(&basis_curve_segment(x0, y0, x1, y1, x, y));
+            }
         }
+
+        x0 = x1;
+        x1 = x;
+        y0 = y1;
+        y1 = y;
     }
 
-    for i in 0..n - 1 {
-        let p1 = simplified[i];
-        let p2 = simplified[i + 1];
-        let t1 = tangents[i];
-        let t2 = tangents[i + 1];
-
-        let cp1x = p1.0 + t1.0 / 3.0;
-        let cp1y = p1.1 + t1.1 / 3.0;
-        let cp2x = p2.0 - t2.0 / 3.0;
-        let cp2y = p2.1 - t2.1 / 3.0;
-
-        d.push_str(&format!(
-            "C{:.3},{:.3},{:.3},{:.3},{:.3},{:.3}",
-            cp1x, cp1y, cp2x, cp2y, p2.0, p2.1
-        ));
+    match point_state {
+        3 => {
+            d.push_str(&basis_curve_segment(x0, y0, x1, y1, x1, y1));
+            d.push_str(&format!("L {:.3},{:.3}", x1, y1));
+        }
+        2 => {
+            d.push_str(&format!("L {:.3},{:.3}", x1, y1));
+        }
+        _ => {}
     }
 
     d
+}
+
+fn basis_curve_segment(x0: f32, y0: f32, x1: f32, y1: f32, x: f32, y: f32) -> String {
+    let cp1x = (2.0 * x0 + x1) / 3.0;
+    let cp1y = (2.0 * y0 + y1) / 3.0;
+    let cp2x = (x0 + 2.0 * x1) / 3.0;
+    let cp2y = (y0 + 2.0 * y1) / 3.0;
+    let ex = (x0 + 4.0 * x1 + x) / 6.0;
+    let ey = (y0 + 4.0 * y1 + y) / 6.0;
+
+    format!(
+        "C{:.3},{:.3},{:.3},{:.3},{:.3},{:.3}",
+        cp1x, cp1y, cp2x, cp2y, ex, ey
+    )
 }
 
 /// Remove intermediate points that lie on a straight line
@@ -1103,7 +1130,7 @@ fn simplify_collinear_points(points: &[(f32, f32)]) -> Vec<(f32, f32)> {
     }
 
     let mut result = vec![points[0]];
-    
+
     for i in 1..points.len() - 1 {
         let prev = result.last().unwrap();
         let curr = points[i];
@@ -1112,7 +1139,7 @@ fn simplify_collinear_points(points: &[(f32, f32)]) -> Vec<(f32, f32)> {
         // Check if curr is collinear with prev and next
         // Using cross product: if (curr - prev) × (next - prev) ≈ 0, they're collinear
         let cross = (curr.0 - prev.0) * (next.1 - prev.1) - (curr.1 - prev.1) * (next.0 - prev.0);
-        
+
         if cross.abs() > 0.1 {
             // Not collinear, keep this point
             result.push(curr);
@@ -1123,74 +1150,44 @@ fn simplify_collinear_points(points: &[(f32, f32)]) -> Vec<(f32, f32)> {
     result
 }
 
-/// Check if a path consists only of horizontal and vertical segments
-fn is_orthogonal_path(points: &[(f32, f32)]) -> bool {
-    for i in 0..points.len() - 1 {
-        let dx = (points[i + 1].0 - points[i].0).abs();
-        let dy = (points[i + 1].1 - points[i].1).abs();
-        
-        // Either dx or dy should be near zero for orthogonal segments
-        if dx > 0.1 && dy > 0.1 {
-            return false;
-        }
-    }
-    true
-}
-
-/// Create an SVG path with rounded corners for orthogonal paths
-fn orthogonal_path_with_rounded_corners(points: &[(f32, f32)], radius: f32) -> String {
-    if points.len() < 2 {
-        return String::new();
+/// Soften orthogonal corners by inserting points near the turn.
+fn smooth_corner_points(points: &[(f32, f32)], radius: f32) -> Vec<(f32, f32)> {
+    if points.len() < 3 {
+        return points.to_vec();
     }
 
-    let mut d = format!("M {:.3},{:.3}", points[0].0, points[0].1);
+    let mut out = Vec::with_capacity(points.len() * 2);
+    out.push(points[0]);
 
     for i in 1..points.len() - 1 {
         let prev = points[i - 1];
         let curr = points[i];
         let next = points[i + 1];
 
-        // Calculate vectors
         let v1 = (curr.0 - prev.0, curr.1 - prev.1);
         let v2 = (next.0 - curr.0, next.1 - curr.1);
-
-        // Calculate lengths
         let len1 = (v1.0 * v1.0 + v1.1 * v1.1).sqrt();
         let len2 = (v2.0 * v2.0 + v2.1 * v2.1).sqrt();
 
-        // Limit radius to half the shortest segment
-        let r = radius.min(len1 / 2.0).min(len2 / 2.0);
-
-        if r < 1.0 {
-            // Too small for rounded corner, just use line
-            d.push_str(&format!("L{:.3},{:.3}", curr.0, curr.1));
+        if len1 < 1.0 || len2 < 1.0 {
+            out.push(curr);
             continue;
         }
 
-        // Normalize vectors
         let n1 = (v1.0 / len1, v1.1 / len1);
         let n2 = (v2.0 / len2, v2.1 / len2);
+        let r = radius.min(len1 * 0.5).min(len2 * 0.5);
 
-        // Points where the arc starts and ends
-        let arc_start = (curr.0 - n1.0 * r, curr.1 - n1.1 * r);
-        let arc_end = (curr.0 + n2.0 * r, curr.1 + n2.1 * r);
+        let before = (curr.0 - n1.0 * r, curr.1 - n1.1 * r);
+        let after = (curr.0 + n2.0 * r, curr.1 + n2.1 * r);
 
-        // Determine sweep direction (clockwise or counter-clockwise)
-        let cross = n1.0 * n2.1 - n1.1 * n2.0;
-        let sweep = if cross > 0.0 { 1 } else { 0 };
-
-        // Line to arc start, then arc to arc end
-        d.push_str(&format!(
-            "L{:.3},{:.3}A{:.3},{:.3} 0 0 {} {:.3},{:.3}",
-            arc_start.0, arc_start.1, r, r, sweep, arc_end.0, arc_end.1
-        ));
+        out.push(before);
+        out.push(curr);
+        out.push(after);
     }
 
-    // Line to final point
-    let last = points.last().unwrap();
-    d.push_str(&format!("L{:.3},{:.3}", last.0, last.1));
-
-    d
+    out.push(*points.last().unwrap());
+    out
 }
 
 fn format_sankey_value(value: f32) -> String {
