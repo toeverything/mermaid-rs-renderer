@@ -7725,104 +7725,6 @@ fn ray_ellipse_intersection(
     Some((origin.0 + dx * t, origin.1 + dy * t))
 }
 
-/// Calculate where a line from node center to target point intersects the node boundary.
-/// This gives a natural anchor point that points toward the target.
-fn intersect_node_boundary(node: &NodeLayout, target: (f32, f32)) -> (f32, f32) {
-    let cx = node.x + node.width / 2.0;
-    let cy = node.y + node.height / 2.0;
-    
-    // Direction from center to target
-    let dx = target.0 - cx;
-    let dy = target.1 - cy;
-    let len = (dx * dx + dy * dy).sqrt();
-    
-    if len < 0.001 {
-        // Target is at center, return center
-        return (cx, cy);
-    }
-    
-    let dir = (dx / len, dy / len);
-    
-    // Try shape-specific intersection first
-    match node.shape {
-        crate::ir::NodeShape::Circle | crate::ir::NodeShape::DoubleCircle => {
-            let rx = node.width / 2.0;
-            let ry = node.height / 2.0;
-            if let Some(point) = ray_ellipse_intersection((cx, cy), dir, (cx, cy), rx, ry) {
-                return point;
-            }
-        }
-        _ => {}
-    }
-    
-    // Try polygon intersection for other shapes
-    if let Some(poly) = shape_polygon_points(node) {
-        if let Some(point) = ray_polygon_intersection((cx, cy), dir, &poly) {
-            return point;
-        }
-    }
-    
-    // Fallback: intersect with bounding rectangle
-    intersect_rect_boundary(node, dir)
-}
-
-/// Intersect a ray from node center with the node's bounding rectangle
-fn intersect_rect_boundary(node: &NodeLayout, dir: (f32, f32)) -> (f32, f32) {
-    let cx = node.x + node.width / 2.0;
-    let cy = node.y + node.height / 2.0;
-    let hw = node.width / 2.0;
-    let hh = node.height / 2.0;
-    
-    let (dx, dy) = dir;
-    
-    // Calculate intersection with each edge and pick the closest
-    let mut t = f32::MAX;
-    
-    // Right edge (x = cx + hw)
-    if dx.abs() > 0.001 {
-        let t_right = hw / dx;
-        if t_right > 0.0 {
-            let y_at_right = cy + dy * t_right;
-            if y_at_right >= node.y && y_at_right <= node.y + node.height && t_right < t {
-                t = t_right;
-            }
-        }
-        // Left edge (x = cx - hw)
-        let t_left = -hw / dx;
-        if t_left > 0.0 {
-            let y_at_left = cy + dy * t_left;
-            if y_at_left >= node.y && y_at_left <= node.y + node.height && t_left < t {
-                t = t_left;
-            }
-        }
-    }
-    
-    if dy.abs() > 0.001 {
-        // Bottom edge (y = cy + hh)
-        let t_bottom = hh / dy;
-        if t_bottom > 0.0 {
-            let x_at_bottom = cx + dx * t_bottom;
-            if x_at_bottom >= node.x && x_at_bottom <= node.x + node.width && t_bottom < t {
-                t = t_bottom;
-            }
-        }
-        // Top edge (y = cy - hh)
-        let t_top = -hh / dy;
-        if t_top > 0.0 {
-            let x_at_top = cx + dx * t_top;
-            if x_at_top >= node.x && x_at_top <= node.x + node.width && t_top < t {
-                t = t_top;
-            }
-        }
-    }
-    
-    if t < f32::MAX {
-        (cx + dx * t, cy + dy * t)
-    } else {
-        (cx, cy)
-    }
-}
-
 fn anchor_point_for_node(node: &NodeLayout, side: EdgeSide, offset: f32) -> (f32, f32) {
     let cx = node.x + node.width / 2.0;
     let cy = node.y + node.height / 2.0;
@@ -7873,19 +7775,9 @@ fn route_edge_with_avoidance(ctx: &RouteContext<'_>) -> Vec<(f32, f32)> {
 
     let (_, _, is_backward) = edge_sides(ctx.from, ctx.to, ctx.direction);
 
-    // Get node centers
-    let from_center = (
-        ctx.from.x + ctx.from.width / 2.0,
-        ctx.from.y + ctx.from.height / 2.0,
-    );
-    let to_center = (
-        ctx.to.x + ctx.to.width / 2.0,
-        ctx.to.y + ctx.to.height / 2.0,
-    );
-
-    // Calculate natural intersection points (where line from center to center hits boundary)
-    let start = intersect_node_boundary(ctx.from, to_center);
-    let end = intersect_node_boundary(ctx.to, from_center);
+    // Anchor edges using resolved port offsets to reduce overlap
+    let start = anchor_point_for_node(ctx.from, ctx.start_side, ctx.start_offset);
+    let end = anchor_point_for_node(ctx.to, ctx.end_side, ctx.end_offset);
 
     // For backward edges, try routing around obstacles (both left and right)
     if is_backward {
