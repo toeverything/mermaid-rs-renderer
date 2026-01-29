@@ -318,6 +318,7 @@ pub struct Node {
     pub id: String,
     pub label: String,
     pub shape: NodeShape,
+    pub value: Option<f32>,
 }
 
 #[derive(Debug, Clone)]
@@ -549,6 +550,7 @@ impl Graph {
             id: id.to_string(),
             label: id.to_string(),
             shape: NodeShape::Rectangle,
+            value: None,
         });
         if is_new {
             let order = self.node_order.len();

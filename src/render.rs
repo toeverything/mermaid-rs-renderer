@@ -7,6 +7,7 @@ use crate::layout::{
 };
 use crate::theme::Theme;
 use anyhow::Result;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -167,46 +168,46 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
     for color in &colors {
         let idx = color_ids.get(color).copied().unwrap_or(0);
         svg.push_str(&format!(
-            "<marker id=\"arrow-{idx}\" viewBox=\"0 0 10 10\" refX=\"5\" refY=\"5\" markerUnits=\"userSpaceOnUse\" markerWidth=\"8\" markerHeight=\"8\" orient=\"auto\"><path d=\"M 0 0 L 10 5 L 0 10 z\" fill=\"{}\"/></marker>",
-            color
+            "<marker id=\"arrow-{idx}\" viewBox=\"0 0 10 10\" refX=\"5\" refY=\"5\" markerUnits=\"userSpaceOnUse\" markerWidth=\"8\" markerHeight=\"8\" orient=\"auto\"><path d=\"M 0 0 L 10 5 L 0 10 z\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\" stroke-dasharray=\"1,0\"/></marker>",
+            color, color
         ));
         svg.push_str(&format!(
-            "<marker id=\"arrow-start-{idx}\" viewBox=\"0 0 10 10\" refX=\"4.5\" refY=\"5\" markerUnits=\"userSpaceOnUse\" markerWidth=\"8\" markerHeight=\"8\" orient=\"auto\"><path d=\"M 0 5 L 10 10 L 10 0 z\" fill=\"{}\"/></marker>",
-            color
+            "<marker id=\"arrow-start-{idx}\" viewBox=\"0 0 10 10\" refX=\"4.5\" refY=\"5\" markerUnits=\"userSpaceOnUse\" markerWidth=\"8\" markerHeight=\"8\" orient=\"auto\"><path d=\"M 0 5 L 10 10 L 10 0 z\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\" stroke-dasharray=\"1,0\"/></marker>",
+            color, color
         ));
         if is_sequence {
             svg.push_str(&format!(
-                "<marker id=\"arrow-seq-{idx}\" viewBox=\"-1 0 12 10\" refX=\"7.9\" refY=\"5\" markerUnits=\"userSpaceOnUse\" markerWidth=\"12\" markerHeight=\"12\" orient=\"auto-start-reverse\"><path d=\"M -1 0 L 10 5 L 0 10 z\" fill=\"{}\" stroke=\"{}\"/></marker>",
+                "<marker id=\"arrow-seq-{idx}\" viewBox=\"-1 0 12 10\" refX=\"7.9\" refY=\"5\" markerUnits=\"userSpaceOnUse\" markerWidth=\"12\" markerHeight=\"12\" orient=\"auto-start-reverse\"><path d=\"M -1 0 L 10 5 L 0 10 z\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\" stroke-dasharray=\"1,0\"/></marker>",
                 color,
                 color
             ));
             svg.push_str(&format!(
-                "<marker id=\"arrow-start-seq-{idx}\" viewBox=\"-1 0 12 10\" refX=\"2.1\" refY=\"5\" markerUnits=\"userSpaceOnUse\" markerWidth=\"12\" markerHeight=\"12\" orient=\"auto\"><path d=\"M 11 0 L 0 5 L 11 10 z\" fill=\"{}\" stroke=\"{}\"/></marker>",
+                "<marker id=\"arrow-start-seq-{idx}\" viewBox=\"-1 0 12 10\" refX=\"2.1\" refY=\"5\" markerUnits=\"userSpaceOnUse\" markerWidth=\"12\" markerHeight=\"12\" orient=\"auto\"><path d=\"M 11 0 L 0 5 L 11 10 z\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\" stroke-dasharray=\"1,0\"/></marker>",
                 color,
                 color
             ));
         }
         if is_state {
             svg.push_str(&format!(
-                "<marker id=\"arrow-state-{idx}\" viewBox=\"0 0 20 14\" refX=\"19\" refY=\"7\" markerUnits=\"userSpaceOnUse\" markerWidth=\"20\" markerHeight=\"14\" orient=\"auto\"><path d=\"M 19 7 L 9 13 L 14 7 L 9 1 Z\" fill=\"{}\" stroke=\"{}\"/></marker>",
+                "<marker id=\"arrow-state-{idx}\" viewBox=\"0 0 20 14\" refX=\"19\" refY=\"7\" markerUnits=\"userSpaceOnUse\" markerWidth=\"20\" markerHeight=\"14\" orient=\"auto\"><path d=\"M 19 7 L 9 13 L 14 7 L 9 1 Z\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\" stroke-dasharray=\"1,0\"/></marker>",
                 color, color
             ));
         }
         if is_class {
             svg.push_str(&format!(
-                "<marker id=\"arrow-class-open-{idx}\" viewBox=\"0 0 20 14\" refX=\"1\" refY=\"7\" markerUnits=\"userSpaceOnUse\" markerWidth=\"20\" markerHeight=\"14\" orient=\"auto\"><path d=\"M 1 7 L 18 13 V 1 Z\" fill=\"none\" stroke=\"{}\"/></marker>",
+                "<marker id=\"arrow-class-open-{idx}\" viewBox=\"0 0 20 14\" refX=\"1\" refY=\"7\" markerUnits=\"userSpaceOnUse\" markerWidth=\"20\" markerHeight=\"14\" orient=\"auto\"><path d=\"M 1 7 L 18 13 V 1 Z\" fill=\"none\" stroke=\"{}\" stroke-width=\"1\" stroke-dasharray=\"1,0\"/></marker>",
                 color
             ));
             svg.push_str(&format!(
-                "<marker id=\"arrow-class-open-start-{idx}\" viewBox=\"0 0 20 14\" refX=\"18\" refY=\"7\" markerUnits=\"userSpaceOnUse\" markerWidth=\"20\" markerHeight=\"14\" orient=\"auto\"><path d=\"M 1 7 L 18 13 V 1 Z\" fill=\"none\" stroke=\"{}\"/></marker>",
+                "<marker id=\"arrow-class-open-start-{idx}\" viewBox=\"0 0 20 14\" refX=\"18\" refY=\"7\" markerUnits=\"userSpaceOnUse\" markerWidth=\"20\" markerHeight=\"14\" orient=\"auto\"><path d=\"M 1 7 L 18 13 V 1 Z\" fill=\"none\" stroke=\"{}\" stroke-width=\"1\" stroke-dasharray=\"1,0\"/></marker>",
                 color
             ));
             svg.push_str(&format!(
-                "<marker id=\"arrow-class-dep-{idx}\" viewBox=\"0 0 20 14\" refX=\"13\" refY=\"7\" markerUnits=\"userSpaceOnUse\" markerWidth=\"20\" markerHeight=\"14\" orient=\"auto\"><path d=\"M 18 7 L 9 13 L 14 7 L 9 1 Z\" fill=\"{}\" stroke=\"{}\"/></marker>",
+                "<marker id=\"arrow-class-dep-{idx}\" viewBox=\"0 0 20 14\" refX=\"13\" refY=\"7\" markerUnits=\"userSpaceOnUse\" markerWidth=\"20\" markerHeight=\"14\" orient=\"auto\"><path d=\"M 18 7 L 9 13 L 14 7 L 9 1 Z\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\" stroke-dasharray=\"1,0\"/></marker>",
                 color, color
             ));
             svg.push_str(&format!(
-                "<marker id=\"arrow-class-dep-start-{idx}\" viewBox=\"0 0 20 14\" refX=\"6\" refY=\"7\" markerUnits=\"userSpaceOnUse\" markerWidth=\"20\" markerHeight=\"14\" orient=\"auto\"><path d=\"M 5 7 L 9 13 L 1 7 L 9 1 Z\" fill=\"{}\" stroke=\"{}\"/></marker>",
+                "<marker id=\"arrow-class-dep-start-{idx}\" viewBox=\"0 0 20 14\" refX=\"6\" refY=\"7\" markerUnits=\"userSpaceOnUse\" markerWidth=\"20\" markerHeight=\"14\" orient=\"auto\"><path d=\"M 5 7 L 9 13 L 1 7 L 9 1 Z\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\" stroke-dasharray=\"1,0\"/></marker>",
                 color, color
             ));
         }
@@ -575,12 +576,12 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
 
             let mut dash = String::new();
             if edge.style == crate::ir::EdgeStyle::Dotted {
-                dash = "stroke-dasharray=\"3 3\"".to_string();
+                dash = "stroke-dasharray=\"2,2\"".to_string();
             }
             if let Some(dash_override) = &edge.override_style.dasharray {
                 dash = format!("stroke-dasharray=\"{}\"", dash_override);
             }
-            let stroke_width = edge.override_style.stroke_width.unwrap_or(2.0);
+            let stroke_width = edge.override_style.stroke_width.unwrap_or(1.5);
             svg.push_str(&format!(
                 "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" {} {} {} />",
                 d, stroke, stroke_width, marker_end, marker_start, dash
@@ -795,14 +796,9 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 let rect_y = y - label.height / 2.0 - pad_y;
                 let rect_w = label.width + pad_x * 2.0;
                 let rect_h = label.height + pad_y * 2.0;
-                let label_fill = match layout.kind {
-                    crate::ir::DiagramKind::Class | crate::ir::DiagramKind::State => {
-                        theme.primary_color.as_str()
-                    }
-                    _ => theme.edge_label_background.as_str(),
-                };
+                let label_fill = theme.edge_label_background.as_str();
                 svg.push_str(&format!(
-                    "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" stroke=\"none\"/>",
+                    "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"0.5\" stroke=\"none\"/>",
                     label_fill
                 ));
                 svg.push_str(&text_block_svg(
@@ -852,7 +848,23 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
     }
 
     if !is_sequence {
-        for node in layout.nodes.values() {
+        let mut nodes_to_draw: Vec<&crate::layout::NodeLayout> = if layout.kind
+            == crate::ir::DiagramKind::Treemap
+        {
+            let mut nodes: Vec<&crate::layout::NodeLayout> = layout.nodes.values().collect();
+            nodes.sort_by(|a, b| {
+                let area_a = a.width * a.height;
+                let area_b = b.width * b.height;
+                area_b
+                    .partial_cmp(&area_a)
+                    .unwrap_or(Ordering::Equal)
+            });
+            nodes
+        } else {
+            layout.nodes.values().collect()
+        };
+
+        for node in nodes_to_draw.drain(..) {
             if node.hidden {
                 continue;
             }
@@ -873,7 +885,20 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 || node.id.starts_with("__start_")
                 || node.id.starts_with("__end_");
             if !hide_label {
-                let label_svg = if node.label.lines.iter().any(|line| is_divider_line(line)) {
+                let label_svg = if layout.kind == crate::ir::DiagramKind::Treemap {
+                    let label_x = node.x + config.treemap.label_padding_x;
+                    let label_y =
+                        node.y + config.treemap.label_padding_y + node.label.height / 2.0;
+                    text_block_svg_anchor(
+                        label_x,
+                        label_y,
+                        &node.label,
+                        theme,
+                        config,
+                        "start",
+                        node.style.text_color.as_deref(),
+                    )
+                } else if node.label.lines.iter().any(|line| is_divider_line(line)) {
                     text_block_svg_class(node, theme, config, node.style.text_color.as_deref())
                 } else {
                     text_block_svg(
@@ -1450,7 +1475,7 @@ fn render_requirement(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> 
             let rect_h = label.height + pad_y * 2.0;
             if req.edge_label_background != "none" {
                 svg.push_str(&format!(
-                    "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" stroke=\"none\"/>",
+                    "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"0.5\" stroke=\"none\"/>",
                     req.edge_label_background
                 ));
             }
@@ -3864,11 +3889,11 @@ fn edge_decoration_svg(
     let join = " stroke-linejoin=\"round\" stroke-linecap=\"round\"";
     let shape = match decoration {
         crate::ir::EdgeDecoration::Circle => format!(
-            "<circle cx=\"0\" cy=\"0\" r=\"4\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"/>",
+            "<circle cx=\"0\" cy=\"0\" r=\"5\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"/>",
             stroke, stroke_width
         ),
         crate::ir::EdgeDecoration::Cross => format!(
-            "<path d=\"M -4 -4 L 4 4 M -4 4 L 4 -4\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"{join}/>",
+            "<path d=\"M -5 -5 L 5 5 M -5 5 L 5 -5\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"{join}/>",
             stroke, stroke_width
         ),
         crate::ir::EdgeDecoration::Diamond => {

@@ -608,8 +608,8 @@ impl Default for C4Config {
 #[serde(rename_all = "lowercase")]
 #[derive(Default)]
 pub enum TreemapRenderMode {
-    #[default]
     Error,
+    #[default]
     Flowchart,
 }
 
@@ -682,6 +682,13 @@ impl Default for PieConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TreemapConfig {
     pub render_mode: TreemapRenderMode,
+    pub width: f32,
+    pub height: f32,
+    pub padding: f32,
+    pub gap: f32,
+    pub label_padding_x: f32,
+    pub label_padding_y: f32,
+    pub min_label_area: f32,
     pub error_message: String,
     pub error_version: String,
     pub error_viewbox_width: f32,
@@ -702,7 +709,14 @@ pub struct TreemapConfig {
 impl Default for TreemapConfig {
     fn default() -> Self {
         Self {
-            render_mode: TreemapRenderMode::Error,
+            render_mode: TreemapRenderMode::Flowchart,
+            width: 720.0,
+            height: 480.0,
+            padding: 8.0,
+            gap: 3.0,
+            label_padding_x: 6.0,
+            label_padding_y: 4.0,
+            min_label_area: 200.0,
             error_message: "Syntax error in text".to_string(),
             error_version: "11.12.2".to_string(),
             error_viewbox_width: 2412.0,
@@ -1214,6 +1228,13 @@ struct C4ConfigFile {
 #[serde(rename_all = "camelCase")]
 struct TreemapConfigFile {
     render_mode: Option<TreemapRenderMode>,
+    width: Option<f32>,
+    height: Option<f32>,
+    padding: Option<f32>,
+    gap: Option<f32>,
+    label_padding_x: Option<f32>,
+    label_padding_y: Option<f32>,
+    min_label_area: Option<f32>,
     error_message: Option<String>,
     error_version: Option<String>,
     error_viewbox_width: Option<f32>,
@@ -2386,6 +2407,27 @@ pub fn load_config(path: Option<&Path>) -> anyhow::Result<Config> {
     if let Some(treemap) = parsed.treemap {
         if let Some(v) = treemap.render_mode {
             config.layout.treemap.render_mode = v;
+        }
+        if let Some(v) = treemap.width {
+            config.layout.treemap.width = v;
+        }
+        if let Some(v) = treemap.height {
+            config.layout.treemap.height = v;
+        }
+        if let Some(v) = treemap.padding {
+            config.layout.treemap.padding = v;
+        }
+        if let Some(v) = treemap.gap {
+            config.layout.treemap.gap = v;
+        }
+        if let Some(v) = treemap.label_padding_x {
+            config.layout.treemap.label_padding_x = v;
+        }
+        if let Some(v) = treemap.label_padding_y {
+            config.layout.treemap.label_padding_y = v;
+        }
+        if let Some(v) = treemap.min_label_area {
+            config.layout.treemap.min_label_area = v;
         }
         if let Some(v) = treemap.error_message {
             config.layout.treemap.error_message = v;

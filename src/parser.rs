@@ -3852,6 +3852,7 @@ fn parse_treemap_diagram(input: &str) -> Result<ParseOutput> {
         }
 
         let (label, value) = parse_treemap_item(trimmed);
+        let numeric_value = value.as_ref().and_then(|raw| raw.trim().parse::<f32>().ok());
         let node_id = format!("treemap_{}", graph.nodes.len());
         let node_label = if let Some(value) = value {
             format!("{}\n{}", label, value)
@@ -3863,6 +3864,11 @@ fn parse_treemap_diagram(input: &str) -> Result<ParseOutput> {
             Some(node_label),
             Some(crate::ir::NodeShape::Rectangle),
         );
+        if let Some(parsed) = numeric_value {
+            if let Some(node) = graph.nodes.get_mut(&node_id) {
+                node.value = Some(parsed);
+            }
+        }
 
         if level > 0 {
             if stack.len() > level {

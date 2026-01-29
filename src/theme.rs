@@ -92,7 +92,7 @@ impl Theme {
             line_color: "#333333".to_string(),
             secondary_color,
             tertiary_color,
-            edge_label_background: "#FFFFFF".to_string(),
+            edge_label_background: "rgba(232,232,232, 0.8)".to_string(),
             cluster_background: "#FFFFDE".to_string(),
             cluster_border: "#AAAA33".to_string(),
             background: "#FFFFFF".to_string(),

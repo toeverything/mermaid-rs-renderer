@@ -1,5 +1,6 @@
 use crate::config::{LayoutConfig, PieRenderMode, TreemapRenderMode};
 use crate::ir::{Direction, Graph};
+use crate::text_metrics;
 use crate::theme::Theme;
 use dagre_rust::{
     GraphConfig as DagreConfig, GraphEdge as DagreEdge, GraphNode as DagreNode,
@@ -670,13 +671,15 @@ fn compute_c4_layout(graph: &Graph, config: &LayoutConfig) -> Layout {
         };
         let (start, end) = c4_intersect_points(from_shape, to_shape);
         let label_font_size = conf.message_font_size;
+        let rel_font_family = conf.message_font_family.as_str();
         let label_layout = c4_text_layout(
             &rel.label,
             label_font_size,
             0.0,
             conf.wrap,
-            estimate_text_width(&rel.label, label_font_size),
+            estimate_text_width(&rel.label, label_font_size, rel_font_family),
             c4_text_line_height(conf, label_font_size),
+            rel_font_family,
         );
         let techn_layout = rel.techn.as_ref().map(|t| {
             c4_text_layout(
@@ -684,8 +687,9 @@ fn compute_c4_layout(graph: &Graph, config: &LayoutConfig) -> Layout {
                 label_font_size,
                 0.0,
                 conf.wrap,
-                estimate_text_width(t, label_font_size),
+                estimate_text_width(t, label_font_size, rel_font_family),
                 c4_text_line_height(conf, label_font_size),
+                rel_font_family,
             )
         });
         rels_out.push(C4RelLayout {
@@ -889,6 +893,7 @@ fn layout_c4_boundaries(
         let mut y = 0.0;
         let boundary_text_wrap = conf.wrap;
         let label_font_size = conf.boundary_font_size + 2.0;
+        let boundary_font_family = conf.boundary_font_family.as_str();
         let label_layout = c4_text_layout(
             &boundary.label,
             label_font_size,
@@ -896,6 +901,7 @@ fn layout_c4_boundaries(
             boundary_text_wrap,
             current_bounds.data.width_limit,
             c4_text_line_height(conf, label_font_size),
+            boundary_font_family,
         );
         y = label_layout.y + label_layout.height;
         let mut boundary_type_layout = None;
@@ -908,6 +914,7 @@ fn layout_c4_boundaries(
                 boundary_text_wrap,
                 current_bounds.data.width_limit,
                 c4_text_line_height(conf, conf.boundary_font_size),
+                boundary_font_family,
             );
             y = type_layout.y + type_layout.height;
             boundary_type_layout = Some(type_layout);
@@ -921,6 +928,7 @@ fn layout_c4_boundaries(
                 boundary_text_wrap,
                 current_bounds.data.width_limit,
                 c4_text_line_height(conf, (conf.boundary_font_size - 2.0).max(1.0)),
+                boundary_font_family,
             );
             y = descr_layout.y + descr_layout.height;
             boundary_descr_layout = Some(descr_layout);
@@ -1015,8 +1023,9 @@ fn layout_c4_shapes(
             continue;
         };
         let type_font_size = (c4_shape_font_size(conf, shape.kind) - 2.0).max(1.0);
+        let type_font_family = c4_shape_font_family(conf, shape.kind);
         let type_label_text = format!("<<{}>>", shape.kind.as_str());
-        let type_width = estimate_text_width(&type_label_text, type_font_size);
+        let type_width = estimate_text_width(&type_label_text, type_font_size, type_font_family);
         let type_height = type_font_size + 2.0;
         let type_layout = C4TextLayout {
             text: type_label_text.clone(),
@@ -1040,6 +1049,7 @@ fn layout_c4_shapes(
         }
 
         let label_font_size = c4_shape_font_size(conf, shape.kind) + 2.0;
+        let label_font_family = c4_shape_font_family(conf, shape.kind);
         let text_limit_width = conf.width - conf.c4_shape_padding * 2.0;
         let label_layout = c4_text_layout(
             &shape.label,
@@ -1048,6 +1058,7 @@ fn layout_c4_shapes(
             conf.wrap,
             text_limit_width,
             c4_text_line_height(conf, label_font_size),
+            label_font_family,
         );
         y = label_layout.y + label_layout.height;
 
@@ -1059,6 +1070,7 @@ fn layout_c4_shapes(
             .map(|t| format!("[{}]", t));
         if let Some(text) = type_or_techn_text {
             let font_size = c4_shape_font_size(conf, shape.kind);
+            let font_family = c4_shape_font_family(conf, shape.kind);
             let layout = c4_text_layout(
                 &text,
                 font_size,
@@ -1066,6 +1078,7 @@ fn layout_c4_shapes(
                 conf.wrap,
                 text_limit_width,
                 c4_text_line_height(conf, font_size),
+                font_family,
             );
             y = layout.y + layout.height;
             type_or_techn_layout = Some(layout);
@@ -1076,6 +1089,7 @@ fn layout_c4_shapes(
         let mut rect_width = label_layout.width;
         if let Some(descr) = &shape.descr {
             let font_size = c4_shape_font_size(conf, shape.kind);
+            let font_family = c4_shape_font_family(conf, shape.kind);
             let layout = c4_text_layout(
                 descr,
                 font_size,
@@ -1083,6 +1097,7 @@ fn layout_c4_shapes(
                 conf.wrap,
                 text_limit_width,
                 c4_text_line_height(conf, font_size),
+                font_family,
             );
             y = layout.y + layout.height;
             rect_width = rect_width.max(layout.width);
@@ -1142,6 +1157,31 @@ fn c4_shape_font_size(conf: &crate::config::C4Config, kind: crate::ir::C4ShapeKi
     }
 }
 
+fn c4_shape_font_family(conf: &crate::config::C4Config, kind: crate::ir::C4ShapeKind) -> &str {
+    match kind {
+        crate::ir::C4ShapeKind::Person => &conf.person_font_family,
+        crate::ir::C4ShapeKind::ExternalPerson => &conf.external_person_font_family,
+        crate::ir::C4ShapeKind::System => &conf.system_font_family,
+        crate::ir::C4ShapeKind::SystemDb => &conf.system_db_font_family,
+        crate::ir::C4ShapeKind::SystemQueue => &conf.system_queue_font_family,
+        crate::ir::C4ShapeKind::ExternalSystem => &conf.external_system_font_family,
+        crate::ir::C4ShapeKind::ExternalSystemDb => &conf.external_system_db_font_family,
+        crate::ir::C4ShapeKind::ExternalSystemQueue => &conf.external_system_queue_font_family,
+        crate::ir::C4ShapeKind::Container => &conf.container_font_family,
+        crate::ir::C4ShapeKind::ContainerDb => &conf.container_db_font_family,
+        crate::ir::C4ShapeKind::ContainerQueue => &conf.container_queue_font_family,
+        crate::ir::C4ShapeKind::ExternalContainer => &conf.external_container_font_family,
+        crate::ir::C4ShapeKind::ExternalContainerDb => &conf.external_container_db_font_family,
+        crate::ir::C4ShapeKind::ExternalContainerQueue => &conf.external_container_queue_font_family,
+        crate::ir::C4ShapeKind::Component => &conf.component_font_family,
+        crate::ir::C4ShapeKind::ComponentDb => &conf.component_db_font_family,
+        crate::ir::C4ShapeKind::ComponentQueue => &conf.component_queue_font_family,
+        crate::ir::C4ShapeKind::ExternalComponent => &conf.external_component_font_family,
+        crate::ir::C4ShapeKind::ExternalComponentDb => &conf.external_component_db_font_family,
+        crate::ir::C4ShapeKind::ExternalComponentQueue => &conf.external_component_queue_font_family,
+    }
+}
+
 fn c4_text_line_height(conf: &crate::config::C4Config, font_size: f32) -> f32 {
     let mut height = font_size + conf.text_line_height;
     if font_size <= conf.text_line_height_small_threshold {
@@ -1157,11 +1197,12 @@ fn c4_text_layout(
     wrap: bool,
     max_width: f32,
     line_height: f32,
+    font_family: &str,
 ) -> C4TextLayout {
     let mut lines = Vec::new();
     for raw in split_lines(text) {
         if wrap {
-            lines.extend(wrap_text_to_width(&raw, max_width, font_size));
+            lines.extend(wrap_text_to_width(&raw, max_width, font_size, font_family));
         } else {
             lines.push(raw);
         }
@@ -1171,7 +1212,7 @@ fn c4_text_layout(
     }
     let width = lines
         .iter()
-        .map(|line| estimate_text_width(line, font_size))
+        .map(|line| estimate_text_width(line, font_size, font_family))
         .fold(0.0, f32::max);
     let height = line_height * lines.len().max(1) as f32;
     C4TextLayout {
@@ -1183,7 +1224,7 @@ fn c4_text_layout(
     }
 }
 
-fn wrap_text_to_width(text: &str, max_width: f32, font_size: f32) -> Vec<String> {
+fn wrap_text_to_width(text: &str, max_width: f32, font_size: f32, font_family: &str) -> Vec<String> {
     let mut lines = Vec::new();
     let mut current = String::new();
     for word in text.split_whitespace() {
@@ -1192,7 +1233,7 @@ fn wrap_text_to_width(text: &str, max_width: f32, font_size: f32) -> Vec<String>
         } else {
             format!("{} {}", current, word)
         };
-        if estimate_text_width(&candidate, font_size) <= max_width || current.is_empty() {
+        if estimate_text_width(&candidate, font_size, font_family) <= max_width || current.is_empty() {
             current = candidate;
         } else {
             lines.push(current);
@@ -1208,8 +1249,9 @@ fn wrap_text_to_width(text: &str, max_width: f32, font_size: f32) -> Vec<String>
     lines
 }
 
-fn estimate_text_width(text: &str, font_size: f32) -> f32 {
-    text.chars().map(c4_char_width_factor).sum::<f32>() * font_size
+fn estimate_text_width(text: &str, font_size: f32, font_family: &str) -> f32 {
+    text_metrics::measure_text_width(text, font_size, font_family)
+        .unwrap_or_else(|| text.chars().map(c4_char_width_factor).sum::<f32>() * font_size)
 }
 
 fn c4_char_width_factor(ch: char) -> f32 {
@@ -1328,7 +1370,7 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
             if config.treemap.render_mode == TreemapRenderMode::Error {
                 compute_error_layout(graph, config)
             } else {
-                compute_flowchart_layout(graph, theme, config)
+                compute_treemap_layout(graph, theme, config)
             }
         }
         crate::ir::DiagramKind::GitGraph => compute_gitgraph_layout(graph, theme, config),
@@ -1960,6 +2002,7 @@ fn compute_gitgraph_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
             measure_font_size,
             gg.branch_label_line_height,
             gg.text_width_scale,
+            theme.font_family.as_str(),
         );
         let spacing_rotate_extra = if gg.rotate_commit_label {
             gg.branch_spacing_rotate_extra
@@ -2067,6 +2110,7 @@ fn compute_gitgraph_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
                 gg.commit_label_font_size,
                 gg.commit_label_line_height,
                 gg.text_width_scale,
+                theme.font_family.as_str(),
             );
             let (text_x, text_y, bg_x, bg_y, transform) = if is_vertical {
                 let text_x = x - (label_width + gg.commit_label_tb_text_extra);
@@ -2136,6 +2180,7 @@ fn compute_gitgraph_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
                     gg.tag_label_font_size,
                     gg.tag_label_line_height,
                     gg.text_width_scale,
+                    theme.font_family.as_str(),
                 );
                 max_width = max_width.max(w);
                 max_height = max_height.max(h);
@@ -2439,13 +2484,14 @@ fn measure_gitgraph_text(
     font_size: f32,
     line_height: f32,
     width_scale: f32,
+    font_family: &str,
 ) -> (f32, f32) {
     let lines = split_lines(text);
-    let max_units = lines
+    let max_width = lines
         .iter()
-        .map(|line| line.chars().map(char_width_factor).sum::<f32>())
+        .map(|line| text_width(line, font_size, font_family))
         .fold(0.0, f32::max);
-    let width = max_units * font_size * width_scale;
+    let width = max_width * width_scale;
     let height = lines.len() as f32 * font_size * line_height;
     (width, height)
 }
@@ -3047,10 +3093,15 @@ fn compute_pie_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
     let pie_cfg = &config.pie;
     let mut slices = Vec::new();
     let mut legend = Vec::new();
-    let title_block = graph
-        .pie_title
-        .as_ref()
-        .map(|title| measure_label_with_font_size(title, theme.pie_title_text_size, config, false));
+    let title_block = graph.pie_title.as_ref().map(|title| {
+        measure_label_with_font_size(
+            title,
+            theme.pie_title_text_size,
+            config,
+            false,
+            theme.font_family.as_str(),
+        )
+    });
 
     let palette = pie_palette(theme);
     let total: f32 = graph
@@ -3111,7 +3162,13 @@ fn compute_pie_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
             std::f32::consts::PI * 2.0 / fallback_total
         };
         let label =
-            measure_label_with_font_size(&datum.label, theme.pie_section_text_size, config, false);
+            measure_label_with_font_size(
+                &datum.label,
+                theme.pie_section_text_size,
+                config,
+                false,
+                theme.font_family.as_str(),
+            );
         let color = resolve_color(&datum.label);
         slices.push(PieSliceLayout {
             label,
@@ -3132,7 +3189,13 @@ fn compute_pie_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
             slice.label.clone()
         };
         let label =
-            measure_label_with_font_size(&label_text, theme.pie_legend_text_size, config, false);
+            measure_label_with_font_size(
+                &label_text,
+                theme.pie_legend_text_size,
+                config,
+                false,
+                theme.font_family.as_str(),
+            );
         legend_width = legend_width.max(label.width);
         let color = resolve_color(&slice.label);
         legend_items.push((label, color));
@@ -4945,6 +5008,258 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         error: None,
         width,
         height,
+    }
+}
+
+fn compute_treemap_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
+    let mut nodes: BTreeMap<String, NodeLayout> = BTreeMap::new();
+    let edges = Vec::new();
+    let subgraphs = Vec::new();
+
+    let width = config.treemap.width.max(1.0);
+    let height = config.treemap.height.max(1.0);
+    let root_rect = TreemapRect::new(0.0, 0.0, width, height);
+
+    let mut children: HashMap<String, Vec<String>> = HashMap::new();
+    let mut parents: HashMap<String, String> = HashMap::new();
+    for edge in &graph.edges {
+        children
+            .entry(edge.from.clone())
+            .or_default()
+            .push(edge.to.clone());
+        parents.insert(edge.to.clone(), edge.from.clone());
+    }
+    for list in children.values_mut() {
+        list.sort_by_key(|id| graph.node_order.get(id).copied().unwrap_or(usize::MAX));
+    }
+
+    let mut roots: Vec<String> = graph
+        .nodes
+        .keys()
+        .filter(|id| !parents.contains_key(*id))
+        .cloned()
+        .collect();
+    roots.sort_by_key(|id| graph.node_order.get(id).copied().unwrap_or(usize::MAX));
+
+    let mut weight_cache: HashMap<String, f32> = HashMap::new();
+    if !roots.is_empty() {
+        layout_treemap_nodes(
+            &roots,
+            root_rect,
+            0,
+            graph,
+            &children,
+            &mut weight_cache,
+            &mut nodes,
+            theme,
+            config,
+        );
+    }
+
+    Layout {
+        kind: graph.kind,
+        nodes,
+        edges,
+        subgraphs,
+        lifelines: Vec::new(),
+        sequence_footboxes: Vec::new(),
+        sequence_boxes: Vec::new(),
+        sequence_frames: Vec::new(),
+        sequence_notes: Vec::new(),
+        sequence_activations: Vec::new(),
+        sequence_numbers: Vec::new(),
+        state_notes: Vec::new(),
+        pie_slices: Vec::new(),
+        pie_legend: Vec::new(),
+        pie_center: (0.0, 0.0),
+        pie_radius: 0.0,
+        pie_title: None,
+        quadrant: None,
+        gantt: None,
+        sankey: None,
+        gitgraph: None,
+        c4: None,
+        xychart: None,
+        timeline: None,
+        error: None,
+        width,
+        height,
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TreemapRect {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+}
+
+impl TreemapRect {
+    fn new(x: f32, y: f32, w: f32, h: f32) -> Self {
+        Self { x, y, w, h }
+    }
+
+    fn inset(self, padding: f32) -> Self {
+        let pad = padding.max(0.0);
+        let w = (self.w - pad * 2.0).max(0.0);
+        let h = (self.h - pad * 2.0).max(0.0);
+        Self {
+            x: self.x + pad,
+            y: self.y + pad,
+            w,
+            h,
+        }
+    }
+}
+
+fn layout_treemap_nodes(
+    ids: &[String],
+    rect: TreemapRect,
+    depth: usize,
+    graph: &Graph,
+    children: &HashMap<String, Vec<String>>,
+    weight_cache: &mut HashMap<String, f32>,
+    nodes_out: &mut BTreeMap<String, NodeLayout>,
+    theme: &Theme,
+    config: &LayoutConfig,
+) {
+    if ids.is_empty() || rect.w <= 0.0 || rect.h <= 0.0 {
+        return;
+    }
+    let total_weight: f32 = ids
+        .iter()
+        .map(|id| treemap_weight(id, graph, children, weight_cache))
+        .sum();
+    if total_weight <= 0.0 {
+        return;
+    }
+    let gap = config.treemap.gap.max(0.0);
+    let horizontal = depth % 2 == 0;
+    let count = ids.len();
+    let available = if horizontal {
+        (rect.w - gap * (count.saturating_sub(1) as f32)).max(0.0)
+    } else {
+        (rect.h - gap * (count.saturating_sub(1) as f32)).max(0.0)
+    };
+
+    let mut offset = 0.0;
+    for id in ids {
+        let weight = treemap_weight(id, graph, children, weight_cache);
+        let ratio = (weight / total_weight).max(0.0);
+        let span = available * ratio;
+        let node_rect = if horizontal {
+            let x = rect.x + offset;
+            offset += span + gap;
+            TreemapRect::new(x, rect.y, span, rect.h)
+        } else {
+            let y = rect.y + offset;
+            offset += span + gap;
+            TreemapRect::new(rect.x, y, rect.w, span)
+        };
+
+        if let Some(node) = graph.nodes.get(id) {
+            let mut style = resolve_node_style(id, graph);
+            if style.fill.is_none() {
+                style.fill = Some(treemap_depth_color(depth, theme));
+            }
+            if style.stroke.is_none() {
+                style.stroke = Some(theme.primary_border_color.clone());
+            }
+            if style.stroke_width.is_none() {
+                style.stroke_width = Some(1.0);
+            }
+            if style.text_color.is_none() {
+                style.text_color = Some(theme.primary_text_color.clone());
+            }
+
+            let label = measure_label(&node.label, theme, config);
+            let pad_x = config.treemap.label_padding_x;
+            let pad_y = config.treemap.label_padding_y;
+            let fits = label.width <= (node_rect.w - pad_x * 2.0).max(0.0)
+                && label.height <= (node_rect.h - pad_y * 2.0).max(0.0);
+            let area = node_rect.w * node_rect.h;
+            let label = if fits && area >= config.treemap.min_label_area {
+                label
+            } else {
+                TextBlock {
+                    lines: vec![String::new()],
+                    width: 0.0,
+                    height: 0.0,
+                }
+            };
+
+            nodes_out.insert(
+                id.clone(),
+                NodeLayout {
+                    id: node.id.clone(),
+                    x: node_rect.x,
+                    y: node_rect.y,
+                    width: node_rect.w,
+                    height: node_rect.h,
+                    label,
+                    shape: crate::ir::NodeShape::Rectangle,
+                    style,
+                    link: graph.node_links.get(id).cloned(),
+                    anchor_subgraph: None,
+                    hidden: false,
+                },
+            );
+        }
+
+        if let Some(children_ids) = children.get(id) {
+            let child_rect = node_rect.inset(config.treemap.padding);
+            if child_rect.w > 1.0 && child_rect.h > 1.0 {
+                layout_treemap_nodes(
+                    children_ids,
+                    child_rect,
+                    depth + 1,
+                    graph,
+                    children,
+                    weight_cache,
+                    nodes_out,
+                    theme,
+                    config,
+                );
+            }
+        }
+    }
+}
+
+fn treemap_weight(
+    id: &str,
+    graph: &Graph,
+    children: &HashMap<String, Vec<String>>,
+    cache: &mut HashMap<String, f32>,
+) -> f32 {
+    if let Some(value) = cache.get(id) {
+        return *value;
+    }
+    let mut weight = graph
+        .nodes
+        .get(id)
+        .and_then(|node| node.value)
+        .unwrap_or(0.0);
+    if weight <= 0.0 {
+        if let Some(child_ids) = children.get(id) {
+            weight = child_ids
+                .iter()
+                .map(|child| treemap_weight(child, graph, children, cache))
+                .sum();
+        }
+    }
+    if weight <= 0.0 {
+        weight = 1.0;
+    }
+    cache.insert(id.to_string(), weight);
+    weight
+}
+
+fn treemap_depth_color(depth: usize, theme: &Theme) -> String {
+    match depth % 3 {
+        0 => theme.primary_color.clone(),
+        1 => theme.secondary_color.clone(),
+        _ => theme.tertiary_color.clone(),
     }
 }
 
@@ -7799,7 +8114,13 @@ fn measure_label(text: &str, theme: &Theme, config: &LayoutConfig) -> TextBlock 
     // even when the configured theme font size is smaller. Using that
     // baseline improves parity with mermaid-cli node sizes.
     let measure_font_size = theme.font_size.max(16.0);
-    measure_label_with_font_size(text, measure_font_size, config, true)
+    measure_label_with_font_size(
+        text,
+        measure_font_size,
+        config,
+        true,
+        theme.font_family.as_str(),
+    )
 }
 
 fn measure_label_with_font_size(
@@ -7807,12 +8128,14 @@ fn measure_label_with_font_size(
     font_size: f32,
     config: &LayoutConfig,
     wrap: bool,
+    font_family: &str,
 ) -> TextBlock {
     let raw_lines = split_lines(text);
     let mut lines = Vec::new();
+    let max_width_px = max_label_width_px(config.max_label_width_chars, font_size, font_family);
     for line in raw_lines {
         if wrap {
-            let wrapped = wrap_line(&line, config.max_label_width_chars);
+            let wrapped = wrap_line(&line, max_width_px, font_size, font_family);
             lines.extend(wrapped);
         } else {
             lines.push(line);
@@ -7824,12 +8147,13 @@ fn measure_label_with_font_size(
     }
 
     let max_len = lines.iter().map(|l| l.chars().count()).max().unwrap_or(1);
-    let max_units = lines
+    let max_width = lines
         .iter()
-        .map(|line| line.chars().map(char_width_factor).sum::<f32>())
+        .map(|line| text_width(line, font_size, font_family))
         .fold(0.0, f32::max);
-    let guard_units = max_len as f32 * 0.23;
-    let width = max_units.max(guard_units) * font_size;
+    let avg_char = average_char_width(font_family, font_size);
+    let guard_width = max_len as f32 * avg_char;
+    let width = max_width.max(guard_width);
     let height = lines.len() as f32 * font_size * config.label_line_height;
 
     TextBlock {
@@ -7920,8 +8244,8 @@ fn split_lines(text: &str) -> Vec<String> {
     lines
 }
 
-fn wrap_line(line: &str, max_chars: usize) -> Vec<String> {
-    if line.chars().count() <= max_chars {
+fn wrap_line(line: &str, max_width: f32, font_size: f32, font_family: &str) -> Vec<String> {
+    if text_width(line, font_size, font_family) <= max_width {
         return vec![line.to_string()];
     }
 
@@ -7933,7 +8257,7 @@ fn wrap_line(line: &str, max_chars: usize) -> Vec<String> {
         } else {
             format!("{} {}", current, word)
         };
-        if candidate.chars().count() > max_chars {
+        if text_width(&candidate, font_size, font_family) > max_width {
             if !current.is_empty() {
                 lines.push(current.clone());
                 current.clear();
@@ -7947,6 +8271,24 @@ fn wrap_line(line: &str, max_chars: usize) -> Vec<String> {
         lines.push(current);
     }
     lines
+}
+
+fn text_width(text: &str, font_size: f32, font_family: &str) -> f32 {
+    text_metrics::measure_text_width(text, font_size, font_family)
+        .unwrap_or_else(|| fallback_text_width(text, font_size))
+}
+
+fn fallback_text_width(text: &str, font_size: f32) -> f32 {
+    text.chars().map(char_width_factor).sum::<f32>() * font_size
+}
+
+fn average_char_width(font_family: &str, font_size: f32) -> f32 {
+    text_metrics::average_char_width(font_family, font_size).unwrap_or(font_size * 0.56)
+}
+
+fn max_label_width_px(max_chars: usize, font_size: f32, font_family: &str) -> f32 {
+    let avg_char = average_char_width(font_family, font_size);
+    (max_chars.max(1) as f32) * avg_char
 }
 
 fn resolve_node_style(node_id: &str, graph: &Graph) -> crate::ir::NodeStyle {
