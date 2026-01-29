@@ -4743,7 +4743,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     enforce_top_level_subgraph_gap(graph, &mut nodes, theme, config);
 
     // Separate overlapping sibling subgraphs
-    separate_sibling_subgraphs(graph, &mut nodes, config);
+    separate_sibling_subgraphs(graph, &mut nodes, theme, config);
 
     let mut subgraphs = build_subgraph_layouts(graph, &nodes, theme, config);
     apply_subgraph_anchors(graph, &subgraphs, &mut nodes);
@@ -8357,6 +8357,26 @@ fn enforce_top_level_subgraph_gap(
         }
     }
 
+    // If no edges connect top-level subgraphs, skip this function.
+    // Let `separate_sibling_subgraphs` handle them on the cross axis instead.
+    let node_to_top_level_sg: HashMap<&str, usize> = top_level
+        .iter()
+        .flat_map(|&idx| {
+            graph.subgraphs[idx]
+                .nodes
+                .iter()
+                .map(move |n| (n.as_str(), idx))
+        })
+        .collect();
+    let has_cross_sg_edge = graph.edges.iter().any(|e| {
+        let from_sg = node_to_top_level_sg.get(e.from.as_str());
+        let to_sg = node_to_top_level_sg.get(e.to.as_str());
+        matches!((from_sg, to_sg), (Some(a), Some(b)) if a != b)
+    });
+    if !has_cross_sg_edge {
+        return;
+    }
+
     #[derive(Clone, Copy)]
     struct Bounds {
         idx: usize,
@@ -8478,6 +8498,7 @@ fn enforce_top_level_subgraph_gap(
 fn separate_sibling_subgraphs(
     graph: &Graph,
     nodes: &mut BTreeMap<String, NodeLayout>,
+    theme: &Theme,
     config: &LayoutConfig,
 ) {
     if graph.subgraphs.len() < 2 {
@@ -8543,7 +8564,15 @@ fn separate_sibling_subgraphs(
                 }
             }
             if min_x != f32::MAX {
-                bounds.push((idx, min_x, min_y, max_x, max_y));
+                // Include subgraph padding in bounds calculation
+                let label_block = measure_label(&sub.label, theme, config);
+                let (pad_x, pad_y, top_padding) =
+                    subgraph_padding_from_label(graph, sub, theme, &label_block);
+                let padded_min_x = min_x - pad_x;
+                let padded_min_y = min_y - top_padding;
+                let padded_max_x = max_x + pad_x;
+                let padded_max_y = max_y + pad_y;
+                bounds.push((idx, padded_min_x, padded_min_y, padded_max_x, padded_max_y));
             }
         }
 
