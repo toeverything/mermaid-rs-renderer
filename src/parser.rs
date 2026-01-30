@@ -4926,7 +4926,10 @@ fn mask_bracket_content(line: &str) -> String {
             '"' if prev_char != '\\' => {
                 in_double_quote = !in_double_quote;
                 if in_bracket || in_quote {
-                    result.push(' ');
+                    // Preserve byte length by adding spaces equal to character's UTF-8 byte count
+                    for _ in 0..ch.len_utf8() {
+                        result.push(' ');
+                    }
                 } else {
                     result.push(ch);
                 }
@@ -4934,14 +4937,20 @@ fn mask_bracket_content(line: &str) -> String {
             '\'' if prev_char != '\\' => {
                 in_single_quote = !in_single_quote;
                 if in_bracket || in_quote {
-                    result.push(' ');
+                    // Preserve byte length by adding spaces equal to character's UTF-8 byte count
+                    for _ in 0..ch.len_utf8() {
+                        result.push(' ');
+                    }
                 } else {
                     result.push(ch);
                 }
             }
             _ => {
                 if in_bracket || in_quote {
-                    result.push(' ');
+                    // Preserve byte length by adding spaces equal to character's UTF-8 byte count
+                    for _ in 0..ch.len_utf8() {
+                        result.push(' ');
+                    }
                 } else {
                     result.push(ch);
                 }
@@ -6233,5 +6242,32 @@ mod tests {
         let parsed = parse_mermaid(input).unwrap();
         assert!(parsed.graph.edge_styles.contains_key(&0));
         assert!(parsed.graph.edge_styles.contains_key(&1));
+    }
+
+    #[test]
+    fn parse_emoji_in_node_label() {
+        // Emoji characters are multi-byte UTF-8, this tests that mask_bracket_content
+        // preserves byte positions correctly when masking content inside brackets
+        let input = r#"flowchart LR
+    YT -->|"Streams audio"| Speaker["🔊"]
+    A["🎵 Music"] --> B["🔈 Sound"]"#;
+        let parsed = parse_mermaid(input).unwrap();
+        assert!(parsed.graph.nodes.contains_key("Speaker"));
+        assert!(parsed.graph.nodes.contains_key("A"));
+        assert!(parsed.graph.nodes.contains_key("B"));
+        assert!(parsed.graph.nodes.contains_key("YT"));
+        assert_eq!(parsed.graph.edges.len(), 2);
+    }
+
+    #[test]
+    fn mask_bracket_content_preserves_byte_positions() {
+        // Test that masking preserves byte length for proper regex extraction
+        let line = r#"Speaker["🔊"]"#;
+        let masked = super::mask_bracket_content(line);
+        assert_eq!(
+            line.len(),
+            masked.len(),
+            "masked string should have same byte length as original"
+        );
     }
 }
