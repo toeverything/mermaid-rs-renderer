@@ -1062,14 +1062,14 @@ fn points_to_path(points: &[(f32, f32)]) -> String {
     let simplified = simplify_collinear_points(points);
 
     if simplified.len() == 2 {
-        // Simple straight line for 2 points
-        return format!(
-            "M {:.3},{:.3} L {:.3},{:.3}",
-            simplified[0].0, simplified[0].1, simplified[1].0, simplified[1].1
-        );
+        // Straight line for direct 2-point connections
+        let (x1, y1) = simplified[0];
+        let (x2, y2) = simplified[1];
+        return format!("M {:.3},{:.3} L {:.3},{:.3}", x1, y1, x2, y2);
     }
 
-    let smoothed = smooth_corner_points(&simplified, 6.0);
+    // Use larger radius for smoother corner transitions
+    let smoothed = smooth_corner_points(&simplified, 12.0);
 
     // Use d3.curveBasis for smooth, mermaid-like edges
     basis_path(&smoothed)

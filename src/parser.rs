@@ -3455,6 +3455,7 @@ fn parse_block_diagram(input: &str) -> Result<ParseOutput> {
     graph.kind = DiagramKind::Block;
     graph.direction = Direction::LeftRight;
     let (lines, init_config) = preprocess_input(input)?;
+    let mut block = crate::ir::BlockDiagram::default();
 
     for raw_line in lines {
         let line = raw_line.trim();
@@ -3463,6 +3464,20 @@ fn parse_block_diagram(input: &str) -> Result<ParseOutput> {
         }
         let lower = line.to_ascii_lowercase();
         if lower.starts_with("block") {
+            continue;
+        }
+        if lower.starts_with("columns") {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                if let Ok(cols) = parts[1].parse::<usize>() {
+                    if cols > 0 {
+                        block.columns = Some(cols);
+                    }
+                }
+            }
+            continue;
+        }
+        if lower == "end" {
             continue;
         }
         if let Some((left, label, right, edge_meta)) = parse_edge_line(line) {
@@ -3518,11 +3533,51 @@ fn parse_block_diagram(input: &str) -> Result<ParseOutput> {
             continue;
         }
 
-        let (id, label, shape, classes) = parse_node_token(line);
-        graph.ensure_node(&id, label, shape);
-        if !classes.is_empty() {
-            apply_node_classes(&mut graph, &id, &classes);
+        let mut tokens = line.split_whitespace().collect::<Vec<_>>();
+        if tokens.is_empty() {
+            continue;
         }
+        for raw in tokens.drain(..) {
+            let mut token = raw.trim();
+            if token.is_empty() {
+                continue;
+            }
+            let mut span = 1usize;
+            if let Some((base, span_str)) = token.rsplit_once(':') {
+                if let Ok(parsed_span) = span_str.parse::<usize>() {
+                    if parsed_span > 0 {
+                        span = parsed_span;
+                        token = base;
+                    }
+                }
+            }
+            let is_space = token.eq_ignore_ascii_case("space");
+            if is_space {
+                block.nodes.push(crate::ir::BlockNode {
+                    id: "__space".to_string(),
+                    span,
+                    is_space: true,
+                });
+                continue;
+            }
+            let (id, label, shape, classes) = parse_node_token(token);
+            if id.is_empty() {
+                continue;
+            }
+            graph.ensure_node(&id, label, shape);
+            if !classes.is_empty() {
+                apply_node_classes(&mut graph, &id, &classes);
+            }
+            block.nodes.push(crate::ir::BlockNode {
+                id,
+                span,
+                is_space: false,
+            });
+        }
+    }
+
+    if !block.nodes.is_empty() || block.columns.is_some() {
+        graph.block = Some(block);
     }
 
     Ok(ParseOutput { graph, init_config })

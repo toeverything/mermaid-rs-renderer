@@ -1363,6 +1363,7 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         crate::ir::DiagramKind::Quadrant => compute_quadrant_layout(graph, theme, config),
         crate::ir::DiagramKind::Gantt => compute_gantt_layout(graph, theme, config),
         crate::ir::DiagramKind::Kanban => compute_kanban_layout(graph, theme, config),
+        crate::ir::DiagramKind::Block => compute_block_layout(graph, theme, config),
         crate::ir::DiagramKind::Sankey => compute_sankey_layout(graph, theme, config),
         crate::ir::DiagramKind::Architecture => compute_architecture_layout(graph, theme, config),
         crate::ir::DiagramKind::Radar => compute_radar_layout(graph, theme, config),
@@ -1383,7 +1384,6 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         | crate::ir::DiagramKind::Er
         | crate::ir::DiagramKind::Journey
         | crate::ir::DiagramKind::Requirement
-        | crate::ir::DiagramKind::Block
         | crate::ir::DiagramKind::Packet
         | crate::ir::DiagramKind::Flowchart => compute_flowchart_layout(graph, theme, config),
     }
@@ -4033,7 +4033,7 @@ fn compute_architecture_layout(graph: &Graph, theme: &Theme, config: &LayoutConf
         });
     }
 
-    let (max_x, max_y) = bounds_without_padding(&nodes, &subgraphs);
+    let (max_x, max_y) = bounds_with_edges(&nodes, &subgraphs, &edges);
     let width = (max_x + MARGIN).max(200.0);
     let height = (max_y + MARGIN).max(200.0);
 
@@ -4152,6 +4152,235 @@ fn compute_radar_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
         error: None,
         width: WIDTH,
         height: HEIGHT,
+    }
+}
+
+fn compute_block_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
+    let mut nodes = BTreeMap::new();
+    for node in graph.nodes.values() {
+        let label = measure_label(&node.label, theme, config);
+        let (width, height) = shape_size(node.shape, &label, config, theme, graph.kind);
+        let style = resolve_node_style(node.id.as_str(), graph);
+        nodes.insert(
+            node.id.clone(),
+            NodeLayout {
+                id: node.id.clone(),
+                x: 0.0,
+                y: 0.0,
+                width,
+                height,
+                label,
+                shape: node.shape,
+                style,
+                link: graph.node_links.get(&node.id).cloned(),
+                anchor_subgraph: None,
+                hidden: false,
+            },
+        );
+    }
+
+    let node_gap = (theme.font_size * 0.6).max(6.0);
+    let column_gap = (theme.font_size * 0.6).max(8.0);
+    let origin_x = 8.0;
+    let origin_y = 8.0;
+
+    let mut edges: Vec<EdgeLayout> = Vec::new();
+
+    let Some(block) = graph.block.as_ref() else {
+        let mut subgraphs = build_subgraph_layouts(graph, &nodes, theme, config);
+        normalize_layout(&mut nodes, edges.as_mut_slice(), &mut subgraphs);
+        let (max_x, max_y) = bounds_without_padding(&nodes, &subgraphs);
+        return Layout {
+            kind: graph.kind,
+            nodes,
+            edges,
+            subgraphs,
+            lifelines: Vec::new(),
+            sequence_footboxes: Vec::new(),
+            sequence_boxes: Vec::new(),
+            sequence_frames: Vec::new(),
+            sequence_notes: Vec::new(),
+            sequence_activations: Vec::new(),
+            sequence_numbers: Vec::new(),
+            state_notes: Vec::new(),
+            pie_slices: Vec::new(),
+            pie_legend: Vec::new(),
+            pie_center: (0.0, 0.0),
+            pie_radius: 0.0,
+            pie_title: None,
+            quadrant: None,
+            gantt: None,
+            sankey: None,
+            gitgraph: None,
+            c4: None,
+            xychart: None,
+            timeline: None,
+            error: None,
+            width: max_x + 8.0,
+            height: max_y + 8.0,
+        };
+    };
+
+    let columns = block.columns.unwrap_or_else(|| block.nodes.len().max(1));
+    let mut column_widths = vec![0.0f32; columns];
+    let mut column_x = vec![0.0f32; columns];
+    let mut row_y = Vec::<f32>::new();
+
+    let mut row = 0usize;
+    let mut col = 0usize;
+    let mut row_heights: Vec<f32> = vec![0.0];
+
+    for node in &block.nodes {
+        if col >= columns {
+            col = 0;
+            row += 1;
+            row_heights.push(0.0);
+        }
+        let span = node.span.max(1).min(columns);
+        if col + span > columns {
+            col = 0;
+            row += 1;
+            row_heights.push(0.0);
+        }
+        if !node.is_space {
+            if let Some(layout) = nodes.get(&node.id) {
+                let per_col = layout.width / span as f32;
+                for i in 0..span {
+                    let idx = col + i;
+                    if idx < columns {
+                        column_widths[idx] = column_widths[idx].max(per_col);
+                    }
+                }
+                row_heights[row] = row_heights[row].max(layout.height);
+            }
+        }
+        col += span;
+    }
+
+    column_x[0] = origin_x;
+    for i in 1..columns {
+        column_x[i] = column_x[i - 1] + column_widths[i - 1] + column_gap;
+    }
+
+    let mut y_cursor = origin_y;
+    for h in &row_heights {
+        row_y.push(y_cursor);
+        y_cursor += *h + node_gap;
+    }
+
+    row = 0;
+    col = 0;
+    for node in &block.nodes {
+        if col >= columns {
+            col = 0;
+            row += 1;
+        }
+        let span = node.span.max(1).min(columns);
+        if col + span > columns {
+            col = 0;
+            row += 1;
+        }
+        if !node.is_space {
+            if let Some(layout) = nodes.get_mut(&node.id) {
+                let start_x = column_x[col];
+                let mut span_width = 0.0;
+                for i in 0..span {
+                    let idx = col + i;
+                    if idx < columns {
+                        span_width += column_widths[idx];
+                        if i + 1 < span {
+                            span_width += column_gap;
+                        }
+                    }
+                }
+                let x = start_x + (span_width - layout.width) / 2.0;
+                let y = row_y[row] + (row_heights[row] - layout.height) / 2.0;
+                layout.x = x;
+                layout.y = y;
+            }
+        }
+        col += span;
+    }
+
+    for edge in &graph.edges {
+        let Some(from_layout) = nodes.get(&edge.from) else {
+            continue;
+        };
+        let Some(to_layout) = nodes.get(&edge.to) else {
+            continue;
+        };
+        let from_center = (
+            from_layout.x + from_layout.width / 2.0,
+            from_layout.y + from_layout.height / 2.0,
+        );
+        let to_center = (
+            to_layout.x + to_layout.width / 2.0,
+            to_layout.y + to_layout.height / 2.0,
+        );
+        let label = edge.label.as_ref().map(|l| measure_label(l, theme, config));
+        let start_label = edge
+            .start_label
+            .as_ref()
+            .map(|l| measure_label(l, theme, config));
+        let end_label = edge.end_label.as_ref().map(|l| measure_label(l, theme, config));
+        let mut override_style = resolve_edge_style(edges.len(), graph);
+        if edge.style == crate::ir::EdgeStyle::Dotted && override_style.dasharray.is_none() {
+            override_style.dasharray = Some("3 3".to_string());
+        }
+        edges.push(EdgeLayout {
+            from: edge.from.clone(),
+            to: edge.to.clone(),
+            label,
+            start_label,
+            end_label,
+            points: vec![from_center, to_center],
+            directed: edge.directed,
+            arrow_start: edge.arrow_start,
+            arrow_end: edge.arrow_end,
+            arrow_start_kind: edge.arrow_start_kind,
+            arrow_end_kind: edge.arrow_end_kind,
+            start_decoration: edge.start_decoration,
+            end_decoration: edge.end_decoration,
+            style: edge.style,
+            override_style,
+        });
+    }
+
+    let mut subgraphs = build_subgraph_layouts(graph, &nodes, theme, config);
+    normalize_layout(&mut nodes, edges.as_mut_slice(), &mut subgraphs);
+
+    let (max_x, max_y) = bounds_with_edges(&nodes, &subgraphs, &edges);
+    let width = max_x + 8.0;
+    let height = max_y + 8.0;
+
+    Layout {
+        kind: graph.kind,
+        nodes,
+        edges,
+        subgraphs,
+        lifelines: Vec::new(),
+        sequence_footboxes: Vec::new(),
+        sequence_boxes: Vec::new(),
+        sequence_frames: Vec::new(),
+        sequence_notes: Vec::new(),
+        sequence_activations: Vec::new(),
+        sequence_numbers: Vec::new(),
+        state_notes: Vec::new(),
+        pie_slices: Vec::new(),
+        pie_legend: Vec::new(),
+        pie_center: (0.0, 0.0),
+        pie_radius: 0.0,
+        pie_title: None,
+        quadrant: None,
+        gantt: None,
+        sankey: None,
+        gitgraph: None,
+        c4: None,
+        xychart: None,
+        timeline: None,
+        error: None,
+        width,
+        height,
     }
 }
 
@@ -4687,7 +4916,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     }
     let mut layout_set: HashSet<String> = layout_node_ids.iter().cloned().collect();
 
-    let used_dagre = assign_positions_dagre(
+    let (used_dagre, dagre_edge_points) = assign_positions_dagre(
         graph,
         &layout_node_ids,
         &layout_set,
@@ -4905,21 +5134,39 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             .get(idx)
             .copied()
             .expect("edge port info missing");
-        let route_ctx = RouteContext {
-            from_id: &edge.from,
-            to_id: &edge.to,
-            from,
-            to,
-            direction: graph.direction,
-            config,
-            obstacles: &obstacles,
-            base_offset,
-            start_side: port_info.start_side,
-            end_side: port_info.end_side,
-            start_offset: port_info.start_offset,
-            end_offset: port_info.end_offset,
+
+        // Try to use dagre's pre-computed edge points if available
+        let points = if let Some(dagre_pts) = dagre_edge_points.get(&(edge.from.clone(), edge.to.clone())) {
+            // Dagre provides internal waypoints but we need to anchor start/end at node boundaries
+            let mut pts = dagre_pts.clone();
+            if pts.len() >= 2 {
+                // Anchor the start point at the source node boundary
+                let start_anchor = anchor_point_for_node(from, port_info.start_side, port_info.start_offset);
+                pts[0] = start_anchor;
+                // Anchor the end point at the target node boundary
+                let end_anchor = anchor_point_for_node(to, port_info.end_side, port_info.end_offset);
+                let last_idx = pts.len() - 1;
+                pts[last_idx] = end_anchor;
+            }
+            pts
+        } else {
+            // Fall back to our custom routing
+            let route_ctx = RouteContext {
+                from_id: &edge.from,
+                to_id: &edge.to,
+                from,
+                to,
+                direction: graph.direction,
+                config,
+                obstacles: &obstacles,
+                base_offset,
+                start_side: port_info.start_side,
+                end_side: port_info.end_side,
+                start_offset: port_info.start_offset,
+                end_offset: port_info.end_offset,
+            };
+            route_edge_with_avoidance(&route_ctx)
         };
-        let points = route_edge_with_avoidance(&route_ctx);
         edges.push(EdgeLayout {
             from: edge.from.clone(),
             to: edge.to.clone(),
@@ -4972,7 +5219,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             });
         }
     }
-    let (mut max_x, mut max_y) = bounds_without_padding(&nodes, &subgraphs);
+    let (mut max_x, mut max_y) = bounds_with_edges(&nodes, &subgraphs, &edges);
     for note in &state_notes {
         max_x = max_x.max(note.x + note.width);
         max_y = max_y.max(note.y + note.height);
@@ -5263,6 +5510,9 @@ fn treemap_depth_color(depth: usize, theme: &Theme) -> String {
     }
 }
 
+/// Edge points computed by dagre, keyed by (from_id, to_id)
+type DagreEdgePoints = HashMap<(String, String), Vec<(f32, f32)>>;
+
 fn assign_positions_dagre(
     graph: &Graph,
     layout_node_ids: &[String],
@@ -5271,9 +5521,9 @@ fn assign_positions_dagre(
     theme: &Theme,
     config: &LayoutConfig,
     layout_edges: &[crate::ir::Edge],
-) -> bool {
+) -> (bool, DagreEdgePoints) {
     if layout_node_ids.is_empty() {
-        return false;
+        return (false, HashMap::new());
     }
 
     let mut anchor_ids: HashMap<usize, String> = HashMap::new();
@@ -5456,7 +5706,20 @@ fn assign_positions_dagre(
         }
     }
 
-    applied
+    // Extract edge points computed by dagre
+    let mut edge_points: DagreEdgePoints = HashMap::new();
+    for e in dagre_graph.edges() {
+        if let Some(edge_data) = dagre_graph.edge_with_obj(&e) {
+            if let Some(points) = &edge_data.points {
+                let pts: Vec<(f32, f32)> = points.iter().map(|p| (p.x, p.y)).collect();
+                if !pts.is_empty() {
+                    edge_points.insert((e.v.clone(), e.w.clone()), pts);
+                }
+            }
+        }
+    }
+
+    (applied, edge_points)
 }
 
 fn assign_positions_dagre_subset(
@@ -5773,7 +6036,9 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
     let actor_height = (max_label_height + theme.font_size * 2.5).max(65.0);
     let actor_gap = (theme.font_size * 3.85).max(40.0);
 
-    let mut cursor_x = 0.0;
+    // Add consistent margins to center the diagram
+    let margin = 20.0;
+    let mut cursor_x = margin;
     for id in &participants {
         let node = graph.nodes.get(id).expect("participant missing");
         let label = label_blocks.get(id).cloned().unwrap_or_else(|| TextBlock {
@@ -5786,7 +6051,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
             NodeLayout {
                 id: id.clone(),
                 x: cursor_x,
-                y: 0.0,
+                y: margin,
                 width: actor_width,
                 height: actor_height,
                 label,
@@ -5827,7 +6092,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         notes_by_index[idx].push(note);
     }
 
-    let mut message_cursor = actor_height + theme.font_size * 2.9;
+    let mut message_cursor = margin + actor_height + theme.font_size * 2.9;
     let mut message_ys = Vec::new();
     let mut sequence_notes = Vec::new();
     for idx in 0..=graph.edges.len() {
@@ -6065,7 +6330,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         }
     }
 
-    let lifeline_start = actor_height;
+    let lifeline_start = margin + actor_height;
     let mut last_message_y = message_ys
         .last()
         .copied()
@@ -7451,6 +7716,14 @@ fn bounds_without_padding(
     nodes: &BTreeMap<String, NodeLayout>,
     subgraphs: &[SubgraphLayout],
 ) -> (f32, f32) {
+    bounds_with_edges(nodes, subgraphs, &[])
+}
+
+fn bounds_with_edges(
+    nodes: &BTreeMap<String, NodeLayout>,
+    subgraphs: &[SubgraphLayout],
+    edges: &[EdgeLayout],
+) -> (f32, f32) {
     let mut max_x: f32 = 0.0;
     let mut max_y: f32 = 0.0;
     for node in nodes.values() {
@@ -7466,6 +7739,13 @@ fn bounds_without_padding(
         }
         max_x = max_x.max(sub.x + sub.width);
         max_y = max_y.max(sub.y + sub.height);
+    }
+    // Also include edge points - dagre routing can place waypoints outside node bounds
+    for edge in edges {
+        for point in &edge.points {
+            max_x = max_x.max(point.0);
+            max_y = max_y.max(point.1);
+        }
     }
     (max_x, max_y)
 }
@@ -7519,6 +7799,13 @@ fn normalize_layout(
     for sub in subgraphs.iter() {
         min_x = min_x.min(sub.x);
         min_y = min_y.min(sub.y);
+    }
+    // Also check edge points - dagre routing can place waypoints outside node bounds
+    for edge in edges.iter() {
+        for point in &edge.points {
+            min_x = min_x.min(point.0);
+            min_y = min_y.min(point.1);
+        }
     }
 
     let padding = 8.0;

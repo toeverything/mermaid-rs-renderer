@@ -414,6 +414,7 @@ pub struct Graph {
     pub mindmap: MindmapData,
     pub xychart: XYChartData,
     pub timeline: TimelineData,
+    pub block: Option<BlockDiagram>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -505,6 +506,19 @@ pub struct TimelineData {
     pub sections: Vec<String>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct BlockDiagram {
+    pub columns: Option<usize>,
+    pub nodes: Vec<BlockNode>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BlockNode {
+    pub id: String,
+    pub span: usize,
+    pub is_space: bool,
+}
+
 impl Graph {
     pub fn new() -> Self {
         Self {
@@ -541,6 +555,7 @@ impl Graph {
             mindmap: MindmapData::default(),
             xychart: XYChartData::default(),
             timeline: TimelineData::default(),
+            block: None,
         }
     }
 
