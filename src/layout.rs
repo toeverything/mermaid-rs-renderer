@@ -7878,6 +7878,7 @@ fn route_edge_with_avoidance(
     let start = anchor_point_for_node(ctx.from, ctx.start_side, ctx.start_offset);
     let end = anchor_point_for_node(ctx.to, ctx.end_side, ctx.end_offset);
     let mut candidates: Vec<Vec<(f32, f32)>> = Vec::new();
+    let mut intersections: Vec<usize> = Vec::new();
 
     // For backward edges, try routing around obstacles (both left and right)
     if is_backward {
@@ -7910,26 +7911,26 @@ fn route_edge_with_avoidance(
         if max_right > 0.0 {
             let route_x = max_right + pad;
             let points = vec![start, (route_x, start.1), (route_x, end.1), end];
-            if !path_intersects_obstacles(&points, ctx.obstacles, ctx.from_id, ctx.to_id) {
-                candidates.push(points);
-            }
+            let hits = path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
+            candidates.push(points);
+            intersections.push(hits);
         }
 
         // Try routing around the left side
         if min_left < f32::MAX {
             let route_x = min_left - pad;
             let points = vec![start, (route_x, start.1), (route_x, end.1), end];
-            if !path_intersects_obstacles(&points, ctx.obstacles, ctx.from_id, ctx.to_id) {
-                candidates.push(points);
-            }
+            let hits = path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
+            candidates.push(points);
+            intersections.push(hits);
         }
     }
 
     // Check if a direct line is possible (no obstacles in the way)
     let direct_path = vec![start, end];
-    if !path_intersects_obstacles(&direct_path, ctx.obstacles, ctx.from_id, ctx.to_id) {
-        candidates.push(direct_path);
-    }
+    let hits = path_obstacle_intersections(&direct_path, ctx.obstacles, ctx.from_id, ctx.to_id);
+    candidates.push(direct_path);
+    intersections.push(hits);
 
     // Fall back to orthogonal routing with control points
     let step = ctx.config.node_spacing.max(16.0) * 0.6;
@@ -7941,72 +7942,117 @@ fn route_edge_with_avoidance(
     }
 
     for offset in offsets {
-        let points = if is_horizontal(ctx.direction) {
+        if is_horizontal(ctx.direction) {
             let mid_x = (start.0 + end.0) / 2.0 + offset;
-            vec![start, (mid_x, start.1), (mid_x, end.1), end]
+            let points = vec![start, (mid_x, start.1), (mid_x, end.1), end];
+            let hits = path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
+            candidates.push(points);
+            intersections.push(hits);
+
+            let mid_y = (start.1 + end.1) / 2.0 + offset;
+            let alt = vec![start, (start.0, mid_y), (end.0, mid_y), end];
+            let hits = path_obstacle_intersections(&alt, ctx.obstacles, ctx.from_id, ctx.to_id);
+            candidates.push(alt);
+            intersections.push(hits);
         } else {
             let mid_y = (start.1 + end.1) / 2.0 + offset;
-            vec![start, (start.0, mid_y), (end.0, mid_y), end]
-        };
-
-        if !path_intersects_obstacles(&points, ctx.obstacles, ctx.from_id, ctx.to_id) {
+            let points = vec![start, (start.0, mid_y), (end.0, mid_y), end];
+            let hits = path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
             candidates.push(points);
+            intersections.push(hits);
+
+            let mid_x = (start.0 + end.0) / 2.0 + offset;
+            let alt = vec![start, (mid_x, start.1), (mid_x, end.1), end];
+            let hits = path_obstacle_intersections(&alt, ctx.obstacles, ctx.from_id, ctx.to_id);
+            candidates.push(alt);
+            intersections.push(hits);
         }
     }
 
-    if candidates.is_empty() {
-        if is_horizontal(ctx.direction) {
-            let mid_x = (start.0 + end.0) / 2.0;
-            return vec![start, (mid_x, start.1), (mid_x, end.1), end];
-        } else {
-            let mid_y = (start.1 + end.1) / 2.0;
-            return vec![start, (start.0, mid_y), (end.0, mid_y), end];
+    let min_hits = intersections.iter().copied().min().unwrap_or(0);
+    if min_hits > 0 {
+        for i in 7..=9 {
+            let delta = step * i as f32;
+            for sign in [1.0, -1.0] {
+                let offset = ctx.base_offset + sign * delta;
+                let points = if is_horizontal(ctx.direction) {
+                    let mid_x = (start.0 + end.0) / 2.0 + offset;
+                    vec![start, (mid_x, start.1), (mid_x, end.1), end]
+                } else {
+                    let mid_y = (start.1 + end.1) / 2.0 + offset;
+                    vec![start, (start.0, mid_y), (end.0, mid_y), end]
+                };
+                let hits = path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
+                candidates.push(points);
+                intersections.push(hits);
+            }
         }
     }
 
     if let Some(grid) = occupancy {
-        let mut scored: Vec<(u32, f32, Vec<(f32, f32)>)> = Vec::with_capacity(candidates.len());
-        let mut min_score = u32::MAX;
-        for points in candidates {
-            let score = grid.score_path(&points);
-            let len = path_length(&points);
-            min_score = min_score.min(score);
-            scored.push((score, len, points));
-        }
-        if min_score > 3 && scored.len() < 10 {
-            for i in 7..=9 {
-                let delta = step * i as f32;
-                for sign in [1.0, -1.0] {
-                    let offset = ctx.base_offset + sign * delta;
-                    let points = if is_horizontal(ctx.direction) {
-                        let mid_x = (start.0 + end.0) / 2.0 + offset;
-                        vec![start, (mid_x, start.1), (mid_x, end.1), end]
-                    } else {
-                        let mid_y = (start.1 + end.1) / 2.0 + offset;
-                        vec![start, (start.0, mid_y), (end.0, mid_y), end]
-                    };
-                    if !path_intersects_obstacles(&points, ctx.obstacles, ctx.from_id, ctx.to_id) {
-                        let score = grid.score_path(&points);
-                        let len = path_length(&points);
-                        scored.push((score, len, points));
-                    }
-                }
-            }
-        }
         let mut best_idx = 0usize;
+        let mut best_hits = usize::MAX;
         let mut best_score = u32::MAX;
         let mut best_len = f32::MAX;
-        for (idx, (score, len, _)) in scored.iter().enumerate() {
-            if *score < best_score || (*score == best_score && *len < best_len) {
-                best_score = *score;
-                best_len = *len;
+        for (idx, points) in candidates.iter().enumerate() {
+            let hits = intersections.get(idx).copied().unwrap_or(0);
+            let score = grid.score_path(points);
+            let len = path_length(points);
+            if hits < best_hits
+                || (hits == best_hits && score < best_score)
+                || (hits == best_hits && score == best_score && len < best_len)
+            {
+                best_hits = hits;
+                best_score = score;
+                best_len = len;
                 best_idx = idx;
             }
         }
-        return scored.swap_remove(best_idx).2;
+        return candidates.swap_remove(best_idx);
     }
 
-    candidates.swap_remove(0)
+    let mut best_idx = 0usize;
+    let mut best_hits = usize::MAX;
+    let mut best_len = f32::MAX;
+    for (idx, points) in candidates.iter().enumerate() {
+        let hits = intersections.get(idx).copied().unwrap_or(0);
+        let len = path_length(points);
+        if hits < best_hits || (hits == best_hits && len < best_len) {
+            best_hits = hits;
+            best_len = len;
+            best_idx = idx;
+        }
+    }
+    candidates.swap_remove(best_idx)
+}
+
+fn path_obstacle_intersections(
+    points: &[(f32, f32)],
+    obstacles: &[Obstacle],
+    from_id: &str,
+    to_id: &str,
+) -> usize {
+    if points.len() < 2 {
+        return 0;
+    }
+    let mut count = 0usize;
+    for segment in points.windows(2) {
+        let (a, b) = (segment[0], segment[1]);
+        for obstacle in obstacles {
+            if obstacle.id == from_id || obstacle.id == to_id {
+                continue;
+            }
+            if let Some(members) = &obstacle.members
+                && (members.contains(from_id) || members.contains(to_id))
+            {
+                continue;
+            }
+            if segment_intersects_rect(a, b, obstacle) {
+                count += 1;
+            }
+        }
+    }
+    count
 }
 
 fn path_length(points: &[(f32, f32)]) -> f32 {
@@ -8048,7 +8094,7 @@ fn build_obstacles(
     config: &LayoutConfig,
 ) -> Vec<Obstacle> {
     let mut obstacles = Vec::new();
-    let pad = (config.node_spacing * 0.2).max(6.0);
+    let pad = (config.node_spacing * 0.35).max(6.0);
     for node in nodes.values() {
         if node.hidden {
             continue;
@@ -8140,20 +8186,79 @@ fn path_intersects_obstacles(
 fn segment_intersects_rect(a: (f32, f32), b: (f32, f32), rect: &Obstacle) -> bool {
     let (x1, y1) = a;
     let (x2, y2) = b;
-    if (x1 - x2).abs() < f32::EPSILON {
-        let x = x1;
-        if x >= rect.x && x <= rect.x + rect.width {
-            let min_y = y1.min(y2);
-            let max_y = y1.max(y2);
-            return max_y >= rect.y && min_y <= rect.y + rect.height;
+    let min_x = x1.min(x2);
+    let max_x = x1.max(x2);
+    let min_y = y1.min(y2);
+    let max_y = y1.max(y2);
+    if max_x < rect.x || min_x > rect.x + rect.width || max_y < rect.y || min_y > rect.y + rect.height
+    {
+        return false;
+    }
+    if x1 >= rect.x
+        && x1 <= rect.x + rect.width
+        && y1 >= rect.y
+        && y1 <= rect.y + rect.height
+    {
+        return true;
+    }
+    if x2 >= rect.x
+        && x2 <= rect.x + rect.width
+        && y2 >= rect.y
+        && y2 <= rect.y + rect.height
+    {
+        return true;
+    }
+    let corners = [
+        (rect.x, rect.y),
+        (rect.x + rect.width, rect.y),
+        (rect.x + rect.width, rect.y + rect.height),
+        (rect.x, rect.y + rect.height),
+    ];
+    let edges = [
+        (corners[0], corners[1]),
+        (corners[1], corners[2]),
+        (corners[2], corners[3]),
+        (corners[3], corners[0]),
+    ];
+    for (c, d) in edges {
+        if segments_intersect(a, b, c, d) {
+            return true;
         }
-    } else if (y1 - y2).abs() < f32::EPSILON {
-        let y = y1;
-        if y >= rect.y && y <= rect.y + rect.height {
-            let min_x = x1.min(x2);
-            let max_x = x1.max(x2);
-            return max_x >= rect.x && min_x <= rect.x + rect.width;
-        }
+    }
+    false
+}
+
+fn segments_intersect(a: (f32, f32), b: (f32, f32), c: (f32, f32), d: (f32, f32)) -> bool {
+    fn orient(a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> f32 {
+        (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0)
+    }
+    fn on_segment(a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> bool {
+        let min_x = a.0.min(b.0);
+        let max_x = a.0.max(b.0);
+        let min_y = a.1.min(b.1);
+        let max_y = a.1.max(b.1);
+        c.0 >= min_x - 1e-6 && c.0 <= max_x + 1e-6 && c.1 >= min_y - 1e-6 && c.1 <= max_y + 1e-6
+    }
+    let o1 = orient(a, b, c);
+    let o2 = orient(a, b, d);
+    let o3 = orient(c, d, a);
+    let o4 = orient(c, d, b);
+    if (o1 > 0.0 && o2 < 0.0 || o1 < 0.0 && o2 > 0.0)
+        && (o3 > 0.0 && o4 < 0.0 || o3 < 0.0 && o4 > 0.0)
+    {
+        return true;
+    }
+    if o1.abs() <= 1e-6 && on_segment(a, b, c) {
+        return true;
+    }
+    if o2.abs() <= 1e-6 && on_segment(a, b, d) {
+        return true;
+    }
+    if o3.abs() <= 1e-6 && on_segment(c, d, a) {
+        return true;
+    }
+    if o4.abs() <= 1e-6 && on_segment(c, d, b) {
+        return true;
     }
     false
 }
