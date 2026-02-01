@@ -7,6 +7,7 @@ from pathlib import Path
 
 WEIGHTS = {
     "edge_crossings": 5.0,
+    "edge_node_crossings": 6.0,
     "total_edge_length": 2.0,
     "edge_bends": 2.0,
     "port_congestion": 2.0,
@@ -150,12 +151,45 @@ def node_overlap_metrics(nodes):
     return overlap_count, overlap_area
 
 
+def segment_intersects_rect(a, b, rect, eps=1e-6):
+    x, y, w, h = rect
+    x1, y1 = a
+    x2, y2 = b
+    min_x = min(x1, x2)
+    max_x = max(x1, x2)
+    min_y = min(y1, y2)
+    max_y = max(y1, y2)
+    if max_x < x - eps or min_x > x + w + eps or max_y < y - eps or min_y > y + h + eps:
+        return False
+    if x - eps <= x1 <= x + w + eps and y - eps <= y1 <= y + h + eps:
+        return True
+    if x - eps <= x2 <= x + w + eps and y - eps <= y2 <= y + h + eps:
+        return True
+    corners = [
+        (x, y),
+        (x + w, y),
+        (x + w, y + h),
+        (x, y + h),
+    ]
+    edges = [
+        (corners[0], corners[1]),
+        (corners[1], corners[2]),
+        (corners[2], corners[3]),
+        (corners[3], corners[0]),
+    ]
+    for c, d in edges:
+        if segments_intersect(a, b, c, d, eps=eps):
+            return True
+    return False
+
+
 def compute_metrics(data, nodes, edges):
     total_edge_length = 0.0
     edge_bends = 0
     edge_crossings = 0
     edge_overlap_length = 0.0
     port_congestion = 0
+    edge_node_crossings = 0
 
     segments = []
     edge_points = []
@@ -170,6 +204,15 @@ def compute_metrics(data, nodes, edges):
 
     for i in range(len(segments)):
         ei, a1, a2 = segments[i]
+        edge = edges[ei]
+        from_id = edge.get("from")
+        to_id = edge.get("to")
+        for node_id, node in nodes.items():
+            if node_id == from_id or node_id == to_id:
+                continue
+            rect = (node["x"], node["y"], node["width"], node["height"])
+            if segment_intersects_rect(a1, a2, rect):
+                edge_node_crossings += 1
         for j in range(i + 1, len(segments)):
             ej, b1, b2 = segments[j]
             if ei == ej:
@@ -209,6 +252,7 @@ def compute_metrics(data, nodes, edges):
         "node_count": len(nodes),
         "edge_count": len(edges),
         "edge_crossings": edge_crossings,
+        "edge_node_crossings": edge_node_crossings,
         "total_edge_length": total_edge_length,
         "edge_bends": edge_bends,
         "port_congestion": port_congestion,
