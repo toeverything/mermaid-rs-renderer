@@ -2,13 +2,8 @@ use crate::config::{LayoutConfig, PieRenderMode, TreemapRenderMode};
 use crate::ir::{Direction, Graph};
 use crate::text_metrics;
 use crate::theme::Theme;
-use dagre_rust::{
-    GraphConfig as DagreConfig, GraphEdge as DagreEdge, GraphNode as DagreNode,
-    layout as dagre_layout,
-};
-use graphlib_rust::{Graph as DagreGraph, GraphOption};
-use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::cmp::{Ordering, Reverse};
+use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet, VecDeque};
 
 #[derive(Debug, Clone)]
 pub struct TextBlock {
@@ -4916,38 +4911,27 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     }
     let mut layout_set: HashSet<String> = layout_node_ids.iter().cloned().collect();
 
-    let (used_dagre, dagre_edge_points) = assign_positions_dagre(
+    if anchor_info.is_empty() {
+        anchor_info = apply_subgraph_anchor_sizes(graph, &mut nodes, theme, config);
+        anchored_subgraph_nodes.clear();
+        for info in anchor_info.values() {
+            if let Some(sub) = graph.subgraphs.get(info.sub_idx) {
+                anchored_subgraph_nodes.extend(sub.nodes.iter().cloned());
+            }
+        }
+        if !anchored_subgraph_nodes.is_empty() {
+            layout_node_ids.retain(|id| !anchored_subgraph_nodes.contains(id));
+        }
+        layout_set = layout_node_ids.iter().cloned().collect();
+    }
+    assign_positions_manual(
         graph,
         &layout_node_ids,
         &layout_set,
         &mut nodes,
-        theme,
         config,
         &layout_edges,
     );
-    if !used_dagre {
-        if anchor_info.is_empty() {
-            anchor_info = apply_subgraph_anchor_sizes(graph, &mut nodes, theme, config);
-            anchored_subgraph_nodes.clear();
-            for info in anchor_info.values() {
-                if let Some(sub) = graph.subgraphs.get(info.sub_idx) {
-                    anchored_subgraph_nodes.extend(sub.nodes.iter().cloned());
-                }
-            }
-            if !anchored_subgraph_nodes.is_empty() {
-                layout_node_ids.retain(|id| !anchored_subgraph_nodes.contains(id));
-            }
-            layout_set = layout_node_ids.iter().cloned().collect();
-        }
-        assign_positions_manual(
-            graph,
-            &layout_node_ids,
-            &layout_set,
-            &mut nodes,
-            config,
-            &layout_edges,
-        );
-    }
 
     let mut anchored_nodes: HashSet<String> = anchored_subgraph_nodes;
     if !graph.subgraphs.is_empty() {
@@ -4961,11 +4945,9 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         if graph.kind == crate::ir::DiagramKind::State && !anchor_info.is_empty() {
             apply_state_subgraph_layouts(graph, &mut nodes, config, &anchored_indices);
         }
-        if !used_dagre {
-            apply_orthogonal_region_bands(graph, &mut nodes, config);
-            if graph.kind != crate::ir::DiagramKind::State {
-                apply_subgraph_bands(graph, &mut nodes, &anchored_nodes, config);
-            }
+        apply_orthogonal_region_bands(graph, &mut nodes, config);
+        if graph.kind != crate::ir::DiagramKind::State {
+            apply_subgraph_bands(graph, &mut nodes, &anchored_nodes, config);
         }
     }
 
@@ -5035,9 +5017,18 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         let Some(node) = nodes.get(&node_id) else {
             continue;
         };
-        candidates.sort_by(|a, b| {
-            a.other_pos
-                .partial_cmp(&b.other_pos)
+        let mut min_other = f32::MAX;
+        let mut max_other = f32::MIN;
+        for candidate in &candidates {
+            min_other = min_other.min(candidate.other_pos);
+            max_other = max_other.max(candidate.other_pos);
+        }
+        let span = (max_other - min_other).max(1.0);
+        let mut order: Vec<usize> = (0..candidates.len()).collect();
+        order.sort_by(|&a, &b| {
+            candidates[a]
+                .other_pos
+                .partial_cmp(&candidates[b].other_pos)
                 .unwrap_or(Ordering::Equal)
         });
         let node_len = if side_is_vertical(side) {
@@ -5045,12 +5036,50 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         } else {
             node.width
         };
-        let pad = (node_len * 0.2).min(12.0).max(4.0);
+        let pad = (node_len * config.flowchart.port_pad_ratio)
+            .min(config.flowchart.port_pad_max)
+            .max(config.flowchart.port_pad_min);
         let usable = (node_len - 2.0 * pad).max(1.0);
-        let step = usable / (candidates.len() as f32 + 1.0);
-        for (i, candidate) in candidates.iter().enumerate() {
-            let pos = pad + step * (i as f32 + 1.0);
-            let offset = pos - node_len / 2.0;
+        let min_sep = usable / (candidates.len() as f32 + 1.0);
+        let mut desired: Vec<(usize, f32)> = order
+            .iter()
+            .map(|&idx| {
+                let candidate = &candidates[idx];
+                let t = (candidate.other_pos - min_other) / span;
+                let pos = pad + t * usable;
+                (idx, pos)
+            })
+            .collect();
+        let mut assigned = vec![0.0; candidates.len()];
+        let mut prev = pad;
+        for (order_idx, (cand_idx, pos)) in desired.iter().enumerate() {
+            let mut p = *pos;
+            if order_idx == 0 {
+                p = p.max(pad);
+            } else {
+                p = p.max(prev + min_sep);
+            }
+            assigned[*cand_idx] = p;
+            prev = p;
+        }
+        let mut next = pad + usable;
+        for (order_idx, (cand_idx, _pos)) in desired.iter().enumerate().rev() {
+            let mut p = assigned[*cand_idx];
+            if order_idx + 1 == desired.len() {
+                p = p.min(next);
+            } else {
+                p = p.min(next - min_sep);
+            }
+            assigned[*cand_idx] = p;
+            next = p;
+        }
+        for (rank, &cand_idx) in order.iter().enumerate() {
+            let candidate = &candidates[cand_idx];
+            let mut offset = assigned[cand_idx] - node_len / 2.0;
+            if config.flowchart.port_side_bias != 0.0 {
+                offset += config.flowchart.port_side_bias
+                    * (rank as f32 - (candidates.len() as f32 - 1.0) / 2.0);
+            }
             if let Some(info) = edge_ports.get_mut(candidate.edge_idx) {
                 if candidate.is_start {
                     info.start_offset = offset;
@@ -5063,6 +5092,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     let pair_counts = build_edge_pair_counts(&graph.edges);
     let mut pair_seen: HashMap<(String, String), usize> = HashMap::new();
     let mut edges = Vec::new();
+    let mut edge_occupancy = EdgeOccupancy::new(config.node_spacing.max(16.0) * 0.6);
     for (idx, edge) in graph.edges.iter().enumerate() {
         let key = edge_pair_key(edge);
         let total = *pair_counts.get(&key).unwrap_or(&1) as f32;
@@ -5135,38 +5165,22 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             .copied()
             .expect("edge port info missing");
 
-        // Try to use dagre's pre-computed edge points if available
-        let points = if let Some(dagre_pts) = dagre_edge_points.get(&(edge.from.clone(), edge.to.clone())) {
-            // Dagre provides internal waypoints but we need to anchor start/end at node boundaries
-            let mut pts = dagre_pts.clone();
-            if pts.len() >= 2 {
-                // Anchor the start point at the source node boundary
-                let start_anchor = anchor_point_for_node(from, port_info.start_side, port_info.start_offset);
-                pts[0] = start_anchor;
-                // Anchor the end point at the target node boundary
-                let end_anchor = anchor_point_for_node(to, port_info.end_side, port_info.end_offset);
-                let last_idx = pts.len() - 1;
-                pts[last_idx] = end_anchor;
-            }
-            pts
-        } else {
-            // Fall back to our custom routing
-            let route_ctx = RouteContext {
-                from_id: &edge.from,
-                to_id: &edge.to,
-                from,
-                to,
-                direction: graph.direction,
-                config,
-                obstacles: &obstacles,
-                base_offset,
-                start_side: port_info.start_side,
-                end_side: port_info.end_side,
-                start_offset: port_info.start_offset,
-                end_offset: port_info.end_offset,
-            };
-            route_edge_with_avoidance(&route_ctx)
+        let route_ctx = RouteContext {
+            from_id: &edge.from,
+            to_id: &edge.to,
+            from,
+            to,
+            direction: graph.direction,
+            config,
+            obstacles: &obstacles,
+            base_offset,
+            start_side: port_info.start_side,
+            end_side: port_info.end_side,
+            start_offset: port_info.start_offset,
+            end_offset: port_info.end_offset,
         };
+        let points = route_edge_with_avoidance(&route_ctx, Some(&edge_occupancy));
+        edge_occupancy.add_path(&points);
         edges.push(EdgeLayout {
             from: edge.from.clone(),
             to: edge.to.clone(),
@@ -5186,7 +5200,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         });
     }
 
-    if !used_dagre && matches!(graph.direction, Direction::RightLeft | Direction::BottomTop) {
+    if matches!(graph.direction, Direction::RightLeft | Direction::BottomTop) {
         apply_direction_mirror(graph.direction, &mut nodes, &mut edges, &mut subgraphs);
     }
 
@@ -5510,292 +5524,6 @@ fn treemap_depth_color(depth: usize, theme: &Theme) -> String {
     }
 }
 
-/// Edge points computed by dagre, keyed by (from_id, to_id)
-type DagreEdgePoints = HashMap<(String, String), Vec<(f32, f32)>>;
-
-fn assign_positions_dagre(
-    graph: &Graph,
-    layout_node_ids: &[String],
-    layout_set: &HashSet<String>,
-    nodes: &mut BTreeMap<String, NodeLayout>,
-    theme: &Theme,
-    config: &LayoutConfig,
-    layout_edges: &[crate::ir::Edge],
-) -> (bool, DagreEdgePoints) {
-    if layout_node_ids.is_empty() {
-        return (false, HashMap::new());
-    }
-
-    let mut anchor_ids: HashMap<usize, String> = HashMap::new();
-    if !graph.subgraphs.is_empty() {
-        for (idx, sub) in graph.subgraphs.iter().enumerate() {
-            let Some(anchor_id) = subgraph_anchor_id(sub, nodes) else {
-                continue;
-            };
-            anchor_ids.insert(idx, anchor_id.to_string());
-        }
-    }
-
-    // Compound mode without parents can yield poor layouts in dagre_rust.
-    // Only enable it when we have anchor parents to wire up.
-    let compound_enabled = !anchor_ids.is_empty();
-    let mut dagre_graph: DagreGraph<DagreConfig, DagreNode, DagreEdge> =
-        DagreGraph::new(Some(GraphOption {
-            directed: Some(true),
-            multigraph: Some(false),
-            compound: Some(compound_enabled),
-        }));
-
-    let mut graph_config = DagreConfig::default();
-    graph_config.rankdir = Some(dagre_rankdir(graph.direction).to_string());
-    graph_config.nodesep = Some(config.node_spacing);
-    graph_config.ranksep = Some(config.rank_spacing);
-    graph_config.marginx = Some(0.0);
-    graph_config.marginy = Some(0.0);
-    dagre_graph.set_graph(graph_config);
-
-    for node_id in layout_node_ids {
-        let Some(layout) = nodes.get(node_id) else {
-            continue;
-        };
-        let mut node = DagreNode::default();
-        node.width = layout.width;
-        node.height = layout.height;
-        if let Some(order) = graph.node_order.get(node_id) {
-            node.order = Some(*order);
-        }
-        dagre_graph.set_node(node_id.clone(), Some(node));
-    }
-
-    if compound_enabled && !anchor_ids.is_empty() {
-        let mut node_parent: HashMap<String, usize> = HashMap::new();
-        for (idx, sub) in graph.subgraphs.iter().enumerate() {
-            let Some(anchor_id) = anchor_ids.get(&idx) else {
-                continue;
-            };
-            let sub_size = sub.nodes.len();
-            for node_id in &sub.nodes {
-                if !layout_set.contains(node_id) {
-                    continue;
-                }
-                if node_id == anchor_id {
-                    continue;
-                }
-                let entry = node_parent.entry(node_id.clone()).or_insert(idx);
-                let current_size = graph
-                    .subgraphs
-                    .get(*entry)
-                    .map(|s| s.nodes.len())
-                    .unwrap_or(usize::MAX);
-                if sub_size < current_size {
-                    *entry = idx;
-                }
-            }
-        }
-
-        let mut subgraph_sets: Vec<HashSet<String>> = Vec::with_capacity(graph.subgraphs.len());
-        for sub in &graph.subgraphs {
-            subgraph_sets.push(sub.nodes.iter().cloned().collect());
-        }
-
-        for (child_idx, child_anchor) in &anchor_ids {
-            let mut best_parent: Option<usize> = None;
-            let mut best_size = usize::MAX;
-            for (parent_idx, parent_anchor) in &anchor_ids {
-                if child_idx == parent_idx || child_anchor == parent_anchor {
-                    continue;
-                }
-                let parent_set = &subgraph_sets[*parent_idx];
-                let child_set = &subgraph_sets[*child_idx];
-                if child_set.is_subset(parent_set) {
-                    let parent_size = parent_set.len();
-                    if parent_size < best_size {
-                        best_size = parent_size;
-                        best_parent = Some(*parent_idx);
-                    }
-                }
-            }
-            if let Some(parent_idx) = best_parent
-                && let Some(parent_anchor) = anchor_ids.get(&parent_idx)
-            {
-                let _ = dagre_graph.set_parent(child_anchor, Some(parent_anchor.clone()));
-            }
-        }
-
-        for (node_id, parent_idx) in node_parent {
-            if let Some(parent_anchor) = anchor_ids.get(&parent_idx) {
-                let _ = dagre_graph.set_parent(&node_id, Some(parent_anchor.clone()));
-            }
-        }
-
-        // Add invisible edges between top-level sibling subgraphs to prevent overlap
-        // Find which anchors have no parent (top-level subgraphs)
-        let mut top_level_anchors: Vec<String> = Vec::new();
-        for (idx, anchor) in &anchor_ids {
-            let sub = &graph.subgraphs[*idx];
-            let is_nested = graph
-                .subgraphs
-                .iter()
-                .enumerate()
-                .any(|(other_idx, other)| {
-                    other_idx != *idx
-                        && sub.nodes.iter().all(|n| other.nodes.contains(n))
-                        && other.nodes.len() > sub.nodes.len()
-                });
-            if !is_nested {
-                top_level_anchors.push(anchor.clone());
-            }
-        }
-        // Chain top-level anchors with invisible edges to force horizontal/vertical separation
-        for i in 0..top_level_anchors.len().saturating_sub(1) {
-            let from = &top_level_anchors[i];
-            let to = &top_level_anchors[i + 1];
-            let mut edge_label = DagreEdge::default();
-            edge_label.minlen = Some(1.0);
-            let _ = dagre_graph.set_edge(from, to, Some(edge_label), None);
-        }
-    }
-
-    let mut edge_set: HashSet<(String, String)> = HashSet::new();
-    for edge in layout_edges.iter() {
-        if !layout_set.contains(&edge.from) || !layout_set.contains(&edge.to) {
-            continue;
-        }
-        let from = edge.from.clone();
-        let to = edge.to.clone();
-        if !edge_set.insert((from.clone(), to.clone())) {
-            continue;
-        }
-        let mut edge_label = DagreEdge::default();
-        let mut label_width = 0.0f32;
-        let mut label_height = 0.0f32;
-        if let Some(text) = edge.label.as_ref() {
-            let block = measure_label(text, theme, config);
-            label_width = label_width.max(block.width);
-            label_height = label_height.max(block.height);
-        }
-        if let Some(text) = edge.start_label.as_ref() {
-            let block = measure_label(text, theme, config);
-            label_width = label_width.max(block.width);
-            label_height = label_height.max(block.height);
-        }
-        if let Some(text) = edge.end_label.as_ref() {
-            let block = measure_label(text, theme, config);
-            label_width = label_width.max(block.width);
-            label_height = label_height.max(block.height);
-        }
-        if label_width > 0.0 && label_height > 0.0 {
-            edge_label.width = Some(label_width);
-            edge_label.height = Some(label_height);
-            edge_label.labelpos = Some("c".to_string());
-        }
-        let _ = dagre_graph.set_edge(&from, &to, Some(edge_label), None);
-    }
-
-    dagre_layout::run_layout(&mut dagre_graph);
-
-    let mut applied = false;
-    for node_id in layout_node_ids {
-        let Some(dagre_node) = dagre_graph.node(node_id) else {
-            continue;
-        };
-        if let Some(node) = nodes.get_mut(node_id) {
-            node.x = dagre_node.x - node.width / 2.0;
-            node.y = dagre_node.y - node.height / 2.0;
-            applied = true;
-        }
-    }
-
-    // Extract edge points computed by dagre
-    let mut edge_points: DagreEdgePoints = HashMap::new();
-    for e in dagre_graph.edges() {
-        if let Some(edge_data) = dagre_graph.edge_with_obj(&e) {
-            if let Some(points) = &edge_data.points {
-                let pts: Vec<(f32, f32)> = points.iter().map(|p| (p.x, p.y)).collect();
-                if !pts.is_empty() {
-                    edge_points.insert((e.v.clone(), e.w.clone()), pts);
-                }
-            }
-        }
-    }
-
-    (applied, edge_points)
-}
-
-fn assign_positions_dagre_subset(
-    node_ids: &[String],
-    edges: &[crate::ir::Edge],
-    nodes: &mut BTreeMap<String, NodeLayout>,
-    direction: Direction,
-    config: &LayoutConfig,
-    node_order: Option<&HashMap<String, usize>>,
-) -> bool {
-    if node_ids.is_empty() {
-        return false;
-    }
-
-    let mut dagre_graph: DagreGraph<DagreConfig, DagreNode, DagreEdge> =
-        DagreGraph::new(Some(GraphOption {
-            directed: Some(true),
-            multigraph: Some(false),
-            compound: Some(false),
-        }));
-
-    let mut graph_config = DagreConfig::default();
-    graph_config.rankdir = Some(dagre_rankdir(direction).to_string());
-    graph_config.nodesep = Some(config.node_spacing);
-    graph_config.ranksep = Some(config.rank_spacing);
-    graph_config.marginx = Some(8.0);
-    graph_config.marginy = Some(8.0);
-    dagre_graph.set_graph(graph_config);
-
-    for node_id in node_ids {
-        let Some(layout) = nodes.get(node_id) else {
-            continue;
-        };
-        let mut node = DagreNode::default();
-        node.width = layout.width;
-        node.height = layout.height;
-        if let Some(order_map) = node_order
-            && let Some(order) = order_map.get(node_id)
-        {
-            node.order = Some(*order);
-        }
-        dagre_graph.set_node(node_id.clone(), Some(node));
-    }
-
-    let node_set: HashSet<String> = node_ids.iter().cloned().collect();
-    let mut edge_set: HashSet<(String, String)> = HashSet::new();
-    for edge in edges {
-        if !node_set.contains(&edge.from) || !node_set.contains(&edge.to) {
-            continue;
-        }
-        let from = edge.from.clone();
-        let to = edge.to.clone();
-        if !edge_set.insert((from.clone(), to.clone())) {
-            continue;
-        }
-        let edge_label = DagreEdge::default();
-        let _ = dagre_graph.set_edge(&from, &to, Some(edge_label), None);
-    }
-
-    dagre_layout::run_layout(&mut dagre_graph);
-
-    let mut applied = false;
-    for node_id in node_ids {
-        let Some(dagre_node) = dagre_graph.node(node_id) else {
-            continue;
-        };
-        if let Some(node) = nodes.get_mut(node_id) {
-            node.x = dagre_node.x - node.width / 2.0;
-            node.y = dagre_node.y - node.height / 2.0;
-            applied = true;
-        }
-    }
-
-    applied
-}
-
 fn assign_positions_manual(
     graph: &Graph,
     layout_node_ids: &[String],
@@ -5804,7 +5532,7 @@ fn assign_positions_manual(
     config: &LayoutConfig,
     layout_edges: &[crate::ir::Edge],
 ) {
-    let ranks = compute_ranks_subset(layout_node_ids, layout_edges);
+    let ranks = compute_ranks_subset(layout_node_ids, layout_edges, &graph.node_order);
     let mut max_rank = 0usize;
     for rank in ranks.values() {
         max_rank = max_rank.max(*rank);
@@ -5888,10 +5616,15 @@ fn assign_positions_manual(
     for bucket in &mut rank_nodes {
         bucket.sort_by_key(|id| order_map.get(id).copied().unwrap_or(usize::MAX));
     }
-    order_rank_nodes(&mut rank_nodes, &expanded_edges, &order_map);
+    order_rank_nodes(
+        &mut rank_nodes,
+        &expanded_edges,
+        &order_map,
+        config.flowchart.order_passes,
+    );
 
     let mut main_cursor = 0.0;
-    for (rank_idx, bucket) in rank_nodes.iter().enumerate() {
+    for bucket in &rank_nodes {
         let mut max_main: f32 = 0.0;
         for node_id in bucket {
             if let Some(node_layout) = nodes.get_mut(node_id) {
@@ -5904,9 +5637,8 @@ fn assign_positions_manual(
                 }
             }
         }
-        main_cursor += max_main + config.rank_spacing;
-        if rank_idx == max_rank {
-            // Ensure no trailing spacing
+        if max_main > 0.0 {
+            main_cursor += max_main + config.rank_spacing;
         }
     }
 
@@ -5924,6 +5656,19 @@ fn assign_positions_manual(
     }
 
     let mut cross_pos: HashMap<String, f32> = HashMap::new();
+    for bucket in &rank_nodes {
+        for (idx, node_id) in bucket.iter().enumerate() {
+            if let Some(node) = nodes.get(node_id) {
+                let center = if is_horizontal(graph.direction) {
+                    node.y + node.height / 2.0
+                } else {
+                    node.x + node.width / 2.0
+                };
+                cross_pos.insert(node_id.clone(), center + idx as f32 * 0.01);
+            }
+        }
+    }
+
     let mut place_rank = |rank_idx: usize,
                           use_incoming: bool,
                           nodes: &mut BTreeMap<String, NodeLayout>| {
@@ -5932,8 +5677,8 @@ fn assign_positions_manual(
             return;
         }
         let neighbors = if use_incoming { &incoming } else { &outgoing };
-        let mut entries: Vec<(String, f32, f32)> = Vec::new();
-        for node_id in bucket {
+        let mut entries: Vec<(String, f32, f32, usize)> = Vec::new();
+        for (idx, node_id) in bucket.iter().enumerate() {
             let Some(node) = nodes.get(node_id) else {
                 continue;
             };
@@ -5953,14 +5698,18 @@ fn assign_positions_manual(
             } else {
                 node.width / 2.0
             };
-            entries.push((node_id.clone(), desired, half));
+            entries.push((node_id.clone(), desired, half, idx));
         }
-        entries.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-        let desired_mean = entries.iter().map(|(_, d, _)| *d).sum::<f32>() / entries.len() as f32;
+        entries.sort_by(|a, b| {
+            a.1.partial_cmp(&b.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.3.cmp(&b.3))
+        });
+        let desired_mean = entries.iter().map(|(_, d, _, _)| *d).sum::<f32>() / entries.len() as f32;
         let mut assigned: Vec<(String, f32, f32)> = Vec::new();
         let mut prev_center: Option<f32> = None;
         let mut prev_half = 0.0;
-        for (node_id, desired, half) in entries {
+        for (node_id, desired, half, _idx) in entries {
             let center = if let Some(prev) = prev_center {
                 let min_center = prev + prev_half + half + config.node_spacing;
                 if desired < min_center {
@@ -5990,22 +5739,13 @@ fn assign_positions_manual(
         }
     };
 
-    for _ in 0..2 {
+    for _ in 0..config.flowchart.order_passes.max(1) {
         for rank_idx in 0..rank_nodes.len() {
             place_rank(rank_idx, true, nodes);
         }
         for rank_idx in (0..rank_nodes.len()).rev() {
             place_rank(rank_idx, false, nodes);
         }
-    }
-}
-
-fn dagre_rankdir(direction: Direction) -> &'static str {
-    match direction {
-        Direction::TopDown => "tb",
-        Direction::BottomTop => "bt",
-        Direction::LeftRight => "lr",
-        Direction::RightLeft => "rl",
     }
 }
 
@@ -6635,6 +6375,7 @@ fn order_rank_nodes(
     rank_nodes: &mut [Vec<String>],
     edges: &[crate::ir::Edge],
     node_order: &HashMap<String, usize>,
+    passes: usize,
 ) {
     if rank_nodes.len() <= 1 {
         return;
@@ -6695,7 +6436,8 @@ fn order_rank_nodes(
         });
     };
 
-    for _ in 0..2 {
+    let passes = passes.max(1);
+    for _ in 0..passes {
         for rank in 1..rank_nodes.len() {
             if rank_nodes[rank].len() <= 1 {
                 continue;
@@ -7047,26 +6789,16 @@ fn apply_subgraph_direction_overrides(
             }
         }
         let local_config = subgraph_layout_config(graph, false, config);
-        let applied = assign_positions_dagre_subset(
+        let ranks = compute_ranks_subset(&sub.nodes, &graph.edges, &graph.node_order);
+        assign_positions(
             &sub.nodes,
-            &graph.edges,
-            &mut temp_nodes,
+            &ranks,
             direction,
             &local_config,
-            Some(&graph.node_order),
+            &mut temp_nodes,
+            0.0,
+            0.0,
         );
-        if !applied {
-            let ranks = compute_ranks_subset(&sub.nodes, &graph.edges);
-            assign_positions(
-                &sub.nodes,
-                &ranks,
-                direction,
-                &local_config,
-                &mut temp_nodes,
-                0.0,
-                0.0,
-            );
-        }
         let mut temp_min_x = f32::MAX;
         let mut temp_min_y = f32::MAX;
         for node_id in &sub.nodes {
@@ -7284,26 +7016,16 @@ fn estimate_subgraph_box_size(
         }
     }
     let local_config = subgraph_layout_config(graph, anchorable, config);
-    let applied = assign_positions_dagre_subset(
+    let ranks = compute_ranks_subset(&sub.nodes, &graph.edges, &graph.node_order);
+    assign_positions(
         &sub.nodes,
-        &graph.edges,
-        &mut temp_nodes,
+        &ranks,
         direction,
         &local_config,
-        Some(&graph.node_order),
+        &mut temp_nodes,
+        0.0,
+        0.0,
     );
-    if !applied {
-        let ranks = compute_ranks_subset(&sub.nodes, &graph.edges);
-        assign_positions(
-            &sub.nodes,
-            &ranks,
-            direction,
-            &local_config,
-            &mut temp_nodes,
-            0.0,
-            0.0,
-        );
-    }
     let mut min_x = f32::MAX;
     let mut min_y = f32::MAX;
     let mut max_x = f32::MIN;
@@ -7396,33 +7118,16 @@ fn align_subgraphs_to_anchor_nodes(
         };
         let direction = subgraph_layout_direction(graph, sub);
         let local_config = subgraph_layout_config(graph, true, config);
-        let applied = assign_positions_dagre_subset(
+        let ranks = compute_ranks_subset(&sub.nodes, &graph.edges, &graph.node_order);
+        assign_positions(
             &sub.nodes,
-            &graph.edges,
-            nodes,
+            &ranks,
             direction,
             &local_config,
-            Some(&graph.node_order),
+            nodes,
+            anchor_x + info.padding_x,
+            anchor_y + info.top_padding,
         );
-        if !applied {
-            let ranks = compute_ranks_subset(&sub.nodes, &graph.edges);
-            assign_positions(
-                &sub.nodes,
-                &ranks,
-                direction,
-                &local_config,
-                nodes,
-                anchor_x + info.padding_x,
-                anchor_y + info.top_padding,
-            );
-        } else {
-            for node_id in &sub.nodes {
-                if let Some(node) = nodes.get_mut(node_id) {
-                    node.x += anchor_x + info.padding_x;
-                    node.y += anchor_y + info.top_padding;
-                }
-            }
-        }
         if matches!(direction, Direction::RightLeft | Direction::BottomTop) {
             mirror_subgraph_nodes(&sub.nodes, nodes, direction);
         }
@@ -7455,7 +7160,7 @@ fn apply_state_subgraph_layouts(
         if min_x == f32::MAX {
             continue;
         }
-        let ranks = compute_ranks_subset(&sub.nodes, &graph.edges);
+        let ranks = compute_ranks_subset(&sub.nodes, &graph.edges, &graph.node_order);
         assign_positions(
             &sub.nodes,
             &ranks,
@@ -7583,39 +7288,58 @@ fn mirror_subgraph_nodes(
     }
 }
 
-fn compute_ranks_subset(node_ids: &[String], edges: &[crate::ir::Edge]) -> HashMap<String, usize> {
-    let mut indeg: HashMap<String, usize> = HashMap::new();
-    let mut adj: HashMap<String, Vec<String>> = HashMap::new();
+fn compute_ranks_subset(
+    node_ids: &[String],
+    edges: &[crate::ir::Edge],
+    node_order: &HashMap<String, usize>,
+) -> HashMap<String, usize> {
     let set: HashSet<String> = node_ids.iter().cloned().collect();
-
-    for id in &set {
-        indeg.insert(id.clone(), 0);
-    }
+    let mut adj: HashMap<String, Vec<String>> = HashMap::new();
+    let mut rev: HashMap<String, Vec<String>> = HashMap::new();
 
     for edge in edges {
         if set.contains(&edge.from) && set.contains(&edge.to) {
             adj.entry(edge.from.clone())
                 .or_default()
                 .push(edge.to.clone());
-            *indeg.entry(edge.to.clone()).or_insert(0) += 1;
+            rev.entry(edge.to.clone())
+                .or_default()
+                .push(edge.from.clone());
         }
     }
 
-    let mut queue: VecDeque<String> = indeg
-        .iter()
-        .filter(|(_, deg)| **deg == 0)
-        .map(|(id, _)| id.clone())
-        .collect();
+    let mut fallback_order: HashMap<&str, usize> = HashMap::new();
+    for (idx, id) in node_ids.iter().enumerate() {
+        fallback_order.insert(id.as_str(), idx);
+    }
+    let order_key = |id: &str| -> usize {
+        node_order.get(id).copied().unwrap_or_else(|| {
+            fallback_order.get(id).copied().unwrap_or(usize::MAX)
+        })
+    };
 
-    let mut order = Vec::new();
-    while let Some(node) = queue.pop_front() {
-        order.push(node.clone());
-        if let Some(nexts) = adj.get(&node) {
+    let mut indeg: HashMap<String, usize> = HashMap::new();
+    for id in &set {
+        let count = rev.get(id).map(|v| v.len()).unwrap_or(0);
+        indeg.insert(id.clone(), count);
+    }
+
+    let mut ready: BinaryHeap<Reverse<(usize, String)>> = BinaryHeap::new();
+    for id in &set {
+        if *indeg.get(id).unwrap_or(&0) == 0 {
+            ready.push(Reverse((order_key(id.as_str()), id.clone())));
+        }
+    }
+
+    let mut order = Vec::with_capacity(set.len());
+    while let Some(Reverse((_key, id))) = ready.pop() {
+        order.push(id.clone());
+        if let Some(nexts) = adj.get(&id) {
             for next in nexts {
                 if let Some(deg) = indeg.get_mut(next) {
-                    *deg -= 1;
+                    *deg = deg.saturating_sub(1);
                     if *deg == 0 {
-                        queue.push_back(next.clone());
+                        ready.push(Reverse((order_key(next.as_str()), next.clone())));
                     }
                 }
             }
@@ -7623,11 +7347,31 @@ fn compute_ranks_subset(node_ids: &[String], edges: &[crate::ir::Edge]) -> HashM
     }
 
     if order.len() < set.len() {
-        for id in node_ids {
-            if !order.contains(id) {
-                order.push(id.clone());
+        // Break cycles deterministically using a feedback arc heuristic.
+        let order_set: HashSet<String> = order.iter().cloned().collect();
+        let mut remaining: HashSet<String> = set.difference(&order_set).cloned().collect();
+        let mut cycle_order = Vec::new();
+        while !remaining.is_empty() {
+            let mut heap: BinaryHeap<(i32, Reverse<(usize, String)>)> = BinaryHeap::new();
+            for id in &remaining {
+                let out = adj
+                    .get(id)
+                    .map(|v| v.iter().filter(|to| remaining.contains(*to)).count())
+                    .unwrap_or(0) as i32;
+                let inp = rev
+                    .get(id)
+                    .map(|v| v.iter().filter(|from| remaining.contains(*from)).count())
+                    .unwrap_or(0) as i32;
+                heap.push((out - inp, Reverse((order_key(id.as_str()), id.clone()))));
+            }
+            if let Some((_score, Reverse((_key, id)))) = heap.pop() {
+                remaining.remove(&id);
+                cycle_order.push(id);
+            } else {
+                break;
             }
         }
+        order.extend(cycle_order);
     }
 
     let order_index: HashMap<String, usize> = order
@@ -7740,7 +7484,7 @@ fn bounds_with_edges(
         max_x = max_x.max(sub.x + sub.width);
         max_y = max_y.max(sub.y + sub.height);
     }
-    // Also include edge points - dagre routing can place waypoints outside node bounds
+    // Also include edge points - routing can place waypoints outside node bounds
     for edge in edges {
         for point in &edge.points {
             max_x = max_x.max(point.0);
@@ -7800,7 +7544,7 @@ fn normalize_layout(
         min_x = min_x.min(sub.x);
         min_y = min_y.min(sub.y);
     }
-    // Also check edge points - dagre routing can place waypoints outside node bounds
+    // Also check edge points - routing can place waypoints outside node bounds
     for edge in edges.iter() {
         for point in &edge.points {
             min_x = min_x.min(point.0);
@@ -7853,6 +7597,86 @@ struct RouteContext<'a> {
     end_side: EdgeSide,
     start_offset: f32,
     end_offset: f32,
+}
+
+#[derive(Debug, Clone)]
+struct EdgeOccupancy {
+    cell: f32,
+    weights: HashMap<(i32, i32), u16>,
+}
+
+impl EdgeOccupancy {
+    fn new(cell: f32) -> Self {
+        let cell = cell.max(8.0);
+        Self {
+            cell,
+            weights: HashMap::new(),
+        }
+    }
+
+    fn cell_index(&self, x: f32, y: f32) -> (i32, i32) {
+        ((x / self.cell).floor() as i32, (y / self.cell).floor() as i32)
+    }
+
+    fn score_path(&self, points: &[(f32, f32)]) -> u32 {
+        let mut score = 0u32;
+        for segment in points.windows(2) {
+            let (x1, y1) = segment[0];
+            let (x2, y2) = segment[1];
+            let dx = x2 - x1;
+            let dy = y2 - y1;
+            let len = (dx * dx + dy * dy).sqrt();
+            let steps = ((len / self.cell).ceil() as usize).max(1);
+            for i in 0..=steps {
+                let t = i as f32 / steps as f32;
+                let x = x1 + dx * t;
+                let y = y1 + dy * t;
+                if let Some(weight) = self.weights.get(&self.cell_index(x, y)) {
+                    score += *weight as u32;
+                }
+            }
+        }
+        score
+    }
+
+    fn overlaps_path(&self, points: &[(f32, f32)]) -> bool {
+        for segment in points.windows(2) {
+            let (x1, y1) = segment[0];
+            let (x2, y2) = segment[1];
+            let dx = x2 - x1;
+            let dy = y2 - y1;
+            let len = (dx * dx + dy * dy).sqrt();
+            let steps = ((len / self.cell).ceil() as usize).max(1);
+            for i in 0..=steps {
+                let t = i as f32 / steps as f32;
+                let x = x1 + dx * t;
+                let y = y1 + dy * t;
+                if self.weights.contains_key(&self.cell_index(x, y)) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn add_path(&mut self, points: &[(f32, f32)]) {
+        for segment in points.windows(2) {
+            let (x1, y1) = segment[0];
+            let (x2, y2) = segment[1];
+            let dx = x2 - x1;
+            let dy = y2 - y1;
+            let len = (dx * dx + dy * dy).sqrt();
+            let steps = ((len / self.cell).ceil() as usize).max(1);
+            for i in 0..=steps {
+                let t = i as f32 / steps as f32;
+                let x = x1 + dx * t;
+                let y = y1 + dy * t;
+                let idx = self.cell_index(x, y);
+                let entry = self.weights.entry(idx).or_insert(0);
+                *entry = entry.saturating_add(1);
+            }
+        }
+    }
 }
 
 fn apply_port_offset(point: (f32, f32), side: EdgeSide, offset: f32) -> (f32, f32) {
@@ -8055,7 +7879,10 @@ fn anchor_point_for_node(node: &NodeLayout, side: EdgeSide, offset: f32) -> (f32
     apply_port_offset(base, side, clamp)
 }
 
-fn route_edge_with_avoidance(ctx: &RouteContext<'_>) -> Vec<(f32, f32)> {
+fn route_edge_with_avoidance(
+    ctx: &RouteContext<'_>,
+    occupancy: Option<&EdgeOccupancy>,
+) -> Vec<(f32, f32)> {
     if ctx.from_id == ctx.to_id {
         return route_self_loop(ctx.from, ctx.direction, ctx.config);
     }
@@ -8065,6 +7892,7 @@ fn route_edge_with_avoidance(ctx: &RouteContext<'_>) -> Vec<(f32, f32)> {
     // Anchor edges using resolved port offsets to reduce overlap
     let start = anchor_point_for_node(ctx.from, ctx.start_side, ctx.start_offset);
     let end = anchor_point_for_node(ctx.to, ctx.end_side, ctx.end_offset);
+    let mut candidates: Vec<Vec<(f32, f32)>> = Vec::new();
 
     // For backward edges, try routing around obstacles (both left and right)
     if is_backward {
@@ -8098,7 +7926,7 @@ fn route_edge_with_avoidance(ctx: &RouteContext<'_>) -> Vec<(f32, f32)> {
             let route_x = max_right + pad;
             let points = vec![start, (route_x, start.1), (route_x, end.1), end];
             if !path_intersects_obstacles(&points, ctx.obstacles, ctx.from_id, ctx.to_id) {
-                return points;
+                candidates.push(points);
             }
         }
 
@@ -8107,7 +7935,7 @@ fn route_edge_with_avoidance(ctx: &RouteContext<'_>) -> Vec<(f32, f32)> {
             let route_x = min_left - pad;
             let points = vec![start, (route_x, start.1), (route_x, end.1), end];
             if !path_intersects_obstacles(&points, ctx.obstacles, ctx.from_id, ctx.to_id) {
-                return points;
+                candidates.push(points);
             }
         }
     }
@@ -8115,13 +7943,13 @@ fn route_edge_with_avoidance(ctx: &RouteContext<'_>) -> Vec<(f32, f32)> {
     // Check if a direct line is possible (no obstacles in the way)
     let direct_path = vec![start, end];
     if !path_intersects_obstacles(&direct_path, ctx.obstacles, ctx.from_id, ctx.to_id) {
-        return direct_path;
+        candidates.push(direct_path);
     }
 
     // Fall back to orthogonal routing with control points
     let step = ctx.config.node_spacing.max(16.0) * 0.6;
     let mut offsets = vec![ctx.base_offset];
-    for i in 1..=4 {
+    for i in 1..=6 {
         let delta = step * i as f32;
         offsets.push(ctx.base_offset + delta);
         offsets.push(ctx.base_offset - delta);
@@ -8137,17 +7965,55 @@ fn route_edge_with_avoidance(ctx: &RouteContext<'_>) -> Vec<(f32, f32)> {
         };
 
         if !path_intersects_obstacles(&points, ctx.obstacles, ctx.from_id, ctx.to_id) {
-            return points;
+            candidates.push(points);
         }
     }
 
-    if is_horizontal(ctx.direction) {
-        let mid_x = (start.0 + end.0) / 2.0;
-        vec![start, (mid_x, start.1), (mid_x, end.1), end]
-    } else {
-        let mid_y = (start.1 + end.1) / 2.0;
-        vec![start, (start.0, mid_y), (end.0, mid_y), end]
+    if candidates.is_empty() {
+        if is_horizontal(ctx.direction) {
+            let mid_x = (start.0 + end.0) / 2.0;
+            return vec![start, (mid_x, start.1), (mid_x, end.1), end];
+        } else {
+            let mid_y = (start.1 + end.1) / 2.0;
+            return vec![start, (start.0, mid_y), (end.0, mid_y), end];
+        }
     }
+
+    if let Some(grid) = occupancy {
+        let mut filtered: Vec<Vec<(f32, f32)>> = candidates
+            .iter()
+            .filter(|points| !grid.overlaps_path(points))
+            .cloned()
+            .collect();
+        if filtered.is_empty() {
+            filtered = candidates.clone();
+        }
+        let mut best_idx = 0usize;
+        let mut best_score = u32::MAX;
+        let mut best_len = f32::MAX;
+        for (idx, points) in filtered.iter().enumerate() {
+            let score = grid.score_path(points);
+            let len = path_length(points);
+            if score < best_score || (score == best_score && len < best_len) {
+                best_score = score;
+                best_len = len;
+                best_idx = idx;
+            }
+        }
+        return filtered.swap_remove(best_idx);
+    }
+
+    candidates.swap_remove(0)
+}
+
+fn path_length(points: &[(f32, f32)]) -> f32 {
+    let mut length = 0.0;
+    for segment in points.windows(2) {
+        let dx = segment[1].0 - segment[0].0;
+        let dy = segment[1].1 - segment[0].1;
+        length += (dx * dx + dy * dy).sqrt();
+    }
+    length
 }
 
 fn route_self_loop(
@@ -9163,5 +9029,78 @@ mod tests {
         assert_eq!(edge.override_style.stroke.as_deref(), Some("#111111"));
         assert_eq!(edge.override_style.stroke_width, Some(4.0));
         assert_eq!(edge.override_style.label_color.as_deref(), Some("#222222"));
+    }
+
+    fn make_node(id: &str, x: f32, y: f32, width: f32, height: f32) -> NodeLayout {
+        NodeLayout {
+            id: id.to_string(),
+            x,
+            y,
+            width,
+            height,
+            label: TextBlock {
+                lines: vec![String::new()],
+                width: 0.0,
+                height: 0.0,
+            },
+            shape: crate::ir::NodeShape::Rectangle,
+            style: crate::ir::NodeStyle::default(),
+            link: None,
+            anchor_subgraph: None,
+            hidden: false,
+        }
+    }
+
+    #[test]
+    fn routing_avoids_occupied_lane_when_possible() {
+        let config = LayoutConfig::default();
+        let from = make_node("A", 0.0, 0.0, 40.0, 40.0);
+        let to = make_node("B", 200.0, 0.0, 40.0, 40.0);
+        let obstacles: Vec<Obstacle> = Vec::new();
+        let ctx = RouteContext {
+            from_id: &from.id,
+            to_id: &to.id,
+            from: &from,
+            to: &to,
+            direction: Direction::LeftRight,
+            config: &config,
+            obstacles: &obstacles,
+            base_offset: 0.0,
+            start_side: EdgeSide::Right,
+            end_side: EdgeSide::Left,
+            start_offset: 0.0,
+            end_offset: 0.0,
+        };
+        let mut occupancy = EdgeOccupancy::new(config.node_spacing.max(16.0) * 0.6);
+        let start = anchor_point_for_node(&from, EdgeSide::Right, 0.0);
+        let end = anchor_point_for_node(&to, EdgeSide::Left, 0.0);
+        occupancy.add_path(&[start, end]);
+
+        let points = route_edge_with_avoidance(&ctx, Some(&occupancy));
+        assert!(points.len() > 2, "expected a detoured path to avoid occupied lane");
+    }
+
+    #[test]
+    fn routing_handles_tiny_nodes_without_panicking() {
+        let config = LayoutConfig::default();
+        let from = make_node("A", 0.0, 0.0, 1.0, 1.0);
+        let to = make_node("B", 50.0, 0.0, 1.0, 1.0);
+        let obstacles: Vec<Obstacle> = Vec::new();
+        let ctx = RouteContext {
+            from_id: &from.id,
+            to_id: &to.id,
+            from: &from,
+            to: &to,
+            direction: Direction::LeftRight,
+            config: &config,
+            obstacles: &obstacles,
+            base_offset: 0.0,
+            start_side: EdgeSide::Right,
+            end_side: EdgeSide::Left,
+            start_offset: 0.0,
+            end_offset: 0.0,
+        };
+        let points = route_edge_with_avoidance(&ctx, None);
+        assert!(!points.is_empty());
     }
 }

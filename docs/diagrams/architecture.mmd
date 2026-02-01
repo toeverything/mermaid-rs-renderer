@@ -13,7 +13,7 @@ flowchart TB
     subgraph cli["mermaid-cli (Node.js) ~ 2500ms total"]
         direction LR
         I2[/".mmd file"/] --> M2["mermaid-js"]
-        M2 --> D2["dagre"]
+        M2 --> D2["layout"]
         D2 --> DOM["Browser DOM"]
         DOM --> PP["Puppeteer"]
         PP --> CH{{"Chromium"}}

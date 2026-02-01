@@ -356,14 +356,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dagre_rust"
-version = "0.0.5"
-dependencies = [
- "graphlib_rust",
- "ordered_hashmap",
-]
-
-[[package]]
 name = "data-url"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -480,15 +472,6 @@ checksum = "f5df2ba84018d80c213569363bdcd0c64e6933c67fe4c1d60ecf822971a3c35e"
 dependencies = [
  "color_quant",
  "weezl",
-]
-
-[[package]]
-name = "graphlib_rust"
-version = "0.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b47de2c5685b5bb3689d6b0977f38959f3d7d82d3556627cfebbfaa42eda05ea"
-dependencies = [
- "ordered_hashmap",
 ]
 
 [[package]]
@@ -617,9 +600,7 @@ dependencies = [
  "anyhow",
  "clap",
  "criterion",
- "dagre_rust",
  "fontdb 0.16.2",
- "graphlib_rust",
  "json5",
  "once_cell",
  "regex",
@@ -667,12 +648,6 @@ name = "oorandom"
 version = "11.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
-
-[[package]]
-name = "ordered_hashmap"
-version = "0.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb1ea499d242299d564879c8b375c11285f5a26d62d8010768909d6d099c4c5a"
 
 [[package]]
 name = "page_size"

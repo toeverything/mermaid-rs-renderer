@@ -587,6 +587,21 @@ fn merge_init_config(mut config: Config, init: serde_json::Value) -> Config {
         if let Some(val) = flowchart.get("rankSpacing").and_then(|v| v.as_f64()) {
             config.layout.rank_spacing = val as f32;
         }
+        if let Some(val) = flowchart.get("orderPasses").and_then(|v| v.as_u64()) {
+            config.layout.flowchart.order_passes = val as usize;
+        }
+        if let Some(val) = flowchart.get("portPadRatio").and_then(|v| v.as_f64()) {
+            config.layout.flowchart.port_pad_ratio = val as f32;
+        }
+        if let Some(val) = flowchart.get("portPadMin").and_then(|v| v.as_f64()) {
+            config.layout.flowchart.port_pad_min = val as f32;
+        }
+        if let Some(val) = flowchart.get("portPadMax").and_then(|v| v.as_f64()) {
+            config.layout.flowchart.port_pad_max = val as f32;
+        }
+        if let Some(val) = flowchart.get("portSideBias").and_then(|v| v.as_f64()) {
+            config.layout.flowchart.port_side_bias = val as f32;
+        }
     }
     if let Some(gitgraph) = init.get("gitGraph") {
         let mut commit_step_set = false;

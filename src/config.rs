@@ -750,6 +750,7 @@ pub struct LayoutConfig {
     pub c4: C4Config,
     pub pie: PieConfig,
     pub treemap: TreemapConfig,
+    pub flowchart: FlowchartLayoutConfig,
 }
 
 impl Default for LayoutConfig {
@@ -767,6 +768,28 @@ impl Default for LayoutConfig {
             c4: C4Config::default(),
             pie: PieConfig::default(),
             treemap: TreemapConfig::default(),
+            flowchart: FlowchartLayoutConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlowchartLayoutConfig {
+    pub order_passes: usize,
+    pub port_pad_ratio: f32,
+    pub port_pad_min: f32,
+    pub port_pad_max: f32,
+    pub port_side_bias: f32,
+}
+
+impl Default for FlowchartLayoutConfig {
+    fn default() -> Self {
+        Self {
+            order_passes: 4,
+            port_pad_ratio: 0.2,
+            port_pad_min: 4.0,
+            port_pad_max: 12.0,
+            port_side_bias: 0.0,
         }
     }
 }
@@ -915,6 +938,11 @@ impl NumberOrString {
 struct FlowchartConfig {
     node_spacing: Option<f32>,
     rank_spacing: Option<f32>,
+    order_passes: Option<usize>,
+    port_pad_ratio: Option<f32>,
+    port_pad_min: Option<f32>,
+    port_pad_max: Option<f32>,
+    port_side_bias: Option<f32>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -1526,6 +1554,21 @@ pub fn load_config(path: Option<&Path>) -> anyhow::Result<Config> {
         }
         if let Some(v) = flow.rank_spacing {
             config.layout.rank_spacing = v;
+        }
+        if let Some(v) = flow.order_passes {
+            config.layout.flowchart.order_passes = v;
+        }
+        if let Some(v) = flow.port_pad_ratio {
+            config.layout.flowchart.port_pad_ratio = v;
+        }
+        if let Some(v) = flow.port_pad_min {
+            config.layout.flowchart.port_pad_min = v;
+        }
+        if let Some(v) = flow.port_pad_max {
+            config.layout.flowchart.port_pad_max = v;
+        }
+        if let Some(v) = flow.port_side_bias {
+            config.layout.flowchart.port_side_bias = v;
         }
     }
 

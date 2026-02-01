@@ -303,13 +303,13 @@ mmdr -i diagram.mmd -o out.svg --nodeSpacing 60 --rankSpacing 120
 **mmdr** implements the entire Mermaid pipeline natively:
 
 ```
-.mmd → parser.rs → ir.rs → layout.rs (dagre_rust) → render.rs → SVG → resvg → PNG
+.mmd → parser.rs → ir.rs → layout.rs → render.rs → SVG → resvg → PNG
 ```
 
 **mermaid-cli** requires browser infrastructure:
 
 ```
-.mmd → mermaid-js → dagre → Browser DOM → Puppeteer → Chromium → Screenshot → PNG
+.mmd → mermaid-js → layout → Browser DOM → Puppeteer → Chromium → Screenshot → PNG
 ```
 
 | | mmdr | mermaid-cli |

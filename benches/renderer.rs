@@ -5,6 +5,33 @@ use mermaid_rs_renderer::parser::parse_mermaid;
 use mermaid_rs_renderer::render::render_svg;
 use mermaid_rs_renderer::theme::Theme;
 
+fn dense_flowchart_source(nodes: usize, extra_edges: usize) -> String {
+    let mut out = String::from("flowchart LR\n");
+    if nodes == 0 {
+        return out;
+    }
+    for i in 0..nodes {
+        out.push_str(&format!("  N{}[Node {}]\n", i, i));
+    }
+    for i in 0..nodes.saturating_sub(1) {
+        out.push_str(&format!("  N{} --> N{}\n", i, i + 1));
+    }
+    let mut count = 0usize;
+    for i in 0..nodes {
+        for j in (i + 2)..nodes {
+            if count >= extra_edges {
+                break;
+            }
+            out.push_str(&format!("  N{} --> N{}\n", i, j));
+            count += 1;
+        }
+        if count >= extra_edges {
+            break;
+        }
+    }
+    out
+}
+
 fn fixture(name: &str) -> &'static str {
     match name {
         "flowchart_small" => include_str!(concat!(
@@ -196,6 +223,24 @@ fn bench_layout(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_edge_routing(c: &mut Criterion) {
+    let mut group = c.benchmark_group("layout_edge_routing");
+    let theme = Theme::modern();
+    let config = LayoutConfig::default();
+    for (nodes, extra_edges) in [(40usize, 80usize), (60, 180), (80, 320)] {
+        let name = format!("dense_{}_{}", nodes, extra_edges);
+        let input = dense_flowchart_source(nodes, extra_edges);
+        let parsed = parse_mermaid(&input).expect("parse failed");
+        group.bench_with_input(BenchmarkId::from_parameter(name), &parsed.graph, |b, graph| {
+            b.iter(|| {
+                let layout = compute_layout(black_box(graph), &theme, &config);
+                black_box(layout.edges.len());
+            });
+        });
+    }
+    group.finish();
+}
+
 fn bench_render(c: &mut Criterion) {
     let mut group = c.benchmark_group("render_svg");
     let theme = Theme::modern();
@@ -284,6 +329,6 @@ fn bench_end_to_end(c: &mut Criterion) {
 criterion_group!(
     name = benches;
     config = Criterion::default();
-    targets = bench_parse, bench_layout, bench_render, bench_end_to_end
+    targets = bench_parse, bench_layout, bench_edge_routing, bench_render, bench_end_to_end
 );
 criterion_main!(benches);

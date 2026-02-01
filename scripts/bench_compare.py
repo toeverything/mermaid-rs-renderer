@@ -34,14 +34,53 @@ MMD_CLI = os.environ.get("MMD_CLI", "npx -y @mermaid-js/mermaid-cli")
 RUNS = int(os.environ.get("RUNS", "8"))
 WARMUP = int(os.environ.get("WARMUP", "2"))
 
-CASES = [
-    ("flowchart_small", FIXTURES / "flowchart_small.mmd"),
-    ("flowchart_medium", FIXTURES / "flowchart_medium.mmd"),
-    ("flowchart_large", FIXTURES / "flowchart_large.mmd"),
-    ("class_medium", FIXTURES / "class_medium.mmd"),
-    ("state_medium", FIXTURES / "state_medium.mmd"),
-    ("sequence_medium", FIXTURES / "sequence_medium.mmd"),
+CASE_NAMES = [
+    "flowchart_small",
+    "flowchart_medium",
+    "flowchart_large",
+    "class_medium",
+    "state_medium",
+    "sequence_medium",
+    "er_medium",
+    "pie_medium",
+    "mindmap_medium",
+    "journey_medium",
+    "timeline_medium",
+    "gantt_medium",
+    "requirement_medium",
+    "gitgraph_medium",
+    "c4_medium",
+    "sankey_medium",
+    "quadrant_medium",
+    "zenuml_medium",
+    "block_medium",
+    "packet_medium",
+    "kanban_medium",
+    "architecture_medium",
+    "radar_medium",
+    "treemap_medium",
+    "xychart_medium",
+    "flowchart",
+    "sequence",
+    "class",
+    "state",
 ]
+
+
+def resolve_cases():
+    cases_env = os.environ.get("CASES")
+    if cases_env:
+        requested = [c.strip() for c in cases_env.split(",") if c.strip()]
+        unknown = [c for c in requested if c not in CASE_NAMES]
+        if unknown:
+            raise ValueError(f"Unknown cases: {', '.join(unknown)}")
+        names = requested
+    else:
+        names = CASE_NAMES
+    return [(name, FIXTURES / f"{name}.mmd") for name in names]
+
+
+CASES = resolve_cases()
 
 
 def run_cmd(cmd, capture_stderr=False):
@@ -60,6 +99,13 @@ def run_cmd(cmd, capture_stderr=False):
     if result.returncode != 0 and not capture_stderr:
         raise subprocess.CalledProcessError(result.returncode, cmd)
     return result.returncode == 0, result.stderr
+
+
+def short_error(text: str, limit: int = 180) -> str:
+    cleaned = " ".join(text.split())
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[: limit - 3] + "..."
 
 
 def get_memory_usage(cmd) -> Optional[int]:
@@ -152,21 +198,37 @@ def bench_mermaid_cli(path: Path):
 
     times = []
 
-    # Warmup
-    for _ in range(WARMUP):
-        try:
-            run_cmd(cmd)
-        except subprocess.CalledProcessError:
-            pass
+    # Warmup (and preflight to detect unsupported diagrams)
+    if WARMUP == 0:
+        success, stderr = run_cmd(cmd, capture_stderr=True)
+        if not success:
+            return {
+                "times": [],
+                "memory_kb": None,
+                "error": short_error(stderr) or "mmdc failed",
+            }
+    else:
+        for _ in range(WARMUP):
+            success, stderr = run_cmd(cmd, capture_stderr=True)
+            if not success:
+                return {
+                    "times": [],
+                    "memory_kb": None,
+                    "error": short_error(stderr) or "mmdc failed",
+                }
 
     # Actual runs
     for _ in range(RUNS):
         start = time.perf_counter()
-        try:
-            run_cmd(cmd)
-        except subprocess.CalledProcessError:
-            pass
-        times.append(time.perf_counter() - start)
+        success, stderr = run_cmd(cmd, capture_stderr=True)
+        elapsed = time.perf_counter() - start
+        if not success:
+            return {
+                "times": [],
+                "memory_kb": None,
+                "error": short_error(stderr) or "mmdc failed",
+            }
+        times.append(elapsed)
 
     # Get memory usage
     memory_kb = get_memory_usage(cmd)
@@ -213,12 +275,16 @@ def generate_svg_chart(results: dict, output_path: Path):
     # Prepare data
     cases = list(results["mmdr"].keys())
     mmdr_times = [results["mmdr"][c]["mean_ms"] for c in cases]
-    cli_times = [results["mermaid_cli"][c]["mean_ms"] for c in cases] if results.get("mermaid_cli") else []
+    cli_times = []
+    for c in cases:
+        entry = results.get("mermaid_cli", {}).get(c)
+        if entry and entry.get("mean_ms") is not None:
+            cli_times.append(entry["mean_ms"])
 
     # Use log scale for y-axis since values differ by 1000x
     import math
 
-    max_time = max(cli_times) if cli_times else max(mmdr_times)
+    max_time = max(mmdr_times + cli_times) if cli_times else max(mmdr_times)
     min_time = min(mmdr_times)
 
     # Create SVG
@@ -268,8 +334,9 @@ def generate_svg_chart(results: dict, output_path: Path):
         )
 
         # mermaid-cli bar
-        if cli_times:
-            cli_time = results["mermaid_cli"][case]["mean_ms"]
+        cli_entry = results.get("mermaid_cli", {}).get(case)
+        if cli_entry and cli_entry.get("mean_ms") is not None:
+            cli_time = cli_entry["mean_ms"]
             cli_height = (math.log10(max(cli_time, 0.1)) / math.log10(max_time * 1.5)) * chart_height
             cli_y = margin["top"] + chart_height - cli_height
             svg_lines.append(
@@ -404,11 +471,18 @@ def main():
         for name, path in CASES:
             print(f"  {name}...", end=" ", flush=True)
             data = bench_mermaid_cli(path)
-            results["mermaid_cli"][name] = {
-                **summarize(data["times"]),
-                "memory_kb": data["memory_kb"],
-            }
-            print(f"total={results['mermaid_cli'][name]['mean_ms']:.2f}ms")
+            if data.get("error"):
+                results["mermaid_cli"][name] = {
+                    "error": data["error"],
+                    "memory_kb": data["memory_kb"],
+                }
+                print(f"error={data['error']}")
+            else:
+                results["mermaid_cli"][name] = {
+                    **summarize(data["times"]),
+                    "memory_kb": data["memory_kb"],
+                }
+                print(f"total={results['mermaid_cli'][name]['mean_ms']:.2f}ms")
 
     # Print summary
     print("\n" + "=" * 70)
@@ -420,8 +494,11 @@ def main():
     print("-" * 55)
     for name in results["mmdr"].keys():
         mmdr_ms = results["mmdr"][name]["mean_ms"]
-        if results.get("mermaid_cli") and name in results["mermaid_cli"]:
-            cli_ms = results["mermaid_cli"][name]["mean_ms"]
+        cli_entry = results.get("mermaid_cli", {}).get(name)
+        if cli_entry and cli_entry.get("error"):
+            print(f"{name:<20} {mmdr_ms:>10.2f} {'ERR':>12}")
+        elif cli_entry and cli_entry.get("mean_ms") is not None:
+            cli_ms = cli_entry["mean_ms"]
             speedup = cli_ms / mmdr_ms
             print(f"{name:<20} {mmdr_ms:>10.2f} {cli_ms:>12.0f} {speedup:>9.0f}x")
         else:
@@ -442,8 +519,11 @@ def main():
     for name in results["mmdr"].keys():
         mmdr_mem = results["mmdr"][name].get("memory_kb")
         mmdr_str = f"{mmdr_mem / 1024:.1f} MB" if mmdr_mem else "N/A"
-        if results.get("mermaid_cli") and name in results["mermaid_cli"]:
-            cli_mem = results["mermaid_cli"][name].get("memory_kb")
+        cli_entry = results.get("mermaid_cli", {}).get(name)
+        if cli_entry and cli_entry.get("error"):
+            cli_str = "ERR"
+        elif cli_entry:
+            cli_mem = cli_entry.get("memory_kb")
             cli_str = f"{cli_mem / 1024:.1f} MB" if cli_mem else "N/A"
         else:
             cli_str = "N/A"
