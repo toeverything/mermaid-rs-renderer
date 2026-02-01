@@ -4984,6 +4984,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     let mut subgraphs = build_subgraph_layouts(graph, &nodes, theme, config);
     apply_subgraph_anchors(graph, &subgraphs, &mut nodes);
     let obstacles = build_obstacles(&nodes, &subgraphs, config);
+    let routing_grid = build_routing_grid(&obstacles, config);
     let mut edge_ports: Vec<EdgePortInfo> = Vec::with_capacity(graph.edges.len());
     let mut port_candidates: HashMap<(String, EdgeSide), Vec<PortCandidate>> = HashMap::new();
     for (idx, edge) in graph.edges.iter().enumerate() {
@@ -5038,6 +5039,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
                 other_pos: end_other,
             });
     }
+    let routing_cell = routing_cell_size(config);
     for ((node_id, side), candidates) in port_candidates {
         let Some(node) = nodes.get(&node_id) else {
             continue;
@@ -5105,6 +5107,9 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         for (rank, &cand_idx) in order.iter().enumerate() {
             let candidate = &candidates[cand_idx];
             let mut offset = assigned[cand_idx] - node_len / 2.0;
+            if config.flowchart.routing.snap_ports_to_grid && routing_cell > 0.0 {
+                offset = (offset / routing_cell).round() * routing_cell;
+            }
             if config.flowchart.port_side_bias != 0.0 {
                 offset += config.flowchart.port_side_bias
                     * (rank as f32 - (candidates.len() as f32 - 1.0) / 2.0);
@@ -5120,14 +5125,46 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     }
     let pair_counts = build_edge_pair_counts(&graph.edges);
     let mut pair_seen: HashMap<(String, String), usize> = HashMap::new();
-    let mut edges = Vec::new();
-    let mut edge_occupancy = EdgeOccupancy::new(config.node_spacing.max(16.0) * 0.6);
+    let mut pair_index: Vec<usize> = vec![0; graph.edges.len()];
     for (idx, edge) in graph.edges.iter().enumerate() {
         let key = edge_pair_key(edge);
-        let total = *pair_counts.get(&key).unwrap_or(&1) as f32;
         let seen = pair_seen.entry(key).or_insert(0usize);
-        let idx_in_pair = *seen as f32;
+        pair_index[idx] = *seen;
         *seen += 1;
+    }
+
+    let mut route_order: Vec<(f32, usize)> = Vec::with_capacity(graph.edges.len());
+    for (idx, edge) in graph.edges.iter().enumerate() {
+        let from_layout = nodes.get(&edge.from).expect("from node missing");
+        let to_layout = nodes.get(&edge.to).expect("to node missing");
+        let temp_from = from_layout.anchor_subgraph.and_then(|idx| {
+            subgraphs
+                .get(idx)
+                .map(|sub| anchor_layout_for_edge(from_layout, sub, graph.direction, true))
+        });
+        let temp_to = to_layout.anchor_subgraph.and_then(|idx| {
+            subgraphs
+                .get(idx)
+                .map(|sub| anchor_layout_for_edge(to_layout, sub, graph.direction, false))
+        });
+        let from = temp_from.as_ref().unwrap_or(from_layout);
+        let to = temp_to.as_ref().unwrap_or(to_layout);
+        let from_center = (from.x + from.width / 2.0, from.y + from.height / 2.0);
+        let to_center = (to.x + to.width / 2.0, to.y + to.height / 2.0);
+        let dx = from_center.0 - to_center.0;
+        let dy = from_center.1 - to_center.1;
+        let len = dx * dx + dy * dy;
+        route_order.push((len, idx));
+    }
+    route_order.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
+
+    let mut routed_points: Vec<Vec<(f32, f32)>> = vec![Vec::new(); graph.edges.len()];
+    let mut edge_occupancy = EdgeOccupancy::new(config.node_spacing.max(16.0) * 0.6);
+    for (_, idx) in &route_order {
+        let edge = &graph.edges[*idx];
+        let key = edge_pair_key(edge);
+        let total = *pair_counts.get(&key).unwrap_or(&1) as f32;
+        let idx_in_pair = pair_index[*idx] as f32;
         let base_offset = if total > 1.0 {
             (idx_in_pair - (total - 1.0) / 2.0) * (config.node_spacing * 0.35)
         } else {
@@ -5147,6 +5184,32 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         });
         let from = temp_from.as_ref().unwrap_or(from_layout);
         let to = temp_to.as_ref().unwrap_or(to_layout);
+        let port_info = edge_ports
+            .get(*idx)
+            .copied()
+            .expect("edge port info missing");
+        let route_ctx = RouteContext {
+            from_id: &edge.from,
+            to_id: &edge.to,
+            from,
+            to,
+            direction: graph.direction,
+            config,
+            obstacles: &obstacles,
+            base_offset,
+            start_side: port_info.start_side,
+            end_side: port_info.end_side,
+            start_offset: port_info.start_offset,
+            end_offset: port_info.end_offset,
+        };
+        let points =
+            route_edge_with_avoidance(&route_ctx, Some(&edge_occupancy), routing_grid.as_ref());
+        edge_occupancy.add_path(&points);
+        routed_points[*idx] = points;
+    }
+
+    let mut edges = Vec::new();
+    for (idx, edge) in graph.edges.iter().enumerate() {
         let label = edge.label.as_ref().map(|l| {
             let label_text = if graph.kind == crate::ir::DiagramKind::Requirement {
                 requirement_edge_label_text(l, config)
@@ -5188,35 +5251,13 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
                 override_style.label_color = Some(config.requirement.edge_label_color.clone());
             }
         }
-
-        let port_info = edge_ports
-            .get(idx)
-            .copied()
-            .expect("edge port info missing");
-
-        let route_ctx = RouteContext {
-            from_id: &edge.from,
-            to_id: &edge.to,
-            from,
-            to,
-            direction: graph.direction,
-            config,
-            obstacles: &obstacles,
-            base_offset,
-            start_side: port_info.start_side,
-            end_side: port_info.end_side,
-            start_offset: port_info.start_offset,
-            end_offset: port_info.end_offset,
-        };
-        let points = route_edge_with_avoidance(&route_ctx, Some(&edge_occupancy));
-        edge_occupancy.add_path(&points);
         edges.push(EdgeLayout {
             from: edge.from.clone(),
             to: edge.to.clone(),
             label,
             start_label,
             end_label,
-            points,
+            points: routed_points[idx].clone(),
             directed: edge.directed,
             arrow_start: edge.arrow_start,
             arrow_end: edge.arrow_end,
@@ -7687,6 +7728,132 @@ impl EdgeOccupancy {
             }
         }
     }
+
+    fn weight_at(&self, x: f32, y: f32) -> u16 {
+        self.weights
+            .get(&self.cell_index(x, y))
+            .copied()
+            .unwrap_or(0)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct RoutingGrid {
+    cell: f32,
+    min_x: f32,
+    min_y: f32,
+    cols: i32,
+    rows: i32,
+    cell_obstacles: Vec<Vec<usize>>,
+}
+
+impl RoutingGrid {
+    fn new(obstacles: &[Obstacle], cell: f32, margin: f32) -> Option<Self> {
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+        for obs in obstacles {
+            min_x = min_x.min(obs.x);
+            min_y = min_y.min(obs.y);
+            max_x = max_x.max(obs.x + obs.width);
+            max_y = max_y.max(obs.y + obs.height);
+        }
+        if min_x == f32::MAX {
+            return None;
+        }
+        min_x -= margin;
+        min_y -= margin;
+        max_x += margin;
+        max_y += margin;
+        let cell = cell.max(6.0);
+        let cols = ((max_x - min_x) / cell).ceil() as i32 + 1;
+        let rows = ((max_y - min_y) / cell).ceil() as i32 + 1;
+        if cols <= 1 || rows <= 1 {
+            return None;
+        }
+        let mut cell_obstacles = vec![Vec::new(); (cols * rows) as usize];
+        for (idx, obs) in obstacles.iter().enumerate() {
+            let start_x = ((obs.x - min_x) / cell).floor().max(0.0) as i32;
+            let end_x = ((obs.x + obs.width - min_x) / cell)
+                .floor()
+                .min((cols - 1) as f32) as i32;
+            let start_y = ((obs.y - min_y) / cell).floor().max(0.0) as i32;
+            let end_y = ((obs.y + obs.height - min_y) / cell)
+                .floor()
+                .min((rows - 1) as f32) as i32;
+            for iy in start_y..=end_y {
+                for ix in start_x..=end_x {
+                    let cell_idx = (iy * cols + ix) as usize;
+                    cell_obstacles[cell_idx].push(idx);
+                }
+            }
+        }
+        Some(Self {
+            cell,
+            min_x,
+            min_y,
+            cols,
+            rows,
+            cell_obstacles,
+        })
+    }
+
+    fn index(&self, ix: i32, iy: i32) -> usize {
+        (iy * self.cols + ix) as usize
+    }
+
+    fn cell_for_point(&self, x: f32, y: f32) -> Option<(i32, i32)> {
+        let ix = ((x - self.min_x) / self.cell).floor() as i32;
+        let iy = ((y - self.min_y) / self.cell).floor() as i32;
+        if ix < 0 || iy < 0 || ix >= self.cols || iy >= self.rows {
+            return None;
+        }
+        Some((ix, iy))
+    }
+
+    fn cell_center(&self, ix: i32, iy: i32) -> (f32, f32) {
+        (
+            self.min_x + (ix as f32 + 0.5) * self.cell,
+            self.min_y + (iy as f32 + 0.5) * self.cell,
+        )
+    }
+
+    fn cell_obstacle_indices(&self, ix: i32, iy: i32) -> &[usize] {
+        &self.cell_obstacles[self.index(ix, iy)]
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct GridState {
+    x: i32,
+    y: i32,
+    dir: u8,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct GridEntry {
+    est: u32,
+    cost: u32,
+    state: GridState,
+}
+
+impl Ord for GridEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        other
+            .est
+            .cmp(&self.est)
+            .then_with(|| other.cost.cmp(&self.cost))
+            .then_with(|| self.state.y.cmp(&other.state.y))
+            .then_with(|| self.state.x.cmp(&other.state.x))
+            .then_with(|| self.state.dir.cmp(&other.state.dir))
+    }
+}
+
+impl PartialOrd for GridEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 fn apply_port_offset(point: (f32, f32), side: EdgeSide, offset: f32) -> (f32, f32) {
@@ -7889,9 +8056,232 @@ fn anchor_point_for_node(node: &NodeLayout, side: EdgeSide, offset: f32) -> (f32
     apply_port_offset(base, side, clamp)
 }
 
+fn routing_cell_size(config: &LayoutConfig) -> f32 {
+    let mut cell = config.flowchart.routing.grid_cell;
+    if cell <= 0.0 {
+        cell = config.node_spacing * 0.35;
+    }
+    cell.max(8.0)
+}
+
+fn build_routing_grid(obstacles: &[Obstacle], config: &LayoutConfig) -> Option<RoutingGrid> {
+    let cell = routing_cell_size(config);
+    let margin = config.node_spacing.max(24.0) * 2.0;
+    RoutingGrid::new(obstacles, cell, margin)
+}
+
+fn cell_blocked(
+    grid: &RoutingGrid,
+    obstacles: &[Obstacle],
+    ix: i32,
+    iy: i32,
+    ctx: &RouteContext<'_>,
+) -> bool {
+    let (cx, cy) = grid.cell_center(ix, iy);
+    for &obs_idx in grid.cell_obstacle_indices(ix, iy) {
+        let obstacle = &obstacles[obs_idx];
+        if obstacle.id == ctx.from_id || obstacle.id == ctx.to_id {
+            continue;
+        }
+        if let Some(members) = &obstacle.members
+            && (members.contains(ctx.from_id) || members.contains(ctx.to_id))
+        {
+            continue;
+        }
+        if cx >= obstacle.x
+            && cx <= obstacle.x + obstacle.width
+            && cy >= obstacle.y
+            && cy <= obstacle.y + obstacle.height
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn compress_path(points: &[(f32, f32)]) -> Vec<(f32, f32)> {
+    if points.len() <= 2 {
+        return points.to_vec();
+    }
+    let mut out: Vec<(f32, f32)> = Vec::with_capacity(points.len());
+    out.push(points[0]);
+    for idx in 1..points.len() - 1 {
+        let prev = out[out.len() - 1];
+        let curr = points[idx];
+        if (curr.0 - prev.0).abs() <= 1e-4 && (curr.1 - prev.1).abs() <= 1e-4 {
+            continue;
+        }
+        let next = points[idx + 1];
+        let dx1 = curr.0 - prev.0;
+        let dy1 = curr.1 - prev.1;
+        let dx2 = next.0 - curr.0;
+        let dy2 = next.1 - curr.1;
+        if (dx1.abs() <= 1e-4 && dx2.abs() <= 1e-4)
+            || (dy1.abs() <= 1e-4 && dy2.abs() <= 1e-4)
+        {
+            continue;
+        }
+        out.push(curr);
+    }
+    let last = points[points.len() - 1];
+    if (last.0 - out[out.len() - 1].0).abs() > 1e-4
+        || (last.1 - out[out.len() - 1].1).abs() > 1e-4
+    {
+        out.push(last);
+    }
+    out
+}
+
+fn route_edge_with_grid(
+    ctx: &RouteContext<'_>,
+    grid: &RoutingGrid,
+    occupancy: Option<&EdgeOccupancy>,
+) -> Option<Vec<(f32, f32)>> {
+    if !ctx.config.flowchart.routing.enable_grid_router {
+        return None;
+    }
+
+    let start = anchor_point_for_node(ctx.from, ctx.start_side, ctx.start_offset);
+    let end = anchor_point_for_node(ctx.to, ctx.end_side, ctx.end_offset);
+
+    let (start_ix, start_iy) = grid.cell_for_point(start.0, start.1)?;
+    let (end_ix, end_iy) = grid.cell_for_point(end.0, end.1)?;
+    if start_ix == end_ix && start_iy == end_iy {
+        return Some(vec![start, end]);
+    }
+
+    let dirs: [(i32, i32); 4] = [(0, -1), (0, 1), (-1, 0), (1, 0)];
+    let step_cost = (grid.cell * 1000.0).round() as u32;
+    let turn_penalty = (ctx.config.flowchart.routing.turn_penalty * grid.cell * 1000.0).round() as u32;
+    let occupancy_weight =
+        (ctx.config.flowchart.routing.occupancy_weight * grid.cell * 1000.0).round() as u32;
+    let max_steps = ctx.config.flowchart.routing.max_steps.max(10_000);
+
+    let cols = grid.cols;
+    let rows = grid.rows;
+    let states = (cols * rows * 4) as usize;
+    let mut best_cost = vec![u32::MAX; states];
+    let mut prev: Vec<Option<GridState>> = vec![None; states];
+    let mut heap = BinaryHeap::new();
+
+    for dir in 0..4u8 {
+        let idx = ((start_iy * cols + start_ix) as usize) * 4 + dir as usize;
+        best_cost[idx] = 0;
+        heap.push(GridEntry {
+            est: 0,
+            cost: 0,
+            state: GridState {
+                x: start_ix,
+                y: start_iy,
+                dir,
+            },
+        });
+    }
+
+    let mut end_state: Option<GridState> = None;
+    let mut steps = 0usize;
+
+    while let Some(entry) = heap.pop() {
+        steps += 1;
+        if steps > max_steps {
+            break;
+        }
+        let GridEntry { cost, state, .. } = entry;
+        let state_idx = ((state.y * cols + state.x) as usize) * 4 + state.dir as usize;
+        if cost != best_cost[state_idx] {
+            continue;
+        }
+        if state.x == end_ix && state.y == end_iy {
+            end_state = Some(state);
+            break;
+        }
+        for (dir_idx, (dx, dy)) in dirs.iter().enumerate() {
+            let nx = state.x + dx;
+            let ny = state.y + dy;
+            if nx < 0 || ny < 0 || nx >= cols || ny >= rows {
+                continue;
+            }
+            if (nx != end_ix || ny != end_iy) && (nx != start_ix || ny != start_iy) {
+                if cell_blocked(grid, ctx.obstacles, nx, ny, ctx) {
+                    continue;
+                }
+            }
+            let mut next_cost = cost.saturating_add(step_cost);
+            if state.dir != dir_idx as u8 {
+                next_cost = next_cost.saturating_add(turn_penalty);
+            }
+            if let Some(occ) = occupancy {
+                let (cx, cy) = grid.cell_center(nx, ny);
+                let weight = occ.weight_at(cx, cy) as u32;
+                if weight > 0 {
+                    next_cost = next_cost.saturating_add(weight.saturating_mul(occupancy_weight));
+                }
+            }
+            let next_idx = ((ny * cols + nx) as usize) * 4 + dir_idx;
+            if next_cost >= best_cost[next_idx] {
+                continue;
+            }
+            best_cost[next_idx] = next_cost;
+            prev[next_idx] = Some(state);
+            let manhattan = (nx - end_ix).abs() as u32 + (ny - end_iy).abs() as u32;
+            let est = next_cost.saturating_add(manhattan.saturating_mul(step_cost));
+            heap.push(GridEntry {
+                est,
+                cost: next_cost,
+                state: GridState {
+                    x: nx,
+                    y: ny,
+                    dir: dir_idx as u8,
+                },
+            });
+        }
+    }
+
+    let end_state = end_state?;
+    let mut cells: Vec<(i32, i32)> = Vec::new();
+    let mut cur = end_state;
+    loop {
+        cells.push((cur.x, cur.y));
+        let cur_idx = ((cur.y * cols + cur.x) as usize) * 4 + cur.dir as usize;
+        if let Some(prev_state) = prev[cur_idx] {
+            cur = prev_state;
+        } else {
+            break;
+        }
+    }
+    cells.reverse();
+    if cells.is_empty() {
+        return None;
+    }
+
+    let mut points: Vec<(f32, f32)> = Vec::with_capacity(cells.len() + 4);
+    points.push(start);
+    if let Some((ix, iy)) = cells.first() {
+        let (cx, cy) = grid.cell_center(*ix, *iy);
+        match ctx.start_side {
+            EdgeSide::Left | EdgeSide::Right => points.push((cx, start.1)),
+            EdgeSide::Top | EdgeSide::Bottom => points.push((start.0, cy)),
+        }
+        points.push((cx, cy));
+    }
+    for &(ix, iy) in cells.iter().skip(1) {
+        points.push(grid.cell_center(ix, iy));
+    }
+    if let Some((ix, iy)) = cells.last() {
+        let (cx, cy) = grid.cell_center(*ix, *iy);
+        match ctx.end_side {
+            EdgeSide::Left | EdgeSide::Right => points.push((cx, end.1)),
+            EdgeSide::Top | EdgeSide::Bottom => points.push((end.0, cy)),
+        }
+    }
+    points.push(end);
+    Some(compress_path(&points))
+}
+
 fn route_edge_with_avoidance(
     ctx: &RouteContext<'_>,
     occupancy: Option<&EdgeOccupancy>,
+    grid: Option<&RoutingGrid>,
 ) -> Vec<(f32, f32)> {
     if ctx.from_id == ctx.to_id {
         return route_self_loop(ctx.from, ctx.direction, ctx.config);
@@ -7904,6 +8294,14 @@ fn route_edge_with_avoidance(
     let end = anchor_point_for_node(ctx.to, ctx.end_side, ctx.end_offset);
     let mut candidates: Vec<Vec<(f32, f32)>> = Vec::new();
     let mut intersections: Vec<usize> = Vec::new();
+
+    if let Some(grid) = grid {
+        if let Some(points) = route_edge_with_grid(ctx, grid, occupancy) {
+            let hits = path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
+            candidates.push(points);
+            intersections.push(hits);
+        }
+    }
 
     // For backward edges, try routing around obstacles (both left and right)
     if is_backward {
@@ -9181,7 +9579,7 @@ mod tests {
         let end = anchor_point_for_node(&to, EdgeSide::Left, 0.0);
         occupancy.add_path(&[start, end]);
 
-        let points = route_edge_with_avoidance(&ctx, Some(&occupancy));
+        let points = route_edge_with_avoidance(&ctx, Some(&occupancy), None);
         assert!(points.len() > 2, "expected a detoured path to avoid occupied lane");
     }
 
@@ -9205,7 +9603,42 @@ mod tests {
             start_offset: 0.0,
             end_offset: 0.0,
         };
-        let points = route_edge_with_avoidance(&ctx, None);
+        let points = route_edge_with_avoidance(&ctx, None, None);
         assert!(!points.is_empty());
+    }
+
+    #[test]
+    fn grid_router_avoids_blocking_obstacle() {
+        let mut config = LayoutConfig::default();
+        config.flowchart.routing.enable_grid_router = true;
+        config.flowchart.routing.grid_cell = 10.0;
+        let from = make_node("A", 0.0, 0.0, 40.0, 40.0);
+        let to = make_node("B", 220.0, 0.0, 40.0, 40.0);
+        let obstacles = vec![Obstacle {
+            id: "blocker".to_string(),
+            x: 90.0,
+            y: -10.0,
+            width: 80.0,
+            height: 60.0,
+            members: None,
+        }];
+        let grid = build_routing_grid(&obstacles, &config).expect("routing grid");
+        let ctx = RouteContext {
+            from_id: &from.id,
+            to_id: &to.id,
+            from: &from,
+            to: &to,
+            direction: Direction::LeftRight,
+            config: &config,
+            obstacles: &obstacles,
+            base_offset: 0.0,
+            start_side: EdgeSide::Right,
+            end_side: EdgeSide::Left,
+            start_offset: 0.0,
+            end_offset: 0.0,
+        };
+        let points = route_edge_with_grid(&ctx, &grid, None).expect("grid route");
+        let hits = path_obstacle_intersections(&points, &obstacles, &from.id, &to.id);
+        assert_eq!(hits, 0, "grid path should avoid obstacle");
     }
 }

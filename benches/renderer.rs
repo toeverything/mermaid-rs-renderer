@@ -1,9 +1,10 @@
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use mermaid_rs_renderer::config::LayoutConfig;
 use mermaid_rs_renderer::layout::compute_layout;
 use mermaid_rs_renderer::parser::parse_mermaid;
 use mermaid_rs_renderer::render::render_svg;
 use mermaid_rs_renderer::theme::Theme;
+use std::hint::black_box;
 
 fn dense_flowchart_source(nodes: usize, extra_edges: usize) -> String {
     let mut out = String::from("flowchart LR\n");
@@ -241,6 +242,42 @@ fn bench_edge_routing(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_edge_routing_grid_modes(c: &mut Criterion) {
+    let mut group = c.benchmark_group("layout_edge_routing_grid_modes");
+    let theme = Theme::modern();
+    let mut config_grid = LayoutConfig::default();
+    config_grid.flowchart.routing.enable_grid_router = true;
+    let mut config_heur = LayoutConfig::default();
+    config_heur.flowchart.routing.enable_grid_router = false;
+
+    for (nodes, extra_edges) in [(40usize, 80usize), (60, 180), (80, 320)] {
+        let name = format!("dense_{}_{}", nodes, extra_edges);
+        let input = dense_flowchart_source(nodes, extra_edges);
+        let parsed = parse_mermaid(&input).expect("parse failed");
+        group.bench_with_input(
+            BenchmarkId::new("grid", &name),
+            &parsed.graph,
+            |b, graph| {
+                b.iter(|| {
+                    let layout = compute_layout(black_box(graph), &theme, &config_grid);
+                    black_box(layout.edges.len());
+                });
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("heuristic", &name),
+            &parsed.graph,
+            |b, graph| {
+                b.iter(|| {
+                    let layout = compute_layout(black_box(graph), &theme, &config_heur);
+                    black_box(layout.edges.len());
+                });
+            },
+        );
+    }
+    group.finish();
+}
+
 fn bench_render(c: &mut Criterion) {
     let mut group = c.benchmark_group("render_svg");
     let theme = Theme::modern();
@@ -329,6 +366,6 @@ fn bench_end_to_end(c: &mut Criterion) {
 criterion_group!(
     name = benches;
     config = Criterion::default();
-    targets = bench_parse, bench_layout, bench_edge_routing, bench_render, bench_end_to_end
+    targets = bench_parse, bench_layout, bench_edge_routing, bench_edge_routing_grid_modes, bench_render, bench_end_to_end
 );
 criterion_main!(benches);

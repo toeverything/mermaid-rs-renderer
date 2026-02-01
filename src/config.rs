@@ -781,6 +781,7 @@ pub struct FlowchartLayoutConfig {
     pub port_pad_max: f32,
     pub port_side_bias: f32,
     pub auto_spacing: FlowchartAutoSpacingConfig,
+    pub routing: FlowchartRoutingConfig,
 }
 
 impl Default for FlowchartLayoutConfig {
@@ -792,6 +793,7 @@ impl Default for FlowchartLayoutConfig {
             port_pad_max: 12.0,
             port_side_bias: 0.0,
             auto_spacing: FlowchartAutoSpacingConfig::default(),
+            routing: FlowchartRoutingConfig::default(),
         }
     }
 }
@@ -842,6 +844,30 @@ impl Default for FlowchartAutoSpacingConfig {
                     scale: 0.3,
                 },
             ],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlowchartRoutingConfig {
+    pub enable_grid_router: bool,
+    pub grid_cell: f32,
+    pub turn_penalty: f32,
+    pub occupancy_weight: f32,
+    pub max_steps: usize,
+    pub snap_ports_to_grid: bool,
+}
+
+impl Default for FlowchartRoutingConfig {
+    fn default() -> Self {
+        Self {
+            enable_grid_router: true,
+            grid_cell: 16.0,
+            turn_penalty: 0.6,
+            occupancy_weight: 1.2,
+            max_steps: 160_000,
+            snap_ports_to_grid: true,
         }
     }
 }
@@ -996,6 +1022,7 @@ struct FlowchartConfig {
     port_pad_max: Option<f32>,
     port_side_bias: Option<f32>,
     auto_spacing: Option<FlowchartAutoSpacingConfigFile>,
+    routing: Option<FlowchartRoutingConfigFile>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1006,6 +1033,17 @@ struct FlowchartAutoSpacingConfigFile {
     density_threshold: Option<f32>,
     dense_scale_floor: Option<f32>,
     buckets: Option<Vec<FlowchartAutoSpacingBucket>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FlowchartRoutingConfigFile {
+    enable_grid_router: Option<bool>,
+    grid_cell: Option<f32>,
+    turn_penalty: Option<f32>,
+    occupancy_weight: Option<f32>,
+    max_steps: Option<usize>,
+    snap_ports_to_grid: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -1648,6 +1686,26 @@ pub fn load_config(path: Option<&Path>) -> anyhow::Result<Config> {
             }
             if let Some(v) = auto.buckets {
                 config.layout.flowchart.auto_spacing.buckets = v;
+            }
+        }
+        if let Some(routing) = flow.routing {
+            if let Some(v) = routing.enable_grid_router {
+                config.layout.flowchart.routing.enable_grid_router = v;
+            }
+            if let Some(v) = routing.grid_cell {
+                config.layout.flowchart.routing.grid_cell = v;
+            }
+            if let Some(v) = routing.turn_penalty {
+                config.layout.flowchart.routing.turn_penalty = v;
+            }
+            if let Some(v) = routing.occupancy_weight {
+                config.layout.flowchart.routing.occupancy_weight = v;
+            }
+            if let Some(v) = routing.max_steps {
+                config.layout.flowchart.routing.max_steps = v;
+            }
+            if let Some(v) = routing.snap_ports_to_grid {
+                config.layout.flowchart.routing.snap_ports_to_grid = v;
             }
         }
     }

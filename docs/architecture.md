@@ -8,7 +8,9 @@
 ## Core pipeline decisions
 - Parser: use a Rust parser generator (candidate: `pest` or `nom`).
 - IR: typed nodes/edges/subgraphs, with explicit label + style objects.
-- Layout: layered DAG layout (longest-path + crossing minimization).
+- Layout: layered DAG layout (ranking + crossing minimization) with a dedicated routing phase.
+- Routing: obstacle-aware orthogonal routing with a grid A* router + heuristic fallback, using
+  a shared occupancy grid to reduce edge-edge overlap.
 - Rendering: generate SVG directly; rasterize PNG/PDF via `resvg`/`tiny-skia`.
 
 ## CLI decisions
@@ -23,6 +25,15 @@
 ## Extensibility decisions
 - Add a diagram-type registry for future expansions.
 - Keep parsing + layout isolated per diagram type.
+
+## Flowchart routing architecture
+- **Port assignment**: per-node side ordering based on target alignment; offsets can snap to
+  the routing grid to stabilize edge paths.
+- **Obstacles**: nodes + visible subgraphs expanded by padding; edges avoid these regions.
+- **Global routing**: a grid A* router searches orthogonal paths with turn penalties and
+  occupancy cost; if no grid path is found, heuristic candidates are used.
+- **Occupancy**: routed edges mark a shared grid to discourage later overlaps while keeping
+  routing deterministic.
 
 ## Diagrams
 - `docs/diagrams/architecture.mmd`
