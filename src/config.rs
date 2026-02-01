@@ -780,6 +780,7 @@ pub struct FlowchartLayoutConfig {
     pub port_pad_min: f32,
     pub port_pad_max: f32,
     pub port_side_bias: f32,
+    pub auto_spacing: FlowchartAutoSpacingConfig,
 }
 
 impl Default for FlowchartLayoutConfig {
@@ -790,6 +791,57 @@ impl Default for FlowchartLayoutConfig {
             port_pad_min: 4.0,
             port_pad_max: 12.0,
             port_side_bias: 0.0,
+            auto_spacing: FlowchartAutoSpacingConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlowchartAutoSpacingBucket {
+    pub min_nodes: usize,
+    pub scale: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlowchartAutoSpacingConfig {
+    pub enabled: bool,
+    pub min_spacing: f32,
+    pub density_threshold: f32,
+    pub dense_scale_floor: f32,
+    pub buckets: Vec<FlowchartAutoSpacingBucket>,
+}
+
+impl Default for FlowchartAutoSpacingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            min_spacing: 24.0,
+            density_threshold: 1.5,
+            dense_scale_floor: 0.7,
+            buckets: vec![
+                FlowchartAutoSpacingBucket {
+                    min_nodes: 0,
+                    scale: 1.0,
+                },
+                FlowchartAutoSpacingBucket {
+                    min_nodes: 50,
+                    scale: 0.75,
+                },
+                FlowchartAutoSpacingBucket {
+                    min_nodes: 80,
+                    scale: 0.6,
+                },
+                FlowchartAutoSpacingBucket {
+                    min_nodes: 120,
+                    scale: 0.45,
+                },
+                FlowchartAutoSpacingBucket {
+                    min_nodes: 160,
+                    scale: 0.3,
+                },
+            ],
         }
     }
 }
@@ -943,6 +995,17 @@ struct FlowchartConfig {
     port_pad_min: Option<f32>,
     port_pad_max: Option<f32>,
     port_side_bias: Option<f32>,
+    auto_spacing: Option<FlowchartAutoSpacingConfigFile>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FlowchartAutoSpacingConfigFile {
+    enabled: Option<bool>,
+    min_spacing: Option<f32>,
+    density_threshold: Option<f32>,
+    dense_scale_floor: Option<f32>,
+    buckets: Option<Vec<FlowchartAutoSpacingBucket>>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -1569,6 +1632,23 @@ pub fn load_config(path: Option<&Path>) -> anyhow::Result<Config> {
         }
         if let Some(v) = flow.port_side_bias {
             config.layout.flowchart.port_side_bias = v;
+        }
+        if let Some(auto) = flow.auto_spacing {
+            if let Some(v) = auto.enabled {
+                config.layout.flowchart.auto_spacing.enabled = v;
+            }
+            if let Some(v) = auto.min_spacing {
+                config.layout.flowchart.auto_spacing.min_spacing = v;
+            }
+            if let Some(v) = auto.density_threshold {
+                config.layout.flowchart.auto_spacing.density_threshold = v;
+            }
+            if let Some(v) = auto.dense_scale_floor {
+                config.layout.flowchart.auto_spacing.dense_scale_floor = v;
+            }
+            if let Some(v) = auto.buckets {
+                config.layout.flowchart.auto_spacing.buckets = v;
+            }
         }
     }
 

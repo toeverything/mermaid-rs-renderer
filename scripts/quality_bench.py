@@ -2,6 +2,7 @@
 import argparse
 import importlib.util
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -83,6 +84,12 @@ def main():
         default=0,
         help="limit number of fixtures",
     )
+    parser.add_argument(
+        "--pattern",
+        action="append",
+        default=[],
+        help="regex pattern to filter fixture paths (repeatable)",
+    )
     args = parser.parse_args()
 
     fixtures = [Path(p) for p in args.fixtures if p]
@@ -104,11 +111,14 @@ def main():
     results = {}
 
     files = []
+    patterns = [re.compile(p) for p in args.pattern] if args.pattern else []
     for base in fixtures:
         if base.exists():
             files.extend(sorted(base.glob("**/*.mmd")))
     if args.limit:
         files = files[: args.limit]
+    if patterns:
+        files = [f for f in files if any(p.search(str(f)) for p in patterns)]
 
     for file in files:
         key = layout_key(file, ROOT)

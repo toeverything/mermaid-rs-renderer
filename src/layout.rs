@@ -4828,6 +4828,31 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     if graph.kind == crate::ir::DiagramKind::Requirement {
         effective_config.max_label_width_chars = effective_config.max_label_width_chars.max(32);
     }
+    if graph.kind == crate::ir::DiagramKind::Flowchart {
+        let node_count = graph.nodes.len();
+        let edge_count = graph.edges.len() as f32;
+        let density = if node_count > 0 {
+            edge_count / node_count as f32
+        } else {
+            0.0
+        };
+        let auto = &config.flowchart.auto_spacing;
+        if auto.enabled && !auto.buckets.is_empty() {
+            let mut scale = auto.buckets[0].scale;
+            for bucket in &auto.buckets {
+                if node_count >= bucket.min_nodes {
+                    scale = bucket.scale;
+                }
+            }
+            if density > auto.density_threshold {
+                scale = scale.max(auto.dense_scale_floor);
+            }
+            effective_config.node_spacing =
+                (effective_config.node_spacing * scale).max(auto.min_spacing);
+            effective_config.rank_spacing =
+                (effective_config.rank_spacing * scale).max(auto.min_spacing);
+        }
+    }
     let config = &effective_config;
     let mut nodes = BTreeMap::new();
 
@@ -8152,35 +8177,6 @@ fn build_edge_pair_counts(edges: &[crate::ir::Edge]) -> HashMap<(String, String)
         *counts.entry(key).or_insert(0) += 1;
     }
     counts
-}
-
-fn path_intersects_obstacles(
-    points: &[(f32, f32)],
-    obstacles: &[Obstacle],
-    from_id: &str,
-    to_id: &str,
-) -> bool {
-    if points.len() < 2 {
-        return false;
-    }
-
-    for segment in points.windows(2) {
-        let (a, b) = (segment[0], segment[1]);
-        for obstacle in obstacles {
-            if obstacle.id == from_id || obstacle.id == to_id {
-                continue;
-            }
-            if let Some(members) = &obstacle.members
-                && (members.contains(from_id) || members.contains(to_id))
-            {
-                continue;
-            }
-            if segment_intersects_rect(a, b, obstacle) {
-                return true;
-            }
-        }
-    }
-    false
 }
 
 fn segment_intersects_rect(a: (f32, f32), b: (f32, f32), rect: &Obstacle) -> bool {
