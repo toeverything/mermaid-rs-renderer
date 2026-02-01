@@ -7631,7 +7631,8 @@ impl EdgeOccupancy {
             let dy = y2 - y1;
             let len = (dx * dx + dy * dy).sqrt();
             let steps = ((len / self.cell).ceil() as usize).max(1);
-            for i in 0..=steps {
+            let stride = if steps > 32 { (steps / 32).max(1) } else { 1 };
+            for i in (0..=steps).step_by(stride) {
                 let t = i as f32 / steps as f32;
                 let x = x1 + dx * t;
                 let y = y1 + dy * t;
@@ -7641,26 +7642,6 @@ impl EdgeOccupancy {
             }
         }
         score
-    }
-
-    fn overlaps_path(&self, points: &[(f32, f32)]) -> bool {
-        for segment in points.windows(2) {
-            let (x1, y1) = segment[0];
-            let (x2, y2) = segment[1];
-            let dx = x2 - x1;
-            let dy = y2 - y1;
-            let len = (dx * dx + dy * dy).sqrt();
-            let steps = ((len / self.cell).ceil() as usize).max(1);
-            for i in 0..=steps {
-                let t = i as f32 / steps as f32;
-                let x = x1 + dx * t;
-                let y = y1 + dy * t;
-                if self.weights.contains_key(&self.cell_index(x, y)) {
-                    return true;
-                }
-            }
-        }
-        false
     }
 
     fn add_path(&mut self, points: &[(f32, f32)]) {
@@ -7973,27 +7954,6 @@ fn route_edge_with_avoidance(
         }
     }
 
-    if let Some(grid) = occupancy {
-        if !candidates.is_empty() && candidates.iter().all(|p| grid.overlaps_path(p)) {
-            for i in 7..=10 {
-                let delta = step * i as f32;
-                for sign in [1.0, -1.0] {
-                    let offset = ctx.base_offset + sign * delta;
-                    let points = if is_horizontal(ctx.direction) {
-                        let mid_x = (start.0 + end.0) / 2.0 + offset;
-                        vec![start, (mid_x, start.1), (mid_x, end.1), end]
-                    } else {
-                        let mid_y = (start.1 + end.1) / 2.0 + offset;
-                        vec![start, (start.0, mid_y), (end.0, mid_y), end]
-                    };
-                    if !path_intersects_obstacles(&points, ctx.obstacles, ctx.from_id, ctx.to_id) {
-                        candidates.push(points);
-                    }
-                }
-            }
-        }
-    }
-
     if candidates.is_empty() {
         if is_horizontal(ctx.direction) {
             let mid_x = (start.0 + end.0) / 2.0;
@@ -8005,27 +7965,45 @@ fn route_edge_with_avoidance(
     }
 
     if let Some(grid) = occupancy {
-        let mut filtered: Vec<Vec<(f32, f32)>> = candidates
-            .iter()
-            .filter(|points| !grid.overlaps_path(points))
-            .cloned()
-            .collect();
-        if filtered.is_empty() {
-            filtered = candidates.clone();
+        let mut scored: Vec<(u32, f32, Vec<(f32, f32)>)> = Vec::with_capacity(candidates.len());
+        let mut min_score = u32::MAX;
+        for points in candidates {
+            let score = grid.score_path(&points);
+            let len = path_length(&points);
+            min_score = min_score.min(score);
+            scored.push((score, len, points));
+        }
+        if min_score > 3 && scored.len() < 10 {
+            for i in 7..=9 {
+                let delta = step * i as f32;
+                for sign in [1.0, -1.0] {
+                    let offset = ctx.base_offset + sign * delta;
+                    let points = if is_horizontal(ctx.direction) {
+                        let mid_x = (start.0 + end.0) / 2.0 + offset;
+                        vec![start, (mid_x, start.1), (mid_x, end.1), end]
+                    } else {
+                        let mid_y = (start.1 + end.1) / 2.0 + offset;
+                        vec![start, (start.0, mid_y), (end.0, mid_y), end]
+                    };
+                    if !path_intersects_obstacles(&points, ctx.obstacles, ctx.from_id, ctx.to_id) {
+                        let score = grid.score_path(&points);
+                        let len = path_length(&points);
+                        scored.push((score, len, points));
+                    }
+                }
+            }
         }
         let mut best_idx = 0usize;
         let mut best_score = u32::MAX;
         let mut best_len = f32::MAX;
-        for (idx, points) in filtered.iter().enumerate() {
-            let score = grid.score_path(points);
-            let len = path_length(points);
-            if score < best_score || (score == best_score && len < best_len) {
-                best_score = score;
-                best_len = len;
+        for (idx, (score, len, _)) in scored.iter().enumerate() {
+            if *score < best_score || (*score == best_score && *len < best_len) {
+                best_score = *score;
+                best_len = *len;
                 best_idx = idx;
             }
         }
-        return filtered.swap_remove(best_idx);
+        return scored.swap_remove(best_idx).2;
     }
 
     candidates.swap_remove(0)
