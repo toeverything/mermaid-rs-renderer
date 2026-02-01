@@ -4958,7 +4958,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
 
     let mut subgraphs = build_subgraph_layouts(graph, &nodes, theme, config);
     apply_subgraph_anchors(graph, &subgraphs, &mut nodes);
-    let obstacles = build_obstacles(&nodes, &subgraphs);
+    let obstacles = build_obstacles(&nodes, &subgraphs, config);
     let mut edge_ports: Vec<EdgePortInfo> = Vec::with_capacity(graph.edges.len());
     let mut port_candidates: HashMap<(String, EdgeSide), Vec<PortCandidate>> = HashMap::new();
     for (idx, edge) in graph.edges.iter().enumerate() {
@@ -5013,7 +5013,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
                 other_pos: end_other,
             });
     }
-    for ((node_id, side), mut candidates) in port_candidates {
+    for ((node_id, side), candidates) in port_candidates {
         let Some(node) = nodes.get(&node_id) else {
             continue;
         };
@@ -5023,7 +5023,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             min_other = min_other.min(candidate.other_pos);
             max_other = max_other.max(candidate.other_pos);
         }
-        let span = (max_other - min_other).max(1.0);
+        let span = (max_other - min_other).max(0.0);
         let mut order: Vec<usize> = (0..candidates.len()).collect();
         order.sort_by(|&a, &b| {
             candidates[a]
@@ -5041,12 +5041,16 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             .max(config.flowchart.port_pad_min);
         let usable = (node_len - 2.0 * pad).max(1.0);
         let min_sep = usable / (candidates.len() as f32 + 1.0);
-        let mut desired: Vec<(usize, f32)> = order
+        let desired: Vec<(usize, f32)> = order
             .iter()
             .map(|&idx| {
                 let candidate = &candidates[idx];
-                let t = (candidate.other_pos - min_other) / span;
-                let pos = pad + t * usable;
+                let pos = if span <= 1.0 {
+                    pad + usable * 0.5
+                } else {
+                    let t = (candidate.other_pos - min_other) / span;
+                    pad + t * usable
+                };
                 (idx, pos)
             })
             .collect();
@@ -8042,8 +8046,10 @@ fn route_self_loop(
 fn build_obstacles(
     nodes: &BTreeMap<String, NodeLayout>,
     subgraphs: &[SubgraphLayout],
+    config: &LayoutConfig,
 ) -> Vec<Obstacle> {
     let mut obstacles = Vec::new();
+    let pad = (config.node_spacing * 0.2).max(6.0);
     for node in nodes.values() {
         if node.hidden {
             continue;
@@ -8053,10 +8059,10 @@ fn build_obstacles(
         }
         obstacles.push(Obstacle {
             id: node.id.clone(),
-            x: node.x - 6.0,
-            y: node.y - 6.0,
-            width: node.width + 12.0,
-            height: node.height + 12.0,
+            x: node.x - pad,
+            y: node.y - pad,
+            width: node.width + pad * 2.0,
+            height: node.height + pad * 2.0,
             members: None,
         });
     }
@@ -8074,7 +8080,6 @@ fn build_obstacles(
                 members.insert(node.id.clone());
             }
         }
-        let pad = 6.0;
         obstacles.push(Obstacle {
             id: format!("subgraph:{}", sub.label),
             x: sub.x - pad,
