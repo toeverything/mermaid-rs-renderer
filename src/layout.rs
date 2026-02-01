@@ -7973,6 +7973,27 @@ fn route_edge_with_avoidance(
         }
     }
 
+    if let Some(grid) = occupancy {
+        if !candidates.is_empty() && candidates.iter().all(|p| grid.overlaps_path(p)) {
+            for i in 7..=10 {
+                let delta = step * i as f32;
+                for sign in [1.0, -1.0] {
+                    let offset = ctx.base_offset + sign * delta;
+                    let points = if is_horizontal(ctx.direction) {
+                        let mid_x = (start.0 + end.0) / 2.0 + offset;
+                        vec![start, (mid_x, start.1), (mid_x, end.1), end]
+                    } else {
+                        let mid_y = (start.1 + end.1) / 2.0 + offset;
+                        vec![start, (start.0, mid_y), (end.0, mid_y), end]
+                    };
+                    if !path_intersects_obstacles(&points, ctx.obstacles, ctx.from_id, ctx.to_id) {
+                        candidates.push(points);
+                    }
+                }
+            }
+        }
+    }
+
     if candidates.is_empty() {
         if is_horizontal(ctx.direction) {
             let mid_x = (start.0 + end.0) / 2.0;
