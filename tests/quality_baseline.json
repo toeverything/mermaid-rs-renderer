@@ -8,8 +8,11 @@
     "/home/jeremy/mermaid-rs-renderer-master/tests/fixtures/class/multiplicity.mmd",
     "/home/jeremy/mermaid-rs-renderer-master/tests/fixtures/er/basic.mmd",
     "/home/jeremy/mermaid-rs-renderer-master/tests/fixtures/flowchart/basic.mmd",
+    "/home/jeremy/mermaid-rs-renderer-master/tests/fixtures/flowchart/complex.mmd",
     "/home/jeremy/mermaid-rs-renderer-master/tests/fixtures/flowchart/cycles.mmd",
+    "/home/jeremy/mermaid-rs-renderer-master/tests/fixtures/flowchart/dense.mmd",
     "/home/jeremy/mermaid-rs-renderer-master/tests/fixtures/flowchart/edges.mmd",
+    "/home/jeremy/mermaid-rs-renderer-master/tests/fixtures/flowchart/ports.mmd",
     "/home/jeremy/mermaid-rs-renderer-master/tests/fixtures/flowchart/styles.mmd",
     "/home/jeremy/mermaid-rs-renderer-master/tests/fixtures/flowchart/subgraph.mmd",
     "/home/jeremy/mermaid-rs-renderer-master/tests/fixtures/flowchart/subgraph_direction.mmd",
@@ -161,6 +164,20 @@
       "node_overlap_area": 0.0,
       "score": 101553.13220915273
     },
+    "/home/jeremy/mermaid-rs-renderer-master/tests/fixtures/flowchart/complex.mmd": {
+      "node_count": 13,
+      "edge_count": 19,
+      "edge_crossings": 39,
+      "edge_node_crossings": 6,
+      "total_edge_length": 17783.58024757479,
+      "edge_bends": 23,
+      "port_congestion": 11,
+      "edge_overlap_length": 0.0,
+      "layout_area": 2287258.752,
+      "node_overlap_count": 0,
+      "node_overlap_area": 0.0,
+      "score": 2323124.9124951493
+    },
     "/home/jeremy/mermaid-rs-renderer-master/tests/fixtures/flowchart/cycles.mmd": {
       "node_count": 8,
       "edge_count": 9,
@@ -175,6 +192,20 @@
       "node_overlap_area": 0.0,
       "score": 256145.0127825262
     },
+    "/home/jeremy/mermaid-rs-renderer-master/tests/fixtures/flowchart/dense.mmd": {
+      "node_count": 12,
+      "edge_count": 22,
+      "edge_crossings": 32,
+      "edge_node_crossings": 7,
+      "total_edge_length": 11582.722191147304,
+      "edge_bends": 23,
+      "port_congestion": 11,
+      "edge_overlap_length": 0.0,
+      "layout_area": 686661.9665982419,
+      "node_overlap_count": 0,
+      "node_overlap_area": 0.0,
+      "score": 710097.4109805366
+    },
     "/home/jeremy/mermaid-rs-renderer-master/tests/fixtures/flowchart/edges.mmd": {
       "node_count": 10,
       "edge_count": 5,
@@ -188,6 +219,20 @@
       "node_overlap_count": 0,
       "node_overlap_area": 0.0,
       "score": 175310.30276000002
+    },
+    "/home/jeremy/mermaid-rs-renderer-master/tests/fixtures/flowchart/ports.mmd": {
+      "node_count": 12,
+      "edge_count": 20,
+      "edge_crossings": 0,
+      "edge_node_crossings": 0,
+      "total_edge_length": 8482.02125202018,
+      "edge_bends": 20,
+      "port_congestion": 18,
+      "edge_overlap_length": 0.0,
+      "layout_area": 530758.5946,
+      "node_overlap_count": 0,
+      "node_overlap_area": 0.0,
+      "score": 547798.6371040404
     },
     "/home/jeremy/mermaid-rs-renderer-master/tests/fixtures/flowchart/styles.mmd": {
       "node_count": 4,
