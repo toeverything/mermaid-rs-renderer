@@ -29,6 +29,22 @@ mmdr renders diagrams **100-600x faster** than mermaid-cli by eliminating browse
 
 </div>
 
+<details>
+<summary><strong>Fast text metrics (optional, fastest)</strong></summary>
+
+Enable `--fastText` to use calibrated fallback widths for ASCII labels (avoids font DB load).
+On tiny/common diagrams this reaches **1600–2069×** speedups:
+
+| Diagram (tiny) | mmdr `--fastText` | mermaid-cli | Speedup |
+|:--|--:|--:|--:|
+| Flowchart | 1.32 ms | 2,116 ms | **1,601×** |
+| Class | 1.23 ms | 2,314 ms | **1,880×** |
+| State | 1.09 ms | 2,258 ms | **2,069×** |
+| Sequence | 1.16 ms | 2,158 ms | **1,868×** |
+
+<sub>Measured Feb 2, 2026 on the same machine.</sub>
+</details>
+
 <p align="center">
   <img src="docs/benchmarks/breakdown.svg" alt="Pipeline breakdown" width="500">
 </p>

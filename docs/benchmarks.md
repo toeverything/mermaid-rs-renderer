@@ -26,6 +26,17 @@ Mermaid CLI (mmdc + Puppeteer):
 - p50: 2.3491
 - min/max: 2.3208 / 2.7941
 
+## Fast text metrics (tiny diagrams)
+
+Using `mmdr --fastText` on tiny/common diagrams (measured Feb 2, 2026):
+
+| Diagram | mmdr `--fastText` | mermaid-cli | Speedup |
+|:--|--:|--:|--:|
+| Flowchart (tiny) | 1.32 ms | 2,116 ms | 1,601× |
+| Class (tiny) | 1.23 ms | 2,314 ms | 1,880× |
+| State (tiny) | 1.09 ms | 2,258 ms | 2,069× |
+| Sequence (tiny) | 1.16 ms | 2,158 ms | 1,868× |
+
 ## Notes
 - These runs include process startup and file I/O.
 - Mermaid CLI time includes headless Chromium launch.
