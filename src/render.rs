@@ -583,7 +583,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             }
             let stroke_width = edge.override_style.stroke_width.unwrap_or(1.5);
             svg.push_str(&format!(
-                "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" {} {} {} />",
+                "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" {} {} {} stroke-linecap=\"round\" stroke-linejoin=\"round\" />",
                 d, stroke, stroke_width, marker_end, marker_start, dash
             ));
 
@@ -798,8 +798,9 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 let rect_h = label.height + pad_y * 2.0;
                 let label_fill = theme.edge_label_background.as_str();
                 svg.push_str(&format!(
-                    "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"0.5\" stroke=\"none\"/>",
-                    label_fill
+                    "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"0.85\" stroke=\"{}\" stroke-opacity=\"0.35\" stroke-width=\"0.8\"/>",
+                    label_fill,
+                    theme.primary_border_color
                 ));
                 svg.push_str(&text_block_svg(
                     x,

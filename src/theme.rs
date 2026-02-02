@@ -128,31 +128,32 @@ impl Theme {
     }
 
     pub fn modern() -> Self {
-        let primary_color = "#F8FAFF".to_string();
-        let secondary_color = "#EEF2F8".to_string();
+        let primary_color = "#F8FAFC".to_string();
+        let secondary_color = "#E2E8F0".to_string();
         let tertiary_color = "#FFFFFF".to_string();
         let pie_colors = default_pie_colors(&primary_color, &secondary_color, &tertiary_color);
         Self {
-            font_family: "Inter, Segoe UI, system-ui, -apple-system, sans-serif".to_string(),
-            font_size: 13.0,
+            font_family: "Inter, ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", sans-serif"
+                .to_string(),
+            font_size: 14.0,
             primary_color,
-            primary_text_color: "#1C2430".to_string(),
-            primary_border_color: "#C7D2E5".to_string(),
-            line_color: "#7A8AA6".to_string(),
+            primary_text_color: "#0F172A".to_string(),
+            primary_border_color: "#94A3B8".to_string(),
+            line_color: "#64748B".to_string(),
             secondary_color,
             tertiary_color,
             edge_label_background: "#FFFFFF".to_string(),
-            cluster_background: "#F7FAFF".to_string(),
-            cluster_border: "#D7E0F0".to_string(),
+            cluster_background: "#F1F5F9".to_string(),
+            cluster_border: "#CBD5E1".to_string(),
             background: "#FFFFFF".to_string(),
-            sequence_actor_fill: "#F8FAFF".to_string(),
-            sequence_actor_border: "#C7D2E5".to_string(),
-            sequence_actor_line: "#7A8AA6".to_string(),
-            sequence_note_fill: "#F7FAFF".to_string(),
-            sequence_note_border: "#D7E0F0".to_string(),
-            sequence_activation_fill: "#EEF2F8".to_string(),
-            sequence_activation_border: "#7A8AA6".to_string(),
-            text_color: "#1C2430".to_string(),
+            sequence_actor_fill: "#F8FAFC".to_string(),
+            sequence_actor_border: "#94A3B8".to_string(),
+            sequence_actor_line: "#64748B".to_string(),
+            sequence_note_fill: "#FFF7ED".to_string(),
+            sequence_note_border: "#FDBA74".to_string(),
+            sequence_activation_fill: "#E2E8F0".to_string(),
+            sequence_activation_border: "#94A3B8".to_string(),
+            text_color: "#0F172A".to_string(),
             git_colors: MERMAID_GIT_COLORS.map(|value| value.to_string()),
             git_inv_colors: MERMAID_GIT_INV_COLORS.map(|value| value.to_string()),
             git_branch_label_colors: MERMAID_GIT_BRANCH_LABEL_COLORS.map(|value| value.to_string()),
@@ -163,16 +164,16 @@ impl Theme {
             git_tag_label_border: MERMAID_GIT_TAG_LABEL_BORDER.to_string(),
             pie_colors,
             pie_title_text_size: 25.0,
-            pie_title_text_color: "#1C2430".to_string(),
+            pie_title_text_color: "#0F172A".to_string(),
             pie_section_text_size: 17.0,
-            pie_section_text_color: "#1C2430".to_string(),
+            pie_section_text_color: "#0F172A".to_string(),
             pie_legend_text_size: 17.0,
-            pie_legend_text_color: "#1C2430".to_string(),
-            pie_stroke_color: "#000000".to_string(),
-            pie_stroke_width: 2.0,
-            pie_outer_stroke_width: 2.0,
-            pie_outer_stroke_color: "#000000".to_string(),
-            pie_opacity: 0.7,
+            pie_legend_text_color: "#0F172A".to_string(),
+            pie_stroke_color: "#334155".to_string(),
+            pie_stroke_width: 1.6,
+            pie_outer_stroke_width: 1.6,
+            pie_outer_stroke_color: "#CBD5E1".to_string(),
+            pie_opacity: 0.85,
         }
     }
 }

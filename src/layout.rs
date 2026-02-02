@@ -5752,17 +5752,32 @@ fn assign_positions_manual(
             let Some(node) = nodes.get(node_id) else {
                 continue;
             };
-            let mut sum = 0.0;
-            let mut count = 0.0;
+            let mut neighbor_centers: Vec<f32> = Vec::new();
             if let Some(list) = neighbors.get(node_id) {
                 for neighbor_id in list {
                     if let Some(center) = cross_pos.get(neighbor_id) {
-                        sum += *center;
-                        count += 1.0;
+                        neighbor_centers.push(*center);
                     }
                 }
             }
-            let desired = if count > 0.0 { sum / count } else { 0.0 };
+            let mut desired = if neighbor_centers.is_empty() {
+                cross_pos.get(node_id).copied().unwrap_or(0.0)
+            } else {
+                neighbor_centers.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+                let mid = neighbor_centers.len() / 2;
+                if neighbor_centers.len() % 2 == 1 {
+                    neighbor_centers[mid]
+                } else {
+                    (neighbor_centers[mid - 1] + neighbor_centers[mid]) * 0.5
+                }
+            };
+            if let Some(current) = cross_pos.get(node_id) {
+                if !neighbor_centers.is_empty() {
+                    desired = desired * 0.85 + current * 0.15;
+                } else {
+                    desired = *current;
+                }
+            }
             let half = if is_horizontal(graph.direction) {
                 node.height / 2.0
             } else {
@@ -6486,8 +6501,8 @@ fn order_rank_nodes(
             .map(|(idx, id)| (id.clone(), idx))
             .collect();
         bucket.sort_by(|a, b| {
-            let a_score = barycenter(a, neighbors, positions, &current_positions);
-            let b_score = barycenter(b, neighbors, positions, &current_positions);
+            let a_score = median_position(a, neighbors, positions, &current_positions);
+            let b_score = median_position(b, neighbors, positions, &current_positions);
             match a_score.partial_cmp(&b_score) {
                 Some(std::cmp::Ordering::Equal) | None => {
                     let a_pos = current_positions.get(a).copied().unwrap_or(0);
@@ -6525,7 +6540,7 @@ fn order_rank_nodes(
     }
 }
 
-fn barycenter(
+fn median_position(
     node_id: &str,
     neighbors: &HashMap<String, Vec<String>>,
     positions: &HashMap<String, usize>,
@@ -6534,18 +6549,21 @@ fn barycenter(
     let Some(list) = neighbors.get(node_id) else {
         return *current_positions.get(node_id).unwrap_or(&0) as f32;
     };
-    let mut total = 0.0;
-    let mut count = 0.0;
+    let mut values = Vec::new();
     for neighbor in list {
         if let Some(pos) = positions.get(neighbor) {
-            total += *pos as f32;
-            count += 1.0;
+            values.push(*pos as f32);
         }
     }
-    if count == 0.0 {
-        *current_positions.get(node_id).unwrap_or(&0) as f32
+    if values.is_empty() {
+        return *current_positions.get(node_id).unwrap_or(&0) as f32;
+    }
+    values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let mid = values.len() / 2;
+    if values.len() % 2 == 1 {
+        values[mid]
     } else {
-        total / count
+        (values[mid - 1] + values[mid]) * 0.5
     }
 }
 
@@ -7748,7 +7766,7 @@ struct RoutingGrid {
 }
 
 impl RoutingGrid {
-    fn new(obstacles: &[Obstacle], cell: f32, margin: f32) -> Option<Self> {
+    fn new(obstacles: &[Obstacle], cell: f32, margin: f32, max_cells: usize) -> Option<Self> {
         let mut min_x = f32::MAX;
         let mut min_y = f32::MAX;
         let mut max_x = f32::MIN;
@@ -7770,6 +7788,10 @@ impl RoutingGrid {
         let cols = ((max_x - min_x) / cell).ceil() as i32 + 1;
         let rows = ((max_y - min_y) / cell).ceil() as i32 + 1;
         if cols <= 1 || rows <= 1 {
+            return None;
+        }
+        let total_cells = (cols as usize).saturating_mul(rows as usize);
+        if total_cells > max_cells {
             return None;
         }
         let mut cell_obstacles = vec![Vec::new(); (cols * rows) as usize];
@@ -8067,7 +8089,8 @@ fn routing_cell_size(config: &LayoutConfig) -> f32 {
 fn build_routing_grid(obstacles: &[Obstacle], config: &LayoutConfig) -> Option<RoutingGrid> {
     let cell = routing_cell_size(config);
     let margin = config.node_spacing.max(24.0) * 2.0;
-    RoutingGrid::new(obstacles, cell, margin)
+    let max_cells = (config.flowchart.routing.max_steps / 16).max(3000);
+    RoutingGrid::new(obstacles, cell, margin, max_cells)
 }
 
 fn cell_blocked(
@@ -8295,14 +8318,6 @@ fn route_edge_with_avoidance(
     let mut candidates: Vec<Vec<(f32, f32)>> = Vec::new();
     let mut intersections: Vec<usize> = Vec::new();
 
-    if let Some(grid) = grid {
-        if let Some(points) = route_edge_with_grid(ctx, grid, occupancy) {
-            let hits = path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
-            candidates.push(points);
-            intersections.push(hits);
-        }
-    }
-
     // For backward edges, try routing around obstacles (both left and right)
     if is_backward {
         let pad = ctx.config.node_spacing.max(30.0);
@@ -8405,6 +8420,17 @@ fn route_edge_with_avoidance(
                     let mid_y = (start.1 + end.1) / 2.0 + offset;
                     vec![start, (start.0, mid_y), (end.0, mid_y), end]
                 };
+                let hits = path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
+                candidates.push(points);
+                intersections.push(hits);
+            }
+        }
+    }
+
+    let min_hits = intersections.iter().copied().min().unwrap_or(0);
+    if min_hits > 0 {
+        if let Some(grid) = grid {
+            if let Some(points) = route_edge_with_grid(ctx, grid, occupancy) {
                 let hits = path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
                 candidates.push(points);
                 intersections.push(hits);

@@ -29,9 +29,12 @@
 ## Flowchart routing architecture
 - **Port assignment**: per-node side ordering based on target alignment; offsets can snap to
   the routing grid to stabilize edge paths.
+- **Rank ordering**: median-based ordering per layer with damped barycentric placement to
+  reduce crossings and keep node structure stable.
 - **Obstacles**: nodes + visible subgraphs expanded by padding; edges avoid these regions.
 - **Global routing**: a grid A* router searches orthogonal paths with turn penalties and
-  occupancy cost; if no grid path is found, heuristic candidates are used.
+  occupancy cost; if no grid path is found (or the grid is too large), heuristic
+  candidates are used.
 - **Occupancy**: routed edges mark a shared grid to discourage later overlaps while keeping
   routing deterministic.
 
