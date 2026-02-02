@@ -387,6 +387,9 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         }
     }
 
+    let overlay_flowchart = layout.kind == crate::ir::DiagramKind::Flowchart;
+    let mut overlay_arrows: Vec<(bool, (f32, f32), f32, String, f32)> = Vec::new();
+
     if is_sequence {
         for seq_box in &layout.sequence_boxes {
             let stroke = theme.primary_border_color.as_str();
@@ -713,7 +716,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 stroke = color.clone();
             }
             let marker_id = color_ids.get(&stroke).copied().unwrap_or(0);
-            let marker_end = if edge.arrow_end {
+            let marker_end = if edge.arrow_end && !overlay_flowchart {
                 match layout.kind {
                     crate::ir::DiagramKind::State => {
                         format!("marker-end=\"url(#arrow-state-{marker_id})\"")
@@ -732,7 +735,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             } else {
                 String::new()
             };
-            let marker_start = if edge.arrow_start {
+            let marker_start = if edge.arrow_start && !overlay_flowchart {
                 match layout.kind {
                     crate::ir::DiagramKind::State => {
                         format!("marker-start=\"url(#arrow-state-{marker_id})\"")
@@ -761,6 +764,21 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" {} {} {} stroke-linecap=\"round\" stroke-linejoin=\"round\" />",
                 d, stroke, stroke_width, marker_end, marker_start, dash
             ));
+
+            if overlay_flowchart {
+                if edge.arrow_start {
+                    if let Some(point) = edge.points.first().copied() {
+                        let angle = edge_endpoint_angle(&edge.points, true);
+                        overlay_arrows.push((true, point, angle, stroke.clone(), stroke_width));
+                    }
+                }
+                if edge.arrow_end {
+                    if let Some(point) = edge.points.last().copied() {
+                        let angle = edge_endpoint_angle(&edge.points, false);
+                        overlay_arrows.push((false, point, angle, stroke.clone(), stroke_width));
+                    }
+                }
+            }
 
             if let Some(point) = edge.points.first().copied()
                 && let Some(decoration) = edge.start_decoration
@@ -912,6 +930,18 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             }
             if node.link.is_some() {
                 svg.push_str("</a>");
+            }
+        }
+
+        if overlay_flowchart && !overlay_arrows.is_empty() {
+            for (is_start, point, angle, stroke, stroke_width) in overlay_arrows {
+                let final_angle = if is_start { angle } else { angle };
+                svg.push_str(&arrowhead_svg(
+                    point,
+                    final_angle,
+                    stroke.as_str(),
+                    stroke_width,
+                ));
             }
         }
 
@@ -2260,12 +2290,16 @@ fn render_gantt(
     config: &LayoutConfig,
 ) -> String {
     let mut svg = String::new();
+    let chart_left = layout.chart_x;
+    let chart_right = layout.chart_x + layout.chart_width;
+    let full_width = chart_right + layout.label_x;
+    let bar_height = layout.row_height * 0.55;
 
     // Title
     if let Some(ref title) = layout.title {
         svg.push_str(&text_block_svg(
             layout.chart_x + layout.chart_width / 2.0,
-            20.0,
+            layout.title_y,
             title,
             theme,
             config,
@@ -2274,42 +2308,96 @@ fn render_gantt(
         ));
     }
 
+    // Grid/ticks
+    let axis_y = layout.chart_y + layout.chart_height + layout.row_height * 0.6;
+    for tick in &layout.ticks {
+        svg.push_str(&format!(
+            "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"#E2E8F0\" stroke-width=\"1\"/>",
+            tick.x, layout.chart_y, tick.x, layout.chart_y + layout.chart_height
+        ));
+        if !tick.label.trim().is_empty() {
+            svg.push_str(&text_line_svg(
+                tick.x,
+                axis_y,
+                tick.label.as_str(),
+                theme,
+                theme.text_color.as_str(),
+                "middle",
+            ));
+        }
+    }
+    svg.push_str(&format!(
+        "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" stroke-width=\"1\"/>",
+        chart_left,
+        layout.chart_y + layout.chart_height,
+        chart_right,
+        layout.chart_y + layout.chart_height,
+        theme.line_color
+    ));
+
     // Draw sections
     for section in &layout.sections {
         svg.push_str(&format!(
             "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" stroke=\"none\"/>",
             0.0,
             section.y,
-            layout.chart_x + layout.chart_width,
+            full_width,
             section.height,
-            "#FFFFDE"
+            theme.cluster_background
         ));
-        svg.push_str(&text_block_svg(
-            10.0 + section.label.width / 2.0,
+        svg.push_str(&text_block_svg_anchor(
+            layout.label_x,
             section.y + section.height / 2.0,
             &section.label,
             theme,
             config,
-            false,
+            "start",
             Some(theme.primary_text_color.as_str()),
         ));
     }
 
     // Draw tasks as bars
     for task in &layout.tasks {
-        // Task bar
-        svg.push_str(&format!(
-            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"3\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\"/>",
-            task.x, task.y + 2.0, task.width, task.height - 4.0, task.color, theme.primary_border_color
-        ));
+        let row_center = task.y + layout.row_height / 2.0;
+        let bar_y = row_center - bar_height / 2.0;
+        if matches!(task.status, Some(crate::ir::GanttStatus::Milestone)) {
+            let size = bar_height * 0.6;
+            let cx = task.x;
+            let cy = row_center;
+            let points = format!(
+                "{:.2},{:.2} {:.2},{:.2} {:.2},{:.2} {:.2},{:.2}",
+                cx,
+                cy - size,
+                cx + size,
+                cy,
+                cx,
+                cy + size,
+                cx - size,
+                cy
+            );
+            svg.push_str(&format!(
+                "<polygon points=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\"/>",
+                points, task.color, theme.primary_border_color
+            ));
+        } else {
+            svg.push_str(&format!(
+                "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"3\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\"/>",
+                task.x,
+                bar_y,
+                task.width,
+                bar_height,
+                task.color,
+                theme.primary_border_color
+            ));
+        }
         // Task label
-        svg.push_str(&text_block_svg(
-            task.x - 5.0 - task.label.width / 2.0,
-            task.y + task.height / 2.0,
+        svg.push_str(&text_block_svg_anchor(
+            layout.label_x,
+            row_center,
             &task.label,
             theme,
             config,
-            false,
+            "start",
             Some(theme.primary_text_color.as_str()),
         ));
     }
@@ -3934,6 +4022,19 @@ fn edge_decoration_svg(
         ),
     };
     format!("<g transform=\"translate({x:.2} {y:.2}) rotate({angle:.2})\">{shape}</g>")
+}
+
+fn arrowhead_svg(point: (f32, f32), angle_deg: f32, stroke: &str, stroke_width: f32) -> String {
+    let size = (stroke_width * 2.2 + 6.0).clamp(6.0, 14.0);
+    let half = size * 0.6;
+    let (x, y) = point;
+    let join = " stroke-linejoin=\"round\" stroke-linecap=\"round\"";
+    format!(
+        "<g transform=\"translate({x:.2} {y:.2}) rotate({angle_deg:.2})\"><polygon points=\"0,0 {neg_size:.2},{half:.2} {neg_size:.2},{neg_half:.2}\" fill=\"{stroke}\" stroke=\"{stroke}\" stroke-width=\"{stroke_width}\"{join}/></g>",
+        neg_size = -size,
+        half = half,
+        neg_half = -half,
+    )
 }
 
 fn edge_endpoint_angle(points: &[(f32, f32)], start: bool) -> f32 {

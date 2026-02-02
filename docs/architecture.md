@@ -29,6 +29,8 @@
 ## Flowchart routing architecture
 - **Port assignment**: per-node side ordering based on target alignment; offsets can snap to
   the routing grid to stabilize edge paths.
+- **Port stubs**: edges exit nodes with a short orthogonal stub to normalize entry angles
+  and reduce immediate overlaps near ports.
 - **Rank ordering**: median-based ordering per layer with damped barycentric placement to
   reduce crossings and keep node structure stable.
 - **Obstacles**: nodes + visible subgraphs expanded by padding; edges avoid these regions.
@@ -37,6 +39,12 @@
   candidates are used.
 - **Occupancy**: routed edges mark a shared grid to discourage later overlaps while keeping
   routing deterministic.
+- **Presentation**: arrowheads render in an overlay layer so they are not obscured by nodes.
+
+## Gantt layout architecture
+- **Timeline model**: tasks normalize to start/duration pairs from date + duration tokens.
+- **Grid**: day-level ticks + section bands provide consistent visual rhythm.
+- **Status styling**: done/active/crit/milestone map to distinct fill colors.
 
 ## Diagrams
 - `docs/diagrams/architecture.mmd`

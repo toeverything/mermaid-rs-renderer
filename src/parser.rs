@@ -2047,7 +2047,7 @@ fn parse_gantt_diagram(input: &str) -> Result<ParseOutput> {
             if label.is_empty() {
                 continue;
             }
-            let (id, details, after) = parse_gantt_task_meta(meta);
+            let (id, details, after, status) = parse_gantt_task_meta(meta);
             let node_id = id
                 .clone()
                 .unwrap_or_else(|| format!("gantt_{}", graph.nodes.len()));
@@ -2065,6 +2065,7 @@ fn parse_gantt_diagram(input: &str) -> Result<ParseOutput> {
                 duration,
                 after: after.clone(),
                 section: current_section_name.clone(),
+                status,
             });
 
             graph.ensure_node(
@@ -2120,10 +2121,18 @@ fn parse_gantt_diagram(input: &str) -> Result<ParseOutput> {
     Ok(ParseOutput { graph, init_config })
 }
 
-fn parse_gantt_task_meta(meta: &str) -> (Option<String>, Vec<String>, Option<String>) {
+fn parse_gantt_task_meta(
+    meta: &str,
+) -> (
+    Option<String>,
+    Vec<String>,
+    Option<String>,
+    Option<crate::ir::GanttStatus>,
+) {
     let mut id: Option<String> = None;
     let mut details: Vec<String> = Vec::new();
     let mut after: Option<String> = None;
+    let mut status: Option<crate::ir::GanttStatus> = None;
 
     for raw_token in meta.split(',') {
         let token = raw_token.trim();
@@ -2138,7 +2147,8 @@ fn parse_gantt_task_meta(meta: &str) -> (Option<String>, Vec<String>, Option<Str
             }
             continue;
         }
-        if is_gantt_status_token(&lower) {
+        if let Some(token_status) = gantt_status_from_token(&lower) {
+            status = Some(token_status);
             details.push(token.to_string());
             continue;
         }
@@ -2153,11 +2163,17 @@ fn parse_gantt_task_meta(meta: &str) -> (Option<String>, Vec<String>, Option<Str
         }
     }
 
-    (id, details, after)
+    (id, details, after, status)
 }
 
-fn is_gantt_status_token(token: &str) -> bool {
-    matches!(token, "done" | "active" | "crit" | "milestone")
+fn gantt_status_from_token(token: &str) -> Option<crate::ir::GanttStatus> {
+    match token {
+        "done" => Some(crate::ir::GanttStatus::Done),
+        "active" => Some(crate::ir::GanttStatus::Active),
+        "crit" => Some(crate::ir::GanttStatus::Crit),
+        "milestone" => Some(crate::ir::GanttStatus::Milestone),
+        _ => None,
+    }
 }
 
 fn looks_like_date(token: &str) -> bool {

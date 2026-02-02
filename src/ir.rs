@@ -93,6 +93,14 @@ pub struct QuadrantPoint {
     pub y: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GanttStatus {
+    Done,
+    Active,
+    Crit,
+    Milestone,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct QuadrantData {
     pub title: Option<String>,
@@ -112,6 +120,7 @@ pub struct GanttTask {
     pub duration: Option<String>,
     pub after: Option<String>,
     pub section: Option<String>,
+    pub status: Option<GanttStatus>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
