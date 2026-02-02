@@ -1869,8 +1869,18 @@ fn compute_mindmap_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -
         .or_else(|| graph.mindmap.nodes.first().map(|node| node.id.clone()));
     let mut subtree_heights: HashMap<String, f32> = HashMap::new();
 
-    let horizontal_gap = config.mindmap.rank_spacing * config.mindmap.rank_spacing_multiplier;
-    let vertical_gap = config.mindmap.node_spacing * config.mindmap.node_spacing_multiplier;
+    let mut horizontal_gap = config.mindmap.rank_spacing * config.mindmap.rank_spacing_multiplier;
+    let mut vertical_gap = config.mindmap.node_spacing * config.mindmap.node_spacing_multiplier;
+    let node_count = graph.mindmap.nodes.len();
+    let density_scale = if node_count >= 10 {
+        0.7
+    } else if node_count >= 6 {
+        0.8
+    } else {
+        1.0
+    };
+    horizontal_gap = (horizontal_gap * density_scale).max(theme.font_size * 1.1);
+    vertical_gap = (vertical_gap * density_scale).max(theme.font_size * 0.9);
 
     if let Some(root_id) = root_id.as_ref() {
         mindmap_subtree_height(
@@ -3330,8 +3340,8 @@ fn compute_pie_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
 }
 
 fn compute_quadrant_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
-    let padding = theme.font_size * 2.0;
-    let grid_size = 400.0;
+    let padding = theme.font_size * 1.6;
+    let grid_size = 360.0;
     // Measure title
     let title = graph
         .quadrant
@@ -3468,10 +3478,10 @@ fn quadrant_palette(_theme: &Theme) -> Vec<String> {
 }
 
 fn compute_gantt_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
-    let padding = theme.font_size * 1.5;
-    let row_height = theme.font_size * 2.5;
-    let label_width = 150.0;
-    let chart_width = 400.0;
+    let padding = theme.font_size * 1.2;
+    let row_height = theme.font_size * 2.1;
+    let label_width = theme.font_size * 8.5;
+    let chart_width = theme.font_size * 24.0;
 
     // Title
     let title = graph
@@ -3584,8 +3594,8 @@ fn format_pie_value(value: f32) -> String {
 }
 
 fn compute_sankey_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
-    const SANKEY_WIDTH: f32 = 600.0;
-    const SANKEY_HEIGHT: f32 = 400.0;
+    const SANKEY_WIDTH: f32 = 560.0;
+    const SANKEY_HEIGHT: f32 = 360.0;
     const SANKEY_NODE_WIDTH: f32 = 10.0;
     const SANKEY_PALETTE: [&str; 10] = [
         "#4e79a7", "#f28e2c", "#e15759", "#76b7b2", "#59a14f", "#edc949", "#af7aa1", "#ff9da7",
@@ -3936,13 +3946,13 @@ fn compute_sankey_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) ->
 }
 
 fn compute_architecture_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
-    const MARGIN: f32 = 40.0;
-    const SERVICE_SIZE: f32 = 80.0;
-    const SERVICE_GAP: f32 = 120.0;
-    const GROUP_PAD_X: f32 = 42.5;
-    const GROUP_PAD_TOP: f32 = 42.5;
-    const GROUP_PAD_BOTTOM: f32 = 60.0;
-    const GROUP_GAP_Y: f32 = 80.0;
+    const MARGIN: f32 = 24.0;
+    const SERVICE_SIZE: f32 = 64.0;
+    const SERVICE_GAP: f32 = 72.0;
+    const GROUP_PAD_X: f32 = 28.0;
+    const GROUP_PAD_TOP: f32 = 32.0;
+    const GROUP_PAD_BOTTOM: f32 = 44.0;
+    const GROUP_GAP_Y: f32 = 48.0;
     const GROUP_STROKE: &str = "hsl(240, 60%, 86.2745098039%)";
     const ICON_FILL: &str = "#087ebf";
 
@@ -4133,13 +4143,13 @@ fn compute_architecture_layout(graph: &Graph, theme: &Theme, config: &LayoutConf
 }
 
 fn compute_radar_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
-    const WIDTH: f32 = 700.0;
-    const HEIGHT: f32 = 700.0;
+    const WIDTH: f32 = 680.0;
+    const HEIGHT: f32 = 680.0;
     const CENTER_X: f32 = WIDTH / 2.0;
     const CENTER_Y: f32 = HEIGHT / 2.0;
-    const MAX_RADIUS: f32 = 300.0;
-    const LEGEND_BOX_SIZE: f32 = 12.0;
-    const LEGEND_GAP: f32 = 4.0;
+    const MAX_RADIUS: f32 = 290.0;
+    const LEGEND_BOX_SIZE: f32 = 11.0;
+    const LEGEND_GAP: f32 = 3.0;
 
     let legend_offset = MAX_RADIUS * 0.875;
     let legend_base_x = CENTER_X + legend_offset;
@@ -4243,10 +4253,10 @@ fn compute_block_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
         );
     }
 
-    let node_gap = (theme.font_size * 0.6).max(6.0);
-    let column_gap = (theme.font_size * 0.6).max(8.0);
-    let origin_x = 8.0;
-    let origin_y = 8.0;
+    let node_gap = (theme.font_size * 0.4).max(4.0);
+    let column_gap = (theme.font_size * 0.45).max(6.0);
+    let origin_x = 6.0;
+    let origin_y = 6.0;
 
     let mut edges: Vec<EdgeLayout> = Vec::new();
 
@@ -4280,8 +4290,8 @@ fn compute_block_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
             xychart: None,
             timeline: None,
             error: None,
-            width: max_x + 8.0,
-            height: max_y + 8.0,
+            width: max_x + 6.0,
+            height: max_y + 6.0,
         };
     };
 
@@ -4417,8 +4427,8 @@ fn compute_block_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
     normalize_layout(&mut nodes, edges.as_mut_slice(), &mut subgraphs);
 
     let (max_x, max_y) = bounds_with_edges(&nodes, &subgraphs, &edges);
-    let width = max_x + 8.0;
-    let height = max_y + 8.0;
+    let width = max_x + 6.0;
+    let height = max_y + 6.0;
 
     Layout {
         kind: graph.kind,
@@ -4493,10 +4503,10 @@ fn compute_kanban_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) ->
         );
     }
 
-    let node_gap = (theme.font_size * 0.6).max(6.0);
-    let column_gap = (theme.font_size * 0.4).max(4.0);
-    let origin_x = 8.0;
-    let origin_y = 8.0;
+    let node_gap = (theme.font_size * 0.45).max(4.0);
+    let column_gap = (theme.font_size * 0.3).max(3.0);
+    let origin_x = 6.0;
+    let origin_y = 6.0;
     let mut column_x = origin_x;
     let mut assigned: HashSet<String> = HashSet::new();
 
@@ -4560,8 +4570,8 @@ fn compute_kanban_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) ->
     normalize_layout(&mut nodes, edges.as_mut_slice(), &mut subgraphs);
 
     let (max_x, max_y) = bounds_without_padding(&nodes, &subgraphs);
-    let width = max_x + 8.0;
-    let height = max_y + 8.0;
+    let width = max_x + 6.0;
+    let height = max_y + 6.0;
 
     Layout {
         kind: graph.kind,
@@ -6019,12 +6029,12 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         label_blocks.insert(id.clone(), label);
     }
 
-    let actor_width = (max_label_width + theme.font_size * 2.5).max(150.0);
-    let actor_height = (max_label_height + theme.font_size * 2.5).max(65.0);
-    let actor_gap = (theme.font_size * 3.85).max(40.0);
+    let actor_width = (max_label_width + theme.font_size * 2.1).max(130.0);
+    let actor_height = (max_label_height + theme.font_size * 2.0).max(56.0);
+    let actor_gap = (theme.font_size * 3.0).max(30.0);
 
     // Add consistent margins to center the diagram
-    let margin = 20.0;
+    let margin = 8.0;
     let mut cursor_x = margin;
     for id in &participants {
         let node = graph.nodes.get(id).expect("participant missing");
@@ -6052,11 +6062,11 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         cursor_x += actor_width + actor_gap;
     }
 
-    let base_spacing = (theme.font_size * 2.8).max(24.0);
-    let note_gap_y = (theme.font_size * 0.7).max(8.0);
-    let note_gap_x = (theme.font_size * 0.8).max(10.0);
-    let note_padding_x = (theme.font_size * 0.9).max(10.0);
-    let note_padding_y = (theme.font_size * 0.6).max(6.0);
+    let base_spacing = (theme.font_size * 2.1).max(18.0);
+    let note_gap_y = (theme.font_size * 0.55).max(5.0);
+    let note_gap_x = (theme.font_size * 0.65).max(7.0);
+    let note_padding_x = (theme.font_size * 0.75).max(7.0);
+    let note_padding_y = (theme.font_size * 0.45).max(4.0);
     let mut extra_before = vec![0.0; graph.edges.len()];
     let frame_end_pad = base_spacing * 0.25;
     for frame in &graph.sequence_frames {
@@ -6079,7 +6089,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         notes_by_index[idx].push(note);
     }
 
-    let mut message_cursor = margin + actor_height + theme.font_size * 2.9;
+    let mut message_cursor = margin + actor_height + theme.font_size * 2.2;
     let mut message_ys = Vec::new();
     let mut sequence_notes = Vec::new();
     for idx in 0..=graph.edges.len() {
@@ -10207,8 +10217,8 @@ fn shape_size(
             (pad_x_scale, 0.8)
         }
         crate::ir::DiagramKind::Er => (0.83, 1.07),
-        crate::ir::DiagramKind::Kanban => (2.3, 0.67),
-        crate::ir::DiagramKind::Requirement => (0.1, 1.0),
+        crate::ir::DiagramKind::Kanban => (1.7, 0.6),
+        crate::ir::DiagramKind::Requirement => (0.1, 0.85),
         _ => (1.0, 1.0),
     };
     let pad_x = config.node_padding_x * pad_x_factor * kind_pad_x_scale;
@@ -10269,15 +10279,15 @@ fn shape_size(
     }
 
     if kind == crate::ir::DiagramKind::Requirement {
-        let min_width = theme.font_size * 12.0;
-        let min_height = theme.font_size * 14.2;
+        let min_width = theme.font_size * 9.5;
+        let min_height = theme.font_size * 10.5;
         width = width.max(min_width);
         height = height.max(min_height);
     }
 
     if kind == crate::ir::DiagramKind::Kanban {
-        let min_width = theme.font_size * 14.2;
-        let min_height = theme.font_size * 3.4;
+        let min_width = theme.font_size * 11.0;
+        let min_height = theme.font_size * 2.6;
         width = width.max(min_width);
         height = height.max(min_height);
     }
