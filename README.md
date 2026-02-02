@@ -2,7 +2,7 @@
 
 # mmdr
 
-**100-600x faster Mermaid rendering. Pure Rust. Zero browser dependencies.**
+**100–1400x faster Mermaid rendering. Pure Rust. Zero browser dependencies.**
 
 [Installation](#installation) | [Quick Start](#quick-start) | [Benchmarks](#performance) | [Examples](#diagram-types)
 
@@ -10,8 +10,8 @@
 
 ## Performance
 
-mmdr renders diagrams **100-600x faster** than mermaid-cli by eliminating browser overhead.
-With the built-in font cache (warm after first run), tiny diagrams can exceed **1000x**.
+mmdr renders diagrams **100–1400x faster** than mermaid-cli by eliminating browser overhead.
+With the built-in font cache (warm after first run), tiny diagrams reach **500–900×** (and `--fastText` exceeds **1600×**).
 
 <p align="center">
   <img src="docs/benchmarks/comparison.svg" alt="Performance comparison" width="600">
@@ -21,10 +21,10 @@ With the built-in font cache (warm after first run), tiny diagrams can exceed **
 
 | Diagram | mmdr | mermaid-cli | Speedup |
 |:--------|-----:|------------:|--------:|
-| Flowchart | 7.18 ms | 2,252 ms | **313x** |
-| Class Diagram | 9.09 ms | 2,317 ms | **255x** |
-| State Diagram | 9.32 ms | 2,255 ms | **242x** |
-| Sequence Diagram | 6.19 ms | 2,471 ms | **399x** |
+| Flowchart | 4.54 ms | 2,449 ms | **540x** |
+| Class Diagram | 6.51 ms | 2,417 ms | **371x** |
+| State Diagram | 5.99 ms | 2,778 ms | **464x** |
+| Sequence Diagram | 5.71 ms | 2,297 ms | **402x** |
 
 <sub>Tested on Intel Core Ultra 7 265V, Linux 6.18.2 | mermaid-cli 11.4.2 via Puppeteer/Chromium</sub>
 
@@ -33,14 +33,14 @@ With the built-in font cache (warm after first run), tiny diagrams can exceed **
 <details>
 <summary><strong>Font cache (default, warm after first run)</strong></summary>
 
-Once the font cache is populated, tiny/common diagrams reach **500–1100×**:
+Once the font cache is populated, tiny/common diagrams reach **500–900×**:
 
 | Diagram (tiny) | mmdr (warm cache) | mermaid-cli | Speedup |
 |:--|--:|--:|--:|
-| Flowchart | 4.72 ms | 2,371 ms | **502×** |
-| Class | 1.89 ms | 2,057 ms | **1,089×** |
-| State | 2.78 ms | 2,113 ms | **760×** |
-| Sequence | 2.86 ms | 2,258 ms | **790×** |
+| Flowchart | 2.96 ms | 2,259 ms | **764×** |
+| Class | 2.55 ms | 2,347 ms | **919×** |
+| State | 2.67 ms | 2,111 ms | **789×** |
+| Sequence | 3.75 ms | 2,010 ms | **536×** |
 
 <sub>Measured Feb 2, 2026 on the same machine.</sub>
 </details>
@@ -92,9 +92,9 @@ Performance on larger diagrams:
 
 | Diagram | Nodes | mmdr | mermaid-cli | Speedup |
 |:--------|------:|-----:|------------:|--------:|
-| flowchart (small) | 10 | 7.38 ms | 2,082 ms | 282x |
-| flowchart (medium) | 50 | 9.21 ms | 2,287 ms | 248x |
-| flowchart (large) | 200 | 26.32 ms | 2,829 ms | 108x |
+| flowchart (small) | 10 | 7.04 ms | 2,135 ms | 303x |
+| flowchart (medium) | 50 | 5.20 ms | 2,197 ms | 422x |
+| flowchart (large) | 200 | 21.84 ms | 2,612 ms | 120x |
 
 The speedup advantage decreases for very large diagrams as actual layout computation becomes more significant relative to browser startup overhead. Still, mmdr remains **100x+ faster** even for 200-node diagrams.
 

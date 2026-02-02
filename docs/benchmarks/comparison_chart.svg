@@ -11,155 +11,175 @@
 <text x="400.0" y="25" text-anchor="middle" class="title">Render Time Comparison (log scale)</text>
 <line x1="120" y1="320.0" x2="650" y2="320.0" stroke="#ddd" stroke-dasharray="2,2"/>
 <text x="110" y="324.0" text-anchor="end" class="tick-label">1 ms</text>
-<line x1="120" y1="246.20029002541253" x2="650" y2="246.20029002541253" stroke="#ddd" stroke-dasharray="2,2"/>
-<text x="110" y="250.20029002541253" text-anchor="end" class="tick-label">10 ms</text>
-<line x1="120" y1="172.40058005082506" x2="650" y2="172.40058005082506" stroke="#ddd" stroke-dasharray="2,2"/>
-<text x="110" y="176.40058005082506" text-anchor="end" class="tick-label">100 ms</text>
-<line x1="120" y1="98.60087007623758" x2="650" y2="98.60087007623758" stroke="#ddd" stroke-dasharray="2,2"/>
-<text x="110" y="102.60087007623758" text-anchor="end" class="tick-label">1000 ms</text>
-<rect x="122.74137931034483" y="255.92126770836379" width="6.396551724137931" height="64.07873229163621" class="bar-mmdr" rx="2"/>
-<text x="125.9396551724138" y="270.92126770836376" text-anchor="middle" class="bar-label">7.4</text>
-<rect x="134.13793103448276" y="75.09568763851405" width="6.396551724137931" height="244.90431236148595" class="bar-cli" rx="2"/>
-<text x="137.33620689655172" y="90.09568763851405" text-anchor="middle" class="bar-label">2082</text>
-<text x="129.13793103448276" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 129.13793103448276 340)">flow small</text>
-<rect x="141.01724137931035" y="248.8541933897236" width="6.396551724137931" height="71.1458066102764" class="bar-mmdr" rx="2"/>
-<text x="144.2155172413793" y="263.8541933897236" text-anchor="middle" class="bar-label">9.2</text>
-<rect x="152.41379310344828" y="72.08174471561307" width="6.396551724137931" height="247.91825528438693" class="bar-cli" rx="2"/>
-<text x="155.61206896551724" y="87.08174471561307" text-anchor="middle" class="bar-label">2287</text>
-<text x="147.41379310344828" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 147.41379310344828 340)">flow med</text>
-<rect x="159.29310344827587" y="215.18898084572106" width="6.396551724137931" height="104.81101915427894" class="bar-mmdr" rx="2"/>
-<text x="162.49137931034483" y="230.18898084572106" text-anchor="middle" class="bar-label">26.3</text>
-<rect x="170.6896551724138" y="65.26968487723451" width="6.396551724137931" height="254.7303151227655" class="bar-cli" rx="2"/>
-<text x="173.88793103448276" y="80.26968487723451" text-anchor="middle" class="bar-label">2829</text>
-<text x="165.6896551724138" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 165.6896551724138 340)">flow large</text>
-<rect x="177.56896551724137" y="254.15379521942813" width="6.396551724137931" height="65.84620478057187" class="bar-mmdr" rx="2"/>
-<text x="180.76724137931032" y="269.15379521942816" text-anchor="middle" class="bar-label">7.8</text>
-<rect x="188.9655172413793" y="70.82138414912919" width="6.396551724137931" height="249.1786158508708" class="bar-cli" rx="2"/>
-<text x="192.16379310344826" y="85.82138414912919" text-anchor="middle" class="bar-label">2379</text>
-<text x="183.9655172413793" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 183.9655172413793 340)">class med</text>
-<rect x="195.8448275862069" y="249.82775978226903" width="6.396551724137931" height="70.17224021773099" class="bar-mmdr" rx="2"/>
-<text x="199.04310344827584" y="264.827759782269" text-anchor="middle" class="bar-label">8.9</text>
-<rect x="207.24137931034483" y="74.5842359926281" width="6.396551724137931" height="245.4157640073719" class="bar-cli" rx="2"/>
-<text x="210.43965517241378" y="89.5842359926281" text-anchor="middle" class="bar-label">2116</text>
-<text x="202.24137931034483" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 202.24137931034483 340)">state med</text>
-<rect x="214.1206896551724" y="250.3119066176107" width="6.396551724137931" height="69.68809338238931" class="bar-mmdr" rx="2"/>
-<text x="217.31896551724137" y="265.3119066176107" text-anchor="middle" class="bar-label">8.8</text>
-<rect x="225.51724137931035" y="75.15422570567159" width="6.396551724137931" height="244.8457742943284" class="bar-cli" rx="2"/>
-<text x="228.7155172413793" y="90.15422570567159" text-anchor="middle" class="bar-label">2078</text>
-<text x="220.51724137931035" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 220.51724137931035 340)">sequence med</text>
-<rect x="232.3965517241379" y="261.29373003988763" width="6.396551724137931" height="58.70626996011239" class="bar-mmdr" rx="2"/>
-<text x="235.59482758620686" y="276.29373003988763" text-anchor="middle" class="bar-label">6.2</text>
-<rect x="243.79310344827584" y="71.9358889413486" width="6.396551724137931" height="248.0641110586514" class="bar-cli" rx="2"/>
-<text x="246.9913793103448" y="86.9358889413486" text-anchor="middle" class="bar-label">2298</text>
-<text x="238.79310344827584" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 238.79310344827584 340)">er med</text>
-<rect x="250.67241379310343" y="257.81583388826726" width="6.396551724137931" height="62.18416611173274" class="bar-mmdr" rx="2"/>
-<text x="253.87068965517238" y="272.81583388826726" text-anchor="middle" class="bar-label">7.0</text>
-<rect x="262.06896551724134" y="75.9559021105251" width="6.396551724137931" height="244.0440978894749" class="bar-cli" rx="2"/>
-<text x="265.2672413793103" y="90.9559021105251" text-anchor="middle" class="bar-label">2027</text>
-<text x="257.06896551724134" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 257.06896551724134 340)">pie med</text>
-<rect x="268.94827586206895" y="260.5347090896837" width="6.396551724137931" height="59.465290910316284" class="bar-mmdr" rx="2"/>
-<text x="272.1465517241379" y="275.5347090896837" text-anchor="middle" class="bar-label">6.4</text>
-<rect x="280.34482758620686" y="75.88553788400421" width="6.396551724137931" height="244.1144621159958" class="bar-cli" rx="2"/>
-<text x="283.5431034482758" y="90.88553788400421" text-anchor="middle" class="bar-label">2031</text>
-<text x="275.34482758620686" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 275.34482758620686 340)">mindmap med</text>
-<rect x="287.2241379310345" y="256.9954881348451" width="6.396551724137931" height="63.004511865154896" class="bar-mmdr" rx="2"/>
-<text x="290.42241379310343" y="271.9954881348451" text-anchor="middle" class="bar-label">7.1</text>
-<rect x="298.6206896551724" y="77.25217683986364" width="6.396551724137931" height="242.74782316013636" class="bar-cli" rx="2"/>
-<text x="301.81896551724134" y="92.25217683986364" text-anchor="middle" class="bar-label">1947</text>
-<text x="293.6206896551724" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 293.6206896551724 340)">journey med</text>
-<rect x="305.5" y="250.0538721486431" width="6.396551724137931" height="69.94612785135688" class="bar-mmdr" rx="2"/>
-<text x="308.69827586206895" y="265.0538721486431" text-anchor="middle" class="bar-label">8.9</text>
-<rect x="316.8965517241379" y="75.70524025933307" width="6.396551724137931" height="244.29475974066693" class="bar-cli" rx="2"/>
-<text x="320.09482758620686" y="90.70524025933307" text-anchor="middle" class="bar-label">2043</text>
-<text x="311.8965517241379" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 311.8965517241379 340)">timeline med</text>
-<rect x="323.7758620689655" y="248.58206057477898" width="6.396551724137931" height="71.41793942522102" class="bar-mmdr" rx="2"/>
-<text x="326.9741379310345" y="263.582060574779" text-anchor="middle" class="bar-label">9.3</text>
-<rect x="335.17241379310343" y="77.32195938912417" width="6.396551724137931" height="242.67804061087583" class="bar-cli" rx="2"/>
-<text x="338.3706896551724" y="92.32195938912417" text-anchor="middle" class="bar-label">1942</text>
-<text x="330.17241379310343" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 330.17241379310343 340)">gantt med</text>
-<rect x="342.051724137931" y="249.23186323941522" width="6.396551724137931" height="70.76813676058478" class="bar-mmdr" rx="2"/>
-<text x="345.24999999999994" y="264.23186323941525" text-anchor="middle" class="bar-label">9.1</text>
-<rect x="353.4482758620689" y="76.6713726547562" width="6.396551724137931" height="243.3286273452438" class="bar-cli" rx="2"/>
-<text x="356.64655172413785" y="91.6713726547562" text-anchor="middle" class="bar-label">1982</text>
-<text x="348.4482758620689" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 348.4482758620689 340)">requirement med</text>
-<rect x="360.32758620689657" y="258.4148976658595" width="6.396551724137931" height="61.58510233414049" class="bar-mmdr" rx="2"/>
-<text x="363.5258620689655" y="273.4148976658595" text-anchor="middle" class="bar-label">6.8</text>
-<rect x="371.7241379310345" y="77.34654801114354" width="6.396551724137931" height="242.65345198885646" class="bar-cli" rx="2"/>
-<text x="374.92241379310343" y="92.34654801114354" text-anchor="middle" class="bar-label">1941</text>
-<text x="366.7241379310345" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 366.7241379310345 340)">gitgraph med</text>
-<rect x="378.60344827586204" y="260.3439886807804" width="6.396551724137931" height="59.65601131921961" class="bar-mmdr" rx="2"/>
-<text x="381.801724137931" y="275.3439886807804" text-anchor="middle" class="bar-label">6.4</text>
-<rect x="389.99999999999994" y="73.37196291716671" width="6.396551724137931" height="246.6280370828333" class="bar-cli" rx="2"/>
-<text x="393.1982758620689" y="88.37196291716671" text-anchor="middle" class="bar-label">2197</text>
-<text x="384.99999999999994" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 384.99999999999994 340)">c4 med</text>
-<rect x="396.87931034482756" y="263.6786583597613" width="6.396551724137931" height="56.32134164023872" class="bar-mmdr" rx="2"/>
-<text x="400.0775862068965" y="278.6786583597613" text-anchor="middle" class="bar-label">5.8</text>
-<rect x="408.27586206896547" y="70.544535538046" width="6.396551724137931" height="249.455464461954" class="bar-cli" rx="2"/>
-<text x="411.4741379310344" y="85.544535538046" text-anchor="middle" class="bar-label">2400</text>
-<text x="403.27586206896547" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 403.27586206896547 340)">sankey med</text>
-<rect x="415.1551724137931" y="263.8275260499538" width="6.396551724137931" height="56.1724739500462" class="bar-mmdr" rx="2"/>
-<text x="418.35344827586204" y="278.8275260499538" text-anchor="middle" class="bar-label">5.8</text>
-<rect x="426.551724137931" y="70.47538466892803" width="6.396551724137931" height="249.52461533107197" class="bar-cli" rx="2"/>
-<text x="429.74999999999994" y="85.47538466892803" text-anchor="middle" class="bar-label">2405</text>
-<text x="421.551724137931" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 421.551724137931 340)">quadrant med</text>
-<rect x="433.4310344827586" y="263.06693391377485" width="6.396551724137931" height="56.93306608622515" class="bar-mmdr" rx="2"/>
-<text x="436.62931034482756" y="278.06693391377485" text-anchor="middle" class="bar-label">5.9</text>
-<rect x="444.8275862068965" y="60.57824176190314" width="6.396551724137931" height="259.42175823809686" class="bar-cli" rx="2"/>
-<text x="448.02586206896547" y="75.57824176190314" text-anchor="middle" class="bar-label">3275</text>
-<text x="439.8275862068965" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 439.8275862068965 340)">zenuml med</text>
-<rect x="451.7068965517241" y="253.1250375325016" width="6.396551724137931" height="66.87496246749839" class="bar-mmdr" rx="2"/>
-<text x="454.9051724137931" y="268.1250375325016" text-anchor="middle" class="bar-label">8.1</text>
-<rect x="463.10344827586204" y="72.05436483734752" width="6.396551724137931" height="247.94563516265248" class="bar-cli" rx="2"/>
-<text x="466.301724137931" y="87.05436483734752" text-anchor="middle" class="bar-label">2289</text>
-<text x="458.10344827586204" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 458.10344827586204 340)">block med</text>
-<rect x="469.98275862068965" y="262.95986024275453" width="6.396551724137931" height="57.04013975724548" class="bar-mmdr" rx="2"/>
-<text x="473.1810344827586" y="277.95986024275453" text-anchor="middle" class="bar-label">5.9</text>
-<rect x="481.37931034482756" y="64.88906512233686" width="6.396551724137931" height="255.11093487766314" class="bar-cli" rx="2"/>
-<text x="484.5775862068965" y="79.88906512233686" text-anchor="middle" class="bar-label">2863</text>
-<text x="476.37931034482756" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 476.37931034482756 340)">packet med</text>
-<rect x="488.2586206896552" y="250.57338444374574" width="6.396551724137931" height="69.42661555625428" class="bar-mmdr" rx="2"/>
-<text x="491.4568965517241" y="265.57338444374574" text-anchor="middle" class="bar-label">8.7</text>
-<rect x="499.6551724137931" y="65.62199461311548" width="6.396551724137931" height="254.37800538688452" class="bar-cli" rx="2"/>
-<text x="502.85344827586204" y="80.62199461311548" text-anchor="middle" class="bar-label">2798</text>
-<text x="494.6551724137931" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 494.6551724137931 340)">kanban med</text>
-<rect x="506.53448275862064" y="256.84979998427934" width="6.396551724137931" height="63.150200015720664" class="bar-mmdr" rx="2"/>
-<text x="509.7327586206896" y="271.84979998427934" text-anchor="middle" class="bar-label">7.2</text>
-<rect x="517.9310344827586" y="52.99548384736926" width="6.396551724137931" height="267.00451615263074" class="bar-cli" rx="2"/>
-<text x="521.1293103448276" y="67.99548384736926" text-anchor="middle" class="bar-label">4149</text>
-<text x="512.9310344827586" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 512.9310344827586 340)">architecture med</text>
-<rect x="524.8103448275863" y="252.2725874622328" width="6.396551724137931" height="67.72741253776721" class="bar-mmdr" rx="2"/>
-<text x="528.0086206896552" y="267.27258746223276" text-anchor="middle" class="bar-label">8.3</text>
-<rect x="536.2068965517242" y="67.95092821573655" width="6.396551724137931" height="252.04907178426345" class="bar-cli" rx="2"/>
-<text x="539.4051724137931" y="82.95092821573655" text-anchor="middle" class="bar-label">2602</text>
-<text x="531.2068965517242" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 531.2068965517242 340)">radar med</text>
-<rect x="543.0862068965517" y="262.0678210603779" width="6.396551724137931" height="57.93217893962207" class="bar-mmdr" rx="2"/>
-<text x="546.2844827586207" y="277.0678210603779" text-anchor="middle" class="bar-label">6.1</text>
-<rect x="554.4827586206897" y="73.75027288857476" width="6.396551724137931" height="246.24972711142524" class="bar-cli" rx="2"/>
-<text x="557.6810344827586" y="88.75027288857476" text-anchor="middle" class="bar-label">2171</text>
-<text x="549.4827586206897" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 549.4827586206897 340)">treemap med</text>
-<rect x="561.3620689655172" y="251.90739823287896" width="6.396551724137931" height="68.09260176712105" class="bar-mmdr" rx="2"/>
-<text x="564.5603448275862" y="266.90739823287896" text-anchor="middle" class="bar-label">8.4</text>
-<text x="567.7586206896551" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 567.7586206896551 340)">xychart med</text>
-<rect x="579.6379310344828" y="256.7976309963141" width="6.396551724137931" height="63.20236900368589" class="bar-mmdr" rx="2"/>
-<text x="582.8362068965517" y="271.7976309963141" text-anchor="middle" class="bar-label">7.2</text>
-<rect x="591.0344827586207" y="72.57691115266525" width="6.396551724137931" height="247.42308884733475" class="bar-cli" rx="2"/>
-<text x="594.2327586206897" y="87.57691115266525" text-anchor="middle" class="bar-label">2252</text>
-<text x="586.0344827586207" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 586.0344827586207 340)">flowchart</text>
-<rect x="597.9137931034484" y="261.5538675984456" width="6.396551724137931" height="58.44613240155439" class="bar-mmdr" rx="2"/>
-<text x="601.1120689655173" y="276.5538675984456" text-anchor="middle" class="bar-label">6.2</text>
-<rect x="609.3103448275863" y="69.60741690148859" width="6.396551724137931" height="250.3925830985114" class="bar-cli" rx="2"/>
-<text x="612.5086206896552" y="84.60741690148859" text-anchor="middle" class="bar-label">2471</text>
-<text x="604.3103448275863" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 604.3103448275863 340)">sequence</text>
-<rect x="616.1896551724138" y="249.26512255964084" width="6.396551724137931" height="70.73487744035916" class="bar-mmdr" rx="2"/>
-<text x="619.3879310344828" y="264.2651225596409" text-anchor="middle" class="bar-label">9.1</text>
-<rect x="627.5862068965517" y="71.6716782138592" width="6.396551724137931" height="248.3283217861408" class="bar-cli" rx="2"/>
-<text x="630.7844827586207" y="86.6716782138592" text-anchor="middle" class="bar-label">2317</text>
-<text x="622.5862068965517" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 622.5862068965517 340)">class</text>
-<rect x="634.4655172413793" y="248.46733933452975" width="6.396551724137931" height="71.53266066547023" class="bar-mmdr" rx="2"/>
-<text x="637.6637931034483" y="263.46733933452975" text-anchor="middle" class="bar-label">9.3</text>
-<rect x="645.8620689655172" y="72.53594924652202" width="6.396551724137931" height="247.46405075347798" class="bar-cli" rx="2"/>
-<text x="649.0603448275862" y="87.53594924652202" text-anchor="middle" class="bar-label">2255</text>
-<text x="640.8620689655172" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 640.8620689655172 340)">state</text>
+<line x1="120" y1="242.64933266093536" x2="650" y2="242.64933266093536" stroke="#ddd" stroke-dasharray="2,2"/>
+<text x="110" y="246.64933266093536" text-anchor="end" class="tick-label">10 ms</text>
+<line x1="120" y1="165.29866532187071" x2="650" y2="165.29866532187071" stroke="#ddd" stroke-dasharray="2,2"/>
+<text x="110" y="169.29866532187071" text-anchor="end" class="tick-label">100 ms</text>
+<line x1="120" y1="87.94799798280607" x2="650" y2="87.94799798280607" stroke="#ddd" stroke-dasharray="2,2"/>
+<text x="110" y="91.94799798280607" text-anchor="end" class="tick-label">1000 ms</text>
+<rect x="122.4090909090909" y="254.45313624381464" width="5.621212121212121" height="65.54686375618536" class="bar-mmdr" rx="2"/>
+<text x="125.21969696969697" y="269.45313624381464" text-anchor="middle" class="bar-label">7.0</text>
+<rect x="133.03030303030303" y="62.46850675675881" width="5.621212121212121" height="257.5314932432412" class="bar-cli" rx="2"/>
+<text x="135.8409090909091" y="77.46850675675881" text-anchor="middle" class="bar-label">2135</text>
+<text x="128.03030303030303" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 128.03030303030303 340)">flow small</text>
+<rect x="138.46969696969697" y="264.60477730842564" width="5.621212121212121" height="55.395222691574375" class="bar-mmdr" rx="2"/>
+<text x="141.28030303030303" y="279.60477730842564" text-anchor="middle" class="bar-label">5.2</text>
+<rect x="149.0909090909091" y="61.51126674792931" width="5.621212121212121" height="258.4887332520707" class="bar-cli" rx="2"/>
+<text x="151.90151515151516" y="76.51126674792931" text-anchor="middle" class="bar-label">2197</text>
+<text x="144.0909090909091" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 144.0909090909091 340)">flow med</text>
+<rect x="154.53030303030303" y="216.4038912968811" width="5.621212121212121" height="103.5961087031189" class="bar-mmdr" rx="2"/>
+<text x="157.3409090909091" y="231.4038912968811" text-anchor="middle" class="bar-label">21.8</text>
+<rect x="165.15151515151516" y="55.695454176640396" width="5.621212121212121" height="264.3045458233596" class="bar-cli" rx="2"/>
+<text x="167.96212121212122" y="70.6954541766404" text-anchor="middle" class="bar-label">2612</text>
+<text x="160.15151515151516" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 160.15151515151516 340)">flow large</text>
+<rect x="170.5909090909091" y="283.59385484721497" width="5.621212121212121" height="36.40614515278502" class="bar-mmdr" rx="2"/>
+<text x="173.40151515151516" y="298.59385484721497" text-anchor="middle" class="bar-label">3.0</text>
+<rect x="181.21212121212122" y="60.5683410881561" width="5.621212121212121" height="259.4316589118439" class="bar-cli" rx="2"/>
+<text x="184.02272727272728" y="75.5683410881561" text-anchor="middle" class="bar-label">2259</text>
+<text x="176.21212121212122" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 176.21212121212122 340)">flow tiny</text>
+<rect x="186.65151515151516" y="280.92078149692543" width="5.621212121212121" height="39.07921850307459" class="bar-mmdr" rx="2"/>
+<text x="189.46212121212122" y="295.92078149692543" text-anchor="middle" class="bar-label">3.2</text>
+<rect x="197.27272727272728" y="59.9083411503986" width="5.621212121212121" height="260.0916588496014" class="bar-cli" rx="2"/>
+<text x="200.08333333333334" y="74.9083411503986" text-anchor="middle" class="bar-label">2304</text>
+<text x="192.27272727272728" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 192.27272727272728 340)">class med</text>
+<rect x="202.71212121212122" y="264.8495836515248" width="5.621212121212121" height="55.15041634847516" class="bar-mmdr" rx="2"/>
+<text x="205.52272727272728" y="279.8495836515248" text-anchor="middle" class="bar-label">5.2</text>
+<rect x="213.33333333333334" y="60.660143476324606" width="5.621212121212121" height="259.3398565236754" class="bar-cli" rx="2"/>
+<text x="216.1439393939394" y="75.6601434763246" text-anchor="middle" class="bar-label">2253</text>
+<text x="208.33333333333334" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 208.33333333333334 340)">state med</text>
+<rect x="218.77272727272728" y="269.5997453525539" width="5.621212121212121" height="50.400254647446104" class="bar-mmdr" rx="2"/>
+<text x="221.58333333333334" y="284.5997453525539" text-anchor="middle" class="bar-label">4.5</text>
+<rect x="229.3939393939394" y="60.16152767256335" width="5.621212121212121" height="259.83847232743665" class="bar-cli" rx="2"/>
+<text x="232.20454545454547" y="75.16152767256335" text-anchor="middle" class="bar-label">2287</text>
+<text x="224.3939393939394" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 224.3939393939394 340)">sequence med</text>
+<rect x="234.83333333333334" y="278.1951422953616" width="5.621212121212121" height="41.80485770463838" class="bar-mmdr" rx="2"/>
+<text x="237.6439393939394" y="293.1951422953616" text-anchor="middle" class="bar-label">3.5</text>
+<rect x="245.45454545454547" y="58.937468425858015" width="5.621212121212121" height="261.062531574142" class="bar-cli" rx="2"/>
+<text x="248.26515151515153" y="73.93746842585801" text-anchor="middle" class="bar-label">2372</text>
+<text x="240.45454545454547" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 240.45454545454547 340)">er med</text>
+<rect x="250.8939393939394" y="271.96208845789147" width="5.621212121212121" height="48.03791154210856" class="bar-mmdr" rx="2"/>
+<text x="253.70454545454547" y="286.96208845789147" text-anchor="middle" class="bar-label">4.2</text>
+<rect x="261.5151515151515" y="60.92061441979462" width="5.621212121212121" height="259.0793855802054" class="bar-cli" rx="2"/>
+<text x="264.32575757575756" y="75.92061441979462" text-anchor="middle" class="bar-label">2236</text>
+<text x="256.5151515151515" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 256.5151515151515 340)">pie med</text>
+<rect x="266.9545454545455" y="268.18951461478446" width="5.621212121212121" height="51.81048538521555" class="bar-mmdr" rx="2"/>
+<text x="269.76515151515156" y="283.18951461478446" text-anchor="middle" class="bar-label">4.7</text>
+<rect x="277.5757575757576" y="60.0624958745517" width="5.621212121212121" height="259.9375041254483" class="bar-cli" rx="2"/>
+<text x="280.3863636363637" y="75.0624958745517" text-anchor="middle" class="bar-label">2294</text>
+<text x="272.5757575757576" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 272.5757575757576 340)">mindmap med</text>
+<rect x="283.01515151515156" y="269.58486621763086" width="5.621212121212121" height="50.41513378236914" class="bar-mmdr" rx="2"/>
+<text x="285.8257575757576" y="284.58486621763086" text-anchor="middle" class="bar-label">4.5</text>
+<rect x="293.6363636363637" y="61.962005728697704" width="5.621212121212121" height="258.0379942713023" class="bar-cli" rx="2"/>
+<text x="296.44696969696975" y="76.9620057286977" text-anchor="middle" class="bar-label">2167</text>
+<text x="288.6363636363637" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 288.6363636363637 340)">journey med</text>
+<rect x="299.0757575757576" y="271.6726061179998" width="5.621212121212121" height="48.327393882000194" class="bar-mmdr" rx="2"/>
+<text x="301.8863636363637" y="286.6726061179998" text-anchor="middle" class="bar-label">4.2</text>
+<rect x="309.69696969696975" y="62.731409160466626" width="5.621212121212121" height="257.2685908395334" class="bar-cli" rx="2"/>
+<text x="312.5075757575758" y="77.73140916046663" text-anchor="middle" class="bar-label">2118</text>
+<text x="304.69696969696975" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 304.69696969696975 340)">timeline med</text>
+<rect x="315.1363636363637" y="272.9252693310735" width="5.621212121212121" height="47.074730668926534" class="bar-mmdr" rx="2"/>
+<text x="317.94696969696975" y="287.9252693310735" text-anchor="middle" class="bar-label">4.1</text>
+<rect x="325.7575757575758" y="61.66464985808318" width="5.621212121212121" height="258.3353501419168" class="bar-cli" rx="2"/>
+<text x="328.56818181818187" y="76.66464985808318" text-anchor="middle" class="bar-label">2187</text>
+<text x="320.7575757575758" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 320.7575757575758 340)">gantt med</text>
+<rect x="331.19696969696975" y="268.82721370830336" width="5.621212121212121" height="51.172786291696646" class="bar-mmdr" rx="2"/>
+<text x="334.0075757575758" y="283.82721370830336" text-anchor="middle" class="bar-label">4.6</text>
+<rect x="341.81818181818187" y="60.95179627644336" width="5.621212121212121" height="259.04820372355664" class="bar-cli" rx="2"/>
+<text x="344.62878787878793" y="75.95179627644336" text-anchor="middle" class="bar-label">2234</text>
+<text x="336.81818181818187" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 336.81818181818187 340)">requirement med</text>
+<rect x="347.2575757575758" y="269.5815876994299" width="5.621212121212121" height="50.41841230057009" class="bar-mmdr" rx="2"/>
+<text x="350.06818181818187" y="284.5815876994299" text-anchor="middle" class="bar-label">4.5</text>
+<rect x="357.87878787878793" y="62.80918142803495" width="5.621212121212121" height="257.19081857196505" class="bar-cli" rx="2"/>
+<text x="360.689393939394" y="77.80918142803495" text-anchor="middle" class="bar-label">2113</text>
+<text x="352.87878787878793" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 352.87878787878793 340)">gitgraph med</text>
+<rect x="363.31818181818187" y="280.4065838408506" width="5.621212121212121" height="39.59341615914942" class="bar-mmdr" rx="2"/>
+<text x="366.12878787878793" y="295.4065838408506" text-anchor="middle" class="bar-label">3.2</text>
+<rect x="373.939393939394" y="59.52549715279281" width="5.621212121212121" height="260.4745028472072" class="bar-cli" rx="2"/>
+<text x="376.75000000000006" y="74.52549715279281" text-anchor="middle" class="bar-label">2331</text>
+<text x="368.939393939394" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 368.939393939394 340)">c4 med</text>
+<rect x="379.37878787878793" y="282.4888053872824" width="5.621212121212121" height="37.511194612717595" class="bar-mmdr" rx="2"/>
+<text x="382.189393939394" y="297.4888053872824" text-anchor="middle" class="bar-label">3.1</text>
+<rect x="390.00000000000006" y="58.82120025953583" width="5.621212121212121" height="261.17879974046417" class="bar-cli" rx="2"/>
+<text x="392.8106060606061" y="73.82120025953583" text-anchor="middle" class="bar-label">2380</text>
+<text x="385.00000000000006" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 385.00000000000006 340)">sankey med</text>
+<rect x="395.439393939394" y="304.32036428944565" width="5.621212121212121" height="15.679635710554356" class="bar-mmdr" rx="2"/>
+<text x="398.25000000000006" y="319.32036428944565" text-anchor="middle" class="bar-label">1.6</text>
+<rect x="406.0606060606061" y="60.35731704774253" width="5.621212121212121" height="259.6426829522575" class="bar-cli" rx="2"/>
+<text x="408.8712121212122" y="75.35731704774253" text-anchor="middle" class="bar-label">2274</text>
+<text x="401.0606060606061" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 401.0606060606061 340)">quadrant med</text>
+<rect x="411.50000000000006" y="294.10379937083053" width="5.621212121212121" height="25.89620062916945" class="bar-mmdr" rx="2"/>
+<text x="414.3106060606061" y="309.10379937083053" text-anchor="middle" class="bar-label">2.2</text>
+<rect x="422.1212121212122" y="60.991147240535554" width="5.621212121212121" height="259.00885275946445" class="bar-cli" rx="2"/>
+<text x="424.93181818181824" y="75.99114724053555" text-anchor="middle" class="bar-label">2231</text>
+<text x="417.1212121212122" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 417.1212121212122 340)">zenuml med</text>
+<rect x="427.5606060606061" y="274.85787457816946" width="5.621212121212121" height="45.142125421830514" class="bar-mmdr" rx="2"/>
+<text x="430.3712121212122" y="289.85787457816946" text-anchor="middle" class="bar-label">3.8</text>
+<rect x="438.18181818181824" y="59.882687529886255" width="5.621212121212121" height="260.11731247011375" class="bar-cli" rx="2"/>
+<text x="440.9924242424243" y="74.88268752988625" text-anchor="middle" class="bar-label">2306</text>
+<text x="433.18181818181824" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 433.18181818181824 340)">block med</text>
+<rect x="443.6212121212122" y="290.45582190237286" width="5.621212121212121" height="29.544178097627114" class="bar-mmdr" rx="2"/>
+<text x="446.43181818181824" y="305.45582190237286" text-anchor="middle" class="bar-label">2.4</text>
+<rect x="454.2424242424243" y="57.83615535149835" width="5.621212121212121" height="262.16384464850165" class="bar-cli" rx="2"/>
+<text x="457.05303030303037" y="72.83615535149835" text-anchor="middle" class="bar-label">2451</text>
+<text x="449.2424242424243" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 449.2424242424243 340)">packet med</text>
+<rect x="459.68181818181824" y="287.2933429404049" width="5.621212121212121" height="32.70665705959508" class="bar-mmdr" rx="2"/>
+<text x="462.4924242424243" y="302.2933429404049" text-anchor="middle" class="bar-label">2.6</text>
+<rect x="470.30303030303037" y="57.60298539926026" width="5.621212121212121" height="262.39701460073974" class="bar-cli" rx="2"/>
+<text x="473.11363636363643" y="72.60298539926026" text-anchor="middle" class="bar-label">2468</text>
+<text x="465.30303030303037" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 465.30303030303037 340)">kanban med</text>
+<rect x="475.7424242424243" y="297.0738153916653" width="5.621212121212121" height="22.92618460833472" class="bar-mmdr" rx="2"/>
+<text x="478.55303030303037" y="312.0738153916653" text-anchor="middle" class="bar-label">2.0</text>
+<rect x="486.36363636363643" y="59.663195571865685" width="5.621212121212121" height="260.3368044281343" class="bar-cli" rx="2"/>
+<text x="489.1742424242425" y="74.66319557186569" text-anchor="middle" class="bar-label">2321</text>
+<text x="481.36363636363643" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 481.36363636363643 340)">architecture med</text>
+<rect x="491.80303030303037" y="295.6698167955477" width="5.621212121212121" height="24.330183204452283" class="bar-mmdr" rx="2"/>
+<text x="494.61363636363643" y="310.6698167955477" text-anchor="middle" class="bar-label">2.1</text>
+<rect x="502.4242424242425" y="60.34604541555035" width="5.621212121212121" height="259.65395458444965" class="bar-cli" rx="2"/>
+<text x="505.23484848484856" y="75.34604541555035" text-anchor="middle" class="bar-label">2274</text>
+<text x="497.4242424242425" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 497.4242424242425 340)">radar med</text>
+<rect x="507.86363636363643" y="289.36602228166146" width="5.621212121212121" height="30.633977718338567" class="bar-mmdr" rx="2"/>
+<text x="510.6742424242425" y="304.36602228166146" text-anchor="middle" class="bar-label">2.5</text>
+<rect x="518.4848484848485" y="62.05199275833718" width="5.621212121212121" height="257.9480072416628" class="bar-cli" rx="2"/>
+<text x="521.2954545454545" y="77.05199275833718" text-anchor="middle" class="bar-label">2162</text>
+<text x="513.4848484848485" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 513.4848484848485 340)">treemap med</text>
+<rect x="523.9242424242424" y="274.2588459388871" width="5.621212121212121" height="45.74115406111293" class="bar-mmdr" rx="2"/>
+<text x="526.7348484848484" y="289.2588459388871" text-anchor="middle" class="bar-label">3.9</text>
+<text x="529.5454545454545" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 529.5454545454545 340)">xychart med</text>
+<rect x="539.9848484848485" y="269.19745265251885" width="5.621212121212121" height="50.80254734748117" class="bar-mmdr" rx="2"/>
+<text x="542.7954545454545" y="284.19745265251885" text-anchor="middle" class="bar-label">4.5</text>
+<rect x="550.6060606060606" y="57.862312175009265" width="5.621212121212121" height="262.13768782499073" class="bar-cli" rx="2"/>
+<text x="553.4166666666666" y="72.86231217500927" text-anchor="middle" class="bar-label">2449</text>
+<text x="545.6060606060606" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 545.6060606060606 340)">flowchart</text>
+<rect x="556.0454545454546" y="261.47337661508885" width="5.621212121212121" height="58.52662338491113" class="bar-mmdr" rx="2"/>
+<text x="558.8560606060606" y="276.47337661508885" text-anchor="middle" class="bar-label">5.7</text>
+<rect x="566.6666666666667" y="60.007036005148564" width="5.621212121212121" height="259.99296399485144" class="bar-cli" rx="2"/>
+<text x="569.4772727272727" y="75.00703600514856" text-anchor="middle" class="bar-label">2297</text>
+<text x="561.6666666666667" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 561.6666666666667 340)">sequence</text>
+<rect x="572.1060606060606" y="257.04786445724653" width="5.621212121212121" height="62.95213554275348" class="bar-mmdr" rx="2"/>
+<text x="574.9166666666666" y="272.04786445724653" text-anchor="middle" class="bar-label">6.5</text>
+<rect x="582.7272727272727" y="58.2995364177238" width="5.621212121212121" height="261.7004635822762" class="bar-cli" rx="2"/>
+<text x="585.5378787878788" y="73.2995364177238" text-anchor="middle" class="bar-label">2417</text>
+<text x="577.7272727272727" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 577.7272727272727 340)">class</text>
+<rect x="588.1666666666666" y="259.85995713504957" width="5.621212121212121" height="60.140042864950445" class="bar-mmdr" rx="2"/>
+<text x="590.9772727272726" y="274.85995713504957" text-anchor="middle" class="bar-label">6.0</text>
+<rect x="598.7878787878788" y="53.62077640053309" width="5.621212121212121" height="266.3792235994669" class="bar-cli" rx="2"/>
+<text x="601.5984848484848" y="68.62077640053309" text-anchor="middle" class="bar-label">2778</text>
+<text x="593.7878787878788" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 593.7878787878788 340)">state</text>
+<rect x="604.2272727272727" y="288.5233706595033" width="5.621212121212121" height="31.476629340496697" class="bar-mmdr" rx="2"/>
+<text x="607.0378787878788" y="303.5233706595033" text-anchor="middle" class="bar-label">2.6</text>
+<rect x="614.8484848484849" y="59.2921391446946" width="5.621212121212121" height="260.7078608553054" class="bar-cli" rx="2"/>
+<text x="617.6590909090909" y="74.2921391446946" text-anchor="middle" class="bar-label">2347</text>
+<text x="609.8484848484849" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 609.8484848484849 340)">class tiny</text>
+<rect x="620.2878787878789" y="286.95024035397563" width="5.621212121212121" height="33.049759646024356" class="bar-mmdr" rx="2"/>
+<text x="623.0984848484849" y="301.95024035397563" text-anchor="middle" class="bar-label">2.7</text>
+<rect x="630.909090909091" y="62.84835423722143" width="5.621212121212121" height="257.15164576277857" class="bar-cli" rx="2"/>
+<text x="633.719696969697" y="77.84835423722143" text-anchor="middle" class="bar-label">2111</text>
+<text x="625.909090909091" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 625.909090909091 340)">state tiny</text>
+<rect x="636.3484848484849" y="275.6244405175031" width="5.621212121212121" height="44.37555948249691" class="bar-mmdr" rx="2"/>
+<text x="639.1590909090909" y="290.6244405175031" text-anchor="middle" class="bar-label">3.7</text>
+<rect x="646.969696969697" y="64.49202825466148" width="5.621212121212121" height="255.50797174533852" class="bar-cli" rx="2"/>
+<text x="649.780303030303" y="79.49202825466148" text-anchor="middle" class="bar-label">2010</text>
+<text x="641.969696969697" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 641.969696969697 340)">sequence tiny</text>
 <rect x="670" y="60" width="15" height="15" class="bar-mmdr"/>
 <text x="690" y="72" class="legend">mmdr</text>
 <rect x="670" y="85" width="15" height="15" class="bar-cli"/>

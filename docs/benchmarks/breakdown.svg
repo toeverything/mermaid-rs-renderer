@@ -20,42 +20,42 @@
   <line x1="50" y1="260.0" x2="500" y2="260.0" stroke="#d1d5db" stroke-width="1"/>
   <text x="44" y="264.0" text-anchor="end" class="axis">0.0</text>
   <line x1="50" y1="205.0" x2="500" y2="205.0" stroke="#d1d5db" stroke-width="1"/>
-  <text x="44" y="209.0" text-anchor="end" class="axis">1.7</text>
+  <text x="44" y="209.0" text-anchor="end" class="axis">0.5</text>
   <line x1="50" y1="150.0" x2="500" y2="150.0" stroke="#d1d5db" stroke-width="1"/>
-  <text x="44" y="154.0" text-anchor="end" class="axis">3.4</text>
+  <text x="44" y="154.0" text-anchor="end" class="axis">1.0</text>
   <line x1="50" y1="95.0" x2="500" y2="95.0" stroke="#d1d5db" stroke-width="1"/>
-  <text x="44" y="99.0" text-anchor="end" class="axis">5.0</text>
+  <text x="44" y="99.0" text-anchor="end" class="axis">1.6</text>
   <line x1="50" y1="40.0" x2="500" y2="40.0" stroke="#d1d5db" stroke-width="1"/>
-  <text x="44" y="44.0" text-anchor="end" class="axis">6.7</text>
-  <!-- Flowchart (5.5ms) -->
-  <rect x="72.5" y="221.4" width="67.5" height="38.6" fill="#10b981"/>
-  <text x="106.25" y="244.7" text-anchor="middle" class="value">1.2</text>
-  <rect x="72.5" y="80.8" width="67.5" height="140.6" fill="#3b82f6"/>
-  <text x="106.25" y="155.1" text-anchor="middle" class="value">4.3</text>
-  <rect x="72.5" y="78.7" width="67.5" height="2.1" rx="3 3 0 0" fill="#8b5cf6"/>
+  <text x="44" y="44.0" text-anchor="end" class="axis">2.1</text>
+  <!-- Flowchart (2.1ms) -->
+  <rect x="72.5" y="107.1" width="67.5" height="152.9" fill="#10b981"/>
+  <text x="106.25" y="187.6" text-anchor="middle" class="value">1.4</text>
+  <rect x="72.5" y="48.8" width="67.5" height="58.4" fill="#3b82f6"/>
+  <text x="106.25" y="82.0" text-anchor="middle" class="value">0.6</text>
+  <rect x="72.5" y="40.0" width="67.5" height="8.8" rx="3 3 0 0" fill="#8b5cf6"/>
   <text x="106.25" y="278" text-anchor="middle" class="label">Flowchart</text>
 
-  <!-- Class (6.5ms) -->
-  <rect x="185.0" y="248.3" width="67.5" height="11.7" fill="#10b981"/>
-  <text x="218.75" y="258.1" text-anchor="middle" class="value">0.4</text>
-  <rect x="185.0" y="49.6" width="67.5" height="198.7" fill="#3b82f6"/>
-  <text x="218.75" y="152.9" text-anchor="middle" class="value">6.1</text>
-  <rect x="185.0" y="47.6" width="67.5" height="2.0" rx="3 3 0 0" fill="#8b5cf6"/>
+  <!-- Class (1.2ms) -->
+  <rect x="185.0" y="185.5" width="67.5" height="74.5" fill="#10b981"/>
+  <text x="218.75" y="226.7" text-anchor="middle" class="value">0.7</text>
+  <rect x="185.0" y="148.8" width="67.5" height="36.7" fill="#3b82f6"/>
+  <text x="218.75" y="171.1" text-anchor="middle" class="value">0.3</text>
+  <rect x="185.0" y="137.0" width="67.5" height="11.8" rx="3 3 0 0" fill="#8b5cf6"/>
   <text x="218.75" y="278" text-anchor="middle" class="label">Class</text>
 
-  <!-- State (6.7ms) -->
-  <rect x="297.5" y="248.5" width="67.5" height="11.5" fill="#10b981"/>
-  <text x="331.25" y="258.2" text-anchor="middle" class="value">0.4</text>
-  <rect x="297.5" y="42.7" width="67.5" height="205.8" fill="#3b82f6"/>
-  <text x="331.25" y="149.6" text-anchor="middle" class="value">6.3</text>
-  <rect x="297.5" y="40.0" width="67.5" height="2.7" rx="3 3 0 0" fill="#8b5cf6"/>
+  <!-- State (1.5ms) -->
+  <rect x="297.5" y="195.0" width="67.5" height="65.0" fill="#10b981"/>
+  <text x="331.25" y="231.5" text-anchor="middle" class="value">0.6</text>
+  <rect x="297.5" y="113.4" width="67.5" height="81.6" fill="#3b82f6"/>
+  <text x="331.25" y="158.2" text-anchor="middle" class="value">0.8</text>
+  <rect x="297.5" y="101.2" width="67.5" height="12.3" rx="3 3 0 0" fill="#8b5cf6"/>
   <text x="331.25" y="278" text-anchor="middle" class="label">State</text>
 
-  <!-- Sequence (4.5ms) -->
-  <rect x="410.0" y="250.2" width="67.5" height="9.8" fill="#10b981"/>
-  <text x="443.75" y="259.1" text-anchor="middle" class="value">0.3</text>
-  <rect x="410.0" y="113.4" width="67.5" height="136.9" fill="#3b82f6"/>
-  <text x="443.75" y="185.8" text-anchor="middle" class="value">4.2</text>
-  <rect x="410.0" y="112.1" width="67.5" height="1.3" rx="3 3 0 0" fill="#8b5cf6"/>
+  <!-- Sequence (0.9ms) -->
+  <rect x="410.0" y="193.6" width="67.5" height="66.4" fill="#10b981"/>
+  <text x="443.75" y="230.8" text-anchor="middle" class="value">0.6</text>
+  <rect x="410.0" y="171.7" width="67.5" height="21.9" fill="#3b82f6"/>
+  <text x="443.75" y="186.7" text-anchor="middle" class="value">0.2</text>
+  <rect x="410.0" y="162.5" width="67.5" height="9.2" rx="3 3 0 0" fill="#8b5cf6"/>
   <text x="443.75" y="278" text-anchor="middle" class="label">Sequence</text>
 </svg>

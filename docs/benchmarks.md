@@ -15,27 +15,27 @@ Date: February 2, 2026
 ## Results (seconds)
 
 Rust renderer (this project):
-- runs: 0.033, 0.021, 0.019, 0.019, 0.026
-- mean: 0.0237
-- p50: 0.0206
-- min/max: 0.0194 / 0.0334
+- runs: 0.025, 0.024, 0.021, 0.020, 0.020
+- mean: 0.0222
+- p50: 0.0211
+- min/max: 0.0201 / 0.0253
 
 Mermaid CLI (mmdc + Puppeteer):
-- runs: 2.321, 2.347, 2.349, 2.389, 2.794
-- mean: 2.4400
-- p50: 2.3491
-- min/max: 2.3208 / 2.7941
+- runs: 2.398, 2.280, 2.602, 2.115, 2.090
+- mean: 2.2970
+- p50: 2.2802
+- min/max: 2.0903 / 2.6017
 
 ## Font cache (warm)
 
-After the font cache is populated (default behavior), tiny/common diagrams reach 500–1100×:
+After the font cache is populated (default behavior), tiny/common diagrams reach 500–900×:
 
 | Diagram | mmdr (warm cache) | mermaid-cli | Speedup |
 |:--|--:|--:|--:|
-| Flowchart (tiny) | 4.72 ms | 2,371 ms | 502× |
-| Class (tiny) | 1.89 ms | 2,057 ms | 1,089× |
-| State (tiny) | 2.78 ms | 2,113 ms | 760× |
-| Sequence (tiny) | 2.86 ms | 2,258 ms | 790× |
+| Flowchart (tiny) | 2.96 ms | 2,259 ms | 764× |
+| Class (tiny) | 2.55 ms | 2,347 ms | 919× |
+| State (tiny) | 2.67 ms | 2,111 ms | 789× |
+| Sequence (tiny) | 3.75 ms | 2,010 ms | 536× |
 
 ## Fast text metrics (tiny diagrams)
 

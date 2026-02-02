@@ -18,32 +18,32 @@
   <!-- Flowchart -->
   <text x="105" y="95" text-anchor="middle" class="label">Flowchart</text>
   <rect x="55" y="267" width="50" height="18" rx="4" fill="#10b981"/>
-  <text x="80.0" y="281" text-anchor="middle" class="value">7.2</text>
-  <rect x="115" y="120.9276881625083" width="50" height="164.0723118374917" rx="4" fill="#f97316"/>
-  <text x="140.0" y="140.9276881625083" text-anchor="middle" class="value">2252</text>
-  <text x="105" y="305" text-anchor="middle" class="speedup">313×</text>
+  <text x="80.0" y="281" text-anchor="middle" class="value">4.5</text>
+  <rect x="115" y="126.35099566446212" width="50" height="158.64900433553788" rx="4" fill="#f97316"/>
+  <text x="140.0" y="146.35099566446212" text-anchor="middle" class="value">2449</text>
+  <text x="105" y="305" text-anchor="middle" class="speedup">539×</text>
 
   <!-- Class -->
   <text x="230" y="95" text-anchor="middle" class="label">Class</text>
   <rect x="180" y="267" width="50" height="18" rx="4" fill="#10b981"/>
-  <text x="205.0" y="281" text-anchor="middle" class="value">9.1</text>
-  <rect x="240" y="116.22762003737284" width="50" height="168.77237996262716" rx="4" fill="#f97316"/>
-  <text x="265.0" y="136.22762003737284" text-anchor="middle" class="value">2317</text>
-  <text x="230" y="305" text-anchor="middle" class="speedup">254×</text>
+  <text x="205.0" y="281" text-anchor="middle" class="value">6.5</text>
+  <rect x="240" y="128.40248860509024" width="50" height="156.59751139490976" rx="4" fill="#f97316"/>
+  <text x="265.0" y="148.40248860509024" text-anchor="middle" class="value">2417</text>
+  <text x="230" y="305" text-anchor="middle" class="speedup">371×</text>
 
   <!-- State -->
   <text x="355" y="95" text-anchor="middle" class="label">State</text>
   <rect x="305" y="267" width="50" height="18" rx="4" fill="#10b981"/>
-  <text x="330.0" y="281" text-anchor="middle" class="value">9.3</text>
-  <rect x="365" y="120.71786470478708" width="50" height="164.28213529521292" rx="4" fill="#f97316"/>
-  <text x="390.0" y="140.71786470478708" text-anchor="middle" class="value">2255</text>
-  <text x="355" y="305" text-anchor="middle" class="speedup">242×</text>
+  <text x="330.0" y="281" text-anchor="middle" class="value">6.0</text>
+  <rect x="365" y="105.0" width="50" height="180.0" rx="4" fill="#f97316"/>
+  <text x="390.0" y="125.0" text-anchor="middle" class="value">2778</text>
+  <text x="355" y="305" text-anchor="middle" class="speedup">463×</text>
 
   <!-- Sequence -->
   <text x="480" y="95" text-anchor="middle" class="label">Sequence</text>
   <rect x="430" y="267" width="50" height="18" rx="4" fill="#10b981"/>
-  <text x="455.0" y="281" text-anchor="middle" class="value">6.2</text>
-  <rect x="490" y="105.0" width="50" height="180.0" rx="4" fill="#f97316"/>
-  <text x="515.0" y="125.0" text-anchor="middle" class="value">2471</text>
-  <text x="480" y="305" text-anchor="middle" class="speedup">398×</text>
+  <text x="455.0" y="281" text-anchor="middle" class="value">5.7</text>
+  <rect x="490" y="136.16328775447434" width="50" height="148.83671224552566" rx="4" fill="#f97316"/>
+  <text x="515.0" y="156.16328775447434" text-anchor="middle" class="value">2297</text>
+  <text x="480" y="305" text-anchor="middle" class="speedup">402×</text>
 </svg>
