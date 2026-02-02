@@ -2,7 +2,7 @@
 
 # mmdr
 
-**500-1000x faster Mermaid rendering. Pure Rust. Zero browser dependencies.**
+**100-600x faster Mermaid rendering. Pure Rust. Zero browser dependencies.**
 
 [Installation](#installation) | [Quick Start](#quick-start) | [Benchmarks](#performance) | [Examples](#diagram-types)
 
@@ -10,7 +10,7 @@
 
 ## Performance
 
-mmdr renders diagrams **100-1800x faster** than mermaid-cli by eliminating browser overhead.
+mmdr renders diagrams **100-600x faster** than mermaid-cli by eliminating browser overhead.
 
 <p align="center">
   <img src="docs/benchmarks/comparison.svg" alt="Performance comparison" width="600">
@@ -20,10 +20,10 @@ mmdr renders diagrams **100-1800x faster** than mermaid-cli by eliminating brows
 
 | Diagram | mmdr | mermaid-cli | Speedup |
 |:--------|-----:|------------:|--------:|
-| Flowchart | 2.75 ms | 2,636 ms | **958x** |
-| Class Diagram | 3.19 ms | 2,381 ms | **746x** |
-| State Diagram | 2.45 ms | 2,647 ms | **1,080x** |
-| Sequence Diagram | 2.47 ms | 2,444 ms | **990x** |
+| Flowchart | 7.18 ms | 2,252 ms | **313x** |
+| Class Diagram | 9.09 ms | 2,317 ms | **255x** |
+| State Diagram | 9.32 ms | 2,255 ms | **242x** |
+| Sequence Diagram | 6.19 ms | 2,471 ms | **399x** |
 
 <sub>Tested on Intel Core Ultra 7 265V, Linux 6.18.2 | mermaid-cli 11.4.2 via Puppeteer/Chromium</sub>
 
@@ -60,9 +60,9 @@ Performance on larger diagrams:
 
 | Diagram | Nodes | mmdr | mermaid-cli | Speedup |
 |:--------|------:|-----:|------------:|--------:|
-| flowchart (small) | 10 | 2.75 ms | 2,636 ms | 958x |
-| flowchart (medium) | 50 | 9.02 ms | 4,029 ms | 446x |
-| flowchart (large) | 200 | 38.64 ms | 4,791 ms | 124x |
+| flowchart (small) | 10 | 7.38 ms | 2,082 ms | 282x |
+| flowchart (medium) | 50 | 9.21 ms | 2,287 ms | 248x |
+| flowchart (large) | 200 | 26.32 ms | 2,829 ms | 108x |
 
 The speedup advantage decreases for very large diagrams as actual layout computation becomes more significant relative to browser startup overhead. Still, mmdr remains **100x+ faster** even for 200-node diagrams.
 

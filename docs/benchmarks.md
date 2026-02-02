@@ -1,6 +1,6 @@
 # Benchmarks
 
-Date: January 22, 2026
+Date: February 2, 2026
 
 ## Render target
 - Input: `docs/diagrams/architecture.mmd`
@@ -15,16 +15,16 @@ Date: January 22, 2026
 ## Results (seconds)
 
 Rust renderer (this project):
-- runs: 0.025, 0.016, 0.018, 0.018, 0.019
-- mean: 0.0191
-- p50: 0.0183
-- min/max: 0.0159 / 0.0246
+- runs: 0.033, 0.021, 0.019, 0.019, 0.026
+- mean: 0.0237
+- p50: 0.0206
+- min/max: 0.0194 / 0.0334
 
 Mermaid CLI (mmdc + Puppeteer):
-- runs: 2.384, 2.099, 2.071, 2.207, 2.065
-- mean: 2.1652
-- p50: 2.0994
-- min/max: 2.0647 / 2.3842
+- runs: 2.321, 2.347, 2.349, 2.389, 2.794
+- mean: 2.4400
+- p50: 2.3491
+- min/max: 2.3208 / 2.7941
 
 ## Notes
 - These runs include process startup and file I/O.

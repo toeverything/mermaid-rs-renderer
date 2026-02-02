@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import statistics
 import subprocess
 import time
@@ -9,7 +10,7 @@ INPUT = ROOT / "docs/diagrams/architecture.mmd"
 OUT_RUST = Path("/tmp/bench-rust.png")
 OUT_MMD = Path("/tmp/bench-mmdc.png")
 
-RUST_BIN = ROOT / "target/release/mermaid-rs-renderer"
+RUST_BIN = Path(os.environ.get("MMDR_BIN", str(ROOT / "target" / "release" / "mmdr")))
 MMD_CMD = [
     "npx",
     "-y",

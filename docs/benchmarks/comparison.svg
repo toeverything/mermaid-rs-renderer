@@ -4,51 +4,46 @@
     .label { font: bold 14px system-ui, sans-serif; fill: #000; }
     .value { font: bold 11px system-ui, sans-serif; fill: white; }
     .speedup { font: bold 14px system-ui, sans-serif; fill: #047857; }
-    .bar-mmdr { fill: #10b981; }
-    .bar-cli { fill: #f97316; }
-    @media (prefers-color-scheme: dark) {
-      .title, .label { fill: #e6edf3; }
-      .speedup { fill: #3fb950; }
-    }
+    .legend { font: 13px system-ui, sans-serif; fill: #000; }
   </style>
 
-  <text x="300" y="28" text-anchor="middle" class="title">Render Time Comparison (ms)</text>
+  <text x="300.0" y="28" text-anchor="middle" class="title">Render Time Comparison (ms)</text>
 
   <!-- Legend -->
-  <rect x="200" y="45" width="14" height="14" rx="2" class="bar-mmdr"/>
-  <text x="218" y="56" class="label">mmdr</text>
-  <rect x="280" y="45" width="14" height="14" rx="2" class="bar-cli"/>
-  <text x="298" y="56" class="label">mermaid-cli</text>
+  <rect x="200" y="45" width="14" height="14" rx="2" fill="#10b981"/>
+  <text x="218" y="57" class="legend">mmdr</text>
+  <rect x="290" y="45" width="14" height="14" rx="2" fill="#f97316"/>
+  <text x="308" y="57" class="legend">mermaid-cli</text>
 
   <!-- Flowchart -->
-  <text x="85" y="95" text-anchor="middle" class="label">Flowchart</text>
-  <rect x="30" y="105" width="50" height="24" rx="4" class="bar-mmdr"/>
-  <text x="55" y="121" text-anchor="middle" class="value">2.8</text>
-  <rect x="90" y="105" width="50" height="180" rx="4" class="bar-cli"/>
-  <text x="115" y="125" text-anchor="middle" class="value">2636</text>
-  <text x="85" y="300" text-anchor="middle" class="speedup">958×</text>
+  <text x="105" y="95" text-anchor="middle" class="label">Flowchart</text>
+  <rect x="55" y="267" width="50" height="18" rx="4" fill="#10b981"/>
+  <text x="80.0" y="281" text-anchor="middle" class="value">7.2</text>
+  <rect x="115" y="120.9276881625083" width="50" height="164.0723118374917" rx="4" fill="#f97316"/>
+  <text x="140.0" y="140.9276881625083" text-anchor="middle" class="value">2252</text>
+  <text x="105" y="305" text-anchor="middle" class="speedup">313×</text>
 
   <!-- Class -->
-  <text x="210" y="95" text-anchor="middle" class="label">Class</text>
-  <rect x="155" y="105" width="50" height="24" rx="4" class="bar-mmdr"/>
-  <text x="180" y="121" text-anchor="middle" class="value">3.2</text>
-  <rect x="215" y="105" width="50" height="165" rx="4" class="bar-cli"/>
-  <text x="240" y="125" text-anchor="middle" class="value">2381</text>
-  <text x="210" y="300" text-anchor="middle" class="speedup">746×</text>
+  <text x="230" y="95" text-anchor="middle" class="label">Class</text>
+  <rect x="180" y="267" width="50" height="18" rx="4" fill="#10b981"/>
+  <text x="205.0" y="281" text-anchor="middle" class="value">9.1</text>
+  <rect x="240" y="116.22762003737284" width="50" height="168.77237996262716" rx="4" fill="#f97316"/>
+  <text x="265.0" y="136.22762003737284" text-anchor="middle" class="value">2317</text>
+  <text x="230" y="305" text-anchor="middle" class="speedup">254×</text>
 
   <!-- State -->
-  <text x="335" y="95" text-anchor="middle" class="label">State</text>
-  <rect x="280" y="105" width="50" height="24" rx="4" class="bar-mmdr"/>
-  <text x="305" y="121" text-anchor="middle" class="value">2.5</text>
-  <rect x="340" y="105" width="50" height="182" rx="4" class="bar-cli"/>
-  <text x="365" y="125" text-anchor="middle" class="value">2647</text>
-  <text x="335" y="300" text-anchor="middle" class="speedup">1080×</text>
+  <text x="355" y="95" text-anchor="middle" class="label">State</text>
+  <rect x="305" y="267" width="50" height="18" rx="4" fill="#10b981"/>
+  <text x="330.0" y="281" text-anchor="middle" class="value">9.3</text>
+  <rect x="365" y="120.71786470478708" width="50" height="164.28213529521292" rx="4" fill="#f97316"/>
+  <text x="390.0" y="140.71786470478708" text-anchor="middle" class="value">2255</text>
+  <text x="355" y="305" text-anchor="middle" class="speedup">242×</text>
 
   <!-- Sequence -->
-  <text x="460" y="95" text-anchor="middle" class="label">Sequence</text>
-  <rect x="405" y="105" width="50" height="24" rx="4" class="bar-mmdr"/>
-  <text x="430" y="121" text-anchor="middle" class="value">2.5</text>
-  <rect x="465" y="105" width="50" height="168" rx="4" class="bar-cli"/>
-  <text x="490" y="125" text-anchor="middle" class="value">2444</text>
-  <text x="460" y="300" text-anchor="middle" class="speedup">990×</text>
+  <text x="480" y="95" text-anchor="middle" class="label">Sequence</text>
+  <rect x="430" y="267" width="50" height="18" rx="4" fill="#10b981"/>
+  <text x="455.0" y="281" text-anchor="middle" class="value">6.2</text>
+  <rect x="490" y="105.0" width="50" height="180.0" rx="4" fill="#f97316"/>
+  <text x="515.0" y="125.0" text-anchor="middle" class="value">2471</text>
+  <text x="480" y="305" text-anchor="middle" class="speedup">398×</text>
 </svg>
