@@ -2429,7 +2429,9 @@ fn render_gantt(
     let chart_left = layout.chart_x;
     let chart_right = layout.chart_x + layout.chart_width;
     let full_width = chart_right + layout.label_x;
-    let bar_height = layout.row_height * 0.55;
+    let bar_height = (layout.row_height * 0.62)
+        .min(layout.row_height - theme.font_size * 0.35)
+        .max(theme.font_size * 0.9);
 
     // Title
     if let Some(ref title) = layout.title {
@@ -2445,7 +2447,7 @@ fn render_gantt(
     }
 
     // Grid/ticks
-    let axis_y = layout.chart_y + layout.chart_height + layout.row_height * 0.7;
+    let axis_y = layout.chart_y + layout.chart_height + layout.row_height * 0.85;
     let tick_font = theme.font_size * 0.8;
     for tick in &layout.ticks {
         svg.push_str(&format!(
@@ -2474,10 +2476,11 @@ fn render_gantt(
     ));
 
     // Draw sections
-    let label_font = theme.font_size * 0.9;
+    let section_font = theme.font_size * 0.95;
+    let task_font = theme.font_size * 0.85;
     for section in &layout.sections {
         svg.push_str(&format!(
-            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" stroke=\"none\"/>",
+            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" fill-opacity=\"0.18\" stroke=\"none\"/>",
             0.0,
             section.y,
             full_width,
@@ -2490,10 +2493,28 @@ fn render_gantt(
             &section.label,
             theme,
             config,
-            label_font,
+            section_font,
             "start",
             Some(theme.primary_text_color.as_str()),
             false,
+        ));
+    }
+
+    let mut row_lines: Vec<f32> = Vec::new();
+    row_lines.push(layout.chart_y);
+    for section in &layout.sections {
+        row_lines.push(section.y);
+    }
+    for task in &layout.tasks {
+        row_lines.push(task.y);
+    }
+    row_lines.push(layout.chart_y + layout.chart_height);
+    row_lines.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    row_lines.dedup_by(|a, b| (*a - *b).abs() < 0.5);
+    for y in row_lines {
+        svg.push_str(&format!(
+            "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"#E2E8F0\" stroke-width=\"1\"/>",
+            0.0, y, full_width, y
         ));
     }
 
@@ -2538,7 +2559,7 @@ fn render_gantt(
             &task.label,
             theme,
             config,
-            label_font,
+            task_font,
             "start",
             Some(theme.primary_text_color.as_str()),
             false,

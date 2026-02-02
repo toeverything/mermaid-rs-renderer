@@ -3552,9 +3552,9 @@ fn quadrant_palette(_theme: &Theme) -> Vec<String> {
 }
 
 fn compute_gantt_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
-    let padding = theme.font_size * 1.2;
-    let row_height = theme.font_size * 2.6;
-    let label_gap = theme.font_size * 0.9;
+    let padding = theme.font_size * 1.25;
+    let row_height = (theme.font_size * 2.8).max(theme.font_size + 18.0);
+    let label_gap = theme.font_size * 1.05;
     let default_duration = 3.0_f32;
 
     let title = graph
@@ -3572,7 +3572,7 @@ fn compute_gantt_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
             label_width = label_width.max(section_label.width);
         }
     }
-    label_width = label_width.max(theme.font_size * 6.0);
+    label_width = label_width.max(theme.font_size * 6.5);
 
     let label_x = padding;
     let chart_x = padding + label_width + label_gap;
@@ -8829,9 +8829,19 @@ impl EdgeOccupancy {
                 let t = i as f32 / steps as f32;
                 let x = x1 + dx * t;
                 let y = y1 + dy * t;
-                let idx = self.cell_index(x, y);
-                let entry = self.weights.entry(idx).or_insert(0);
-                *entry = entry.saturating_add(1);
+                let (ix, iy) = self.cell_index(x, y);
+                for dx_cell in -1i32..=1 {
+                    for dy_cell in -1i32..=1 {
+                        let weight = match (dx_cell.abs(), dy_cell.abs()) {
+                            (0, 0) => 3u16,
+                            (1, 0) | (0, 1) => 2u16,
+                            _ => 1u16,
+                        };
+                        let idx = (ix + dx_cell, iy + dy_cell);
+                        let entry = self.weights.entry(idx).or_insert(0);
+                        *entry = entry.saturating_add(weight);
+                    }
+                }
             }
         }
     }
@@ -9241,6 +9251,10 @@ fn compress_path(points: &[(f32, f32)]) -> Vec<(f32, f32)> {
         let prev = out[out.len() - 1];
         let curr = points[idx];
         if (curr.0 - prev.0).abs() <= 1e-4 && (curr.1 - prev.1).abs() <= 1e-4 {
+            continue;
+        }
+        if idx == 1 || idx == points.len() - 2 {
+            out.push(curr);
             continue;
         }
         let next = points[idx + 1];
