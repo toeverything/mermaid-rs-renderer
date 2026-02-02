@@ -827,8 +827,12 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             }
 
             if let Some((x, y, label)) = label_positions.get(&idx).and_then(|v| v.clone()) {
-                let pad_x = 4.0;
-                let pad_y = 2.0;
+                let (pad_x, pad_y, fill_opacity, stroke_opacity) =
+                    if layout.kind == crate::ir::DiagramKind::State {
+                        (3.0, 1.6, 0.7, 0.25)
+                    } else {
+                        (4.0, 2.0, 0.85, 0.35)
+                    };
                 let label_scale = if layout.kind == crate::ir::DiagramKind::State {
                     (state_font_size / theme.font_size).min(1.0)
                 } else {
@@ -842,9 +846,11 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 let rect_h = label_h + pad_y * 2.0;
                 let label_fill = theme.edge_label_background.as_str();
                 svg.push_str(&format!(
-                    "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"0.85\" stroke=\"{}\" stroke-opacity=\"0.35\" stroke-width=\"0.8\"/>",
+                    "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"{:.2}\" stroke=\"{}\" stroke-opacity=\"{:.2}\" stroke-width=\"0.8\"/>",
                     label_fill,
-                    theme.primary_border_color
+                    fill_opacity,
+                    theme.primary_border_color,
+                    stroke_opacity
                 ));
                 if layout.kind == crate::ir::DiagramKind::State {
                     svg.push_str(&text_block_svg_with_font_size(
@@ -962,7 +968,15 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 }
             }
             svg.push_str(&shape_svg(node, theme, config));
-            svg.push_str(&divider_lines_svg(node, theme, config));
+            let divider_line_height = if matches!(
+                layout.kind,
+                crate::ir::DiagramKind::Class | crate::ir::DiagramKind::Er
+            ) {
+                theme.font_size * config.class_label_line_height()
+            } else {
+                theme.font_size * config.label_line_height
+            };
+            svg.push_str(&divider_lines_svg(node, theme, divider_line_height));
             let center_x = node.x + node.width / 2.0;
             let center_y = node.y + node.height / 2.0;
             let hide_label = node.label.lines.iter().all(|line| line.trim().is_empty())
@@ -1054,7 +1068,8 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 }
             }
             svg.push_str(&shape_svg(footbox, theme, config));
-            svg.push_str(&divider_lines_svg(footbox, theme, config));
+            let divider_line_height = theme.font_size * config.label_line_height;
+            svg.push_str(&divider_lines_svg(footbox, theme, divider_line_height));
             let center_x = footbox.x + footbox.width / 2.0;
             let center_y = footbox.y + footbox.height / 2.0;
             let hide_label = footbox
@@ -2135,6 +2150,19 @@ fn render_pie(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
     }
 
     // Add percentage labels on slices
+    #[derive(Clone)]
+    struct PieLabel {
+        text: String,
+        font_size: f32,
+        outside: bool,
+        side: i32,
+        x: f32,
+        y: f32,
+        edge_x: f32,
+        edge_y: f32,
+    }
+
+    let mut labels: Vec<PieLabel> = Vec::new();
     for slice in &layout.pie_slices {
         let span = (slice.end_angle - slice.start_angle).abs();
         if span <= 0.0001 || total <= 0.0 {
@@ -2151,46 +2179,114 @@ fn render_pie(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
             text_metrics::measure_text_width(&percent_text, font_size, theme.font_family.as_str())
                 .unwrap_or(percent_text.chars().count() as f32 * font_size * 0.55);
         let arc_len = radius * span;
-        let mut label_radius = radius * pie_cfg.text_position;
-        let mut anchor = "middle";
-        let mut label_x = cx + label_radius * mid_angle.cos();
-        let mut label_y = cy + label_radius * mid_angle.sin();
-        if arc_len < text_width * 1.2 {
-            let bump = (font_size * 1.4).max(radius * 0.15);
-            label_radius = radius + bump;
-            label_x = cx + label_radius * mid_angle.cos();
-            label_y = cy + label_radius * mid_angle.sin();
-            let edge_x = cx + radius * mid_angle.cos();
-            let edge_y = cy + radius * mid_angle.sin();
-            svg.push_str(&format!(
-                "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" stroke-width=\"1\"/>",
-                edge_x,
-                edge_y,
-                label_x,
-                label_y,
-                theme.pie_stroke_color
-            ));
-            anchor = if mid_angle.cos() >= 0.0 {
-                "start"
+        let outside = arc_len < text_width * 1.35 || span < 0.4;
+        let edge_x = cx + radius * mid_angle.cos();
+        let edge_y = cy + radius * mid_angle.sin();
+        let bump = (font_size * 1.6).max(radius * 0.18);
+        let (label_x, label_y) = if outside {
+            (cx + (radius + bump) * mid_angle.cos(), cy + (radius + bump) * mid_angle.sin())
+        } else {
+            let label_radius = radius * pie_cfg.text_position;
+            (cx + label_radius * mid_angle.cos(), cy + label_radius * mid_angle.sin())
+        };
+        labels.push(PieLabel {
+            text: percent_text,
+            font_size,
+            outside,
+            side: if mid_angle.cos() >= 0.0 { 1 } else { -1 },
+            x: label_x,
+            y: label_y,
+            edge_x,
+            edge_y,
+        });
+    }
+
+    let min_y = cy - radius * 1.1;
+    let max_y = cy + radius * 1.1;
+    let min_gap = theme.pie_section_text_size * 1.2;
+
+    let mut left: Vec<usize> = Vec::new();
+    let mut right: Vec<usize> = Vec::new();
+    for (idx, label) in labels.iter().enumerate() {
+        if label.outside {
+            if label.side >= 0 {
+                right.push(idx);
             } else {
-                "end"
-            };
-            let offset = 4.0;
-            if anchor == "start" {
-                label_x += offset;
-            } else {
-                label_x -= offset;
+                left.push(idx);
             }
         }
+    }
+
+    let distribute = |indices: &mut Vec<usize>, labels: &mut [PieLabel]| {
+        indices.sort_by(|&a, &b| {
+            labels[a]
+                .y
+                .partial_cmp(&labels[b].y)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let mut prev = min_y - min_gap;
+        for &idx in indices.iter() {
+            let y = labels[idx].y.max(prev + min_gap);
+            labels[idx].y = y;
+            prev = y;
+        }
+        if let Some(&last_idx) = indices.last() {
+            let overflow = labels[last_idx].y - max_y;
+            if overflow > 0.0 {
+                for &idx in indices.iter() {
+                    labels[idx].y -= overflow;
+                }
+            }
+        }
+        if let Some(&first_idx) = indices.first() {
+            let underflow = min_y - labels[first_idx].y;
+            if underflow > 0.0 {
+                for &idx in indices.iter() {
+                    labels[idx].y += underflow;
+                }
+            }
+        }
+    };
+
+    distribute(&mut left, &mut labels);
+    distribute(&mut right, &mut labels);
+
+    for label in labels {
+        let mut anchor = "middle";
+        let mut label_x = label.x;
+        if label.outside {
+            let bump = (label.font_size * 1.6).max(radius * 0.18);
+            if label.side >= 0 {
+                label_x = cx + radius + bump;
+                anchor = "start";
+            } else {
+                label_x = cx - radius - bump;
+                anchor = "end";
+            }
+            let elbow_x = if label.side >= 0 {
+                label_x - 6.0
+            } else {
+                label_x + 6.0
+            };
+            svg.push_str(&format!(
+                "<path d=\"M {sx:.2},{sy:.2} L {mx:.2},{ly:.2} L {lx:.2},{ly:.2}\" fill=\"none\" stroke=\"{}\" stroke-width=\"1\"/>",
+                theme.pie_stroke_color,
+                sx = label.edge_x,
+                sy = label.edge_y,
+                mx = elbow_x,
+                lx = label_x,
+                ly = label.y
+            ));
+        }
         svg.push_str(&format!(
-            "<text x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"{}\" font-family=\"{}\" font-size=\"{}\" fill=\"{}\">{}</text>",
+            "<text x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"{}\" dominant-baseline=\"middle\" font-family=\"{}\" font-size=\"{}\" fill=\"{}\">{}</text>",
             label_x,
-            label_y,
+            label.y,
             anchor,
             theme.font_family,
-            font_size,
+            label.font_size,
             escape_xml(&theme.pie_section_text_color),
-            percent_text
+            label.text
         ));
     }
 
@@ -2208,7 +2304,7 @@ fn render_pie(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
             theme.pie_stroke_width
         ));
         let label_x = rect_x + item.marker_size + pie_cfg.legend_spacing;
-        let label_y = rect_y + item.marker_size - pie_cfg.legend_spacing;
+        let label_y = rect_y + item.marker_size / 2.0;
         svg.push_str(&text_block_svg_with_font_size(
             label_x,
             label_y,
@@ -4000,12 +4096,12 @@ fn render_er_node_label(
     let mut svg = String::new();
     if !title_lines.is_empty() {
         let divider_baseline = start_y + divider_idx as f32 * line_height;
-        let header_bottom = divider_baseline - theme.font_size * 0.35;
-        let header_top = (start_y - theme.font_size * 0.85).min(header_bottom);
+        let header_bottom = divider_baseline - line_height * 0.28;
+        let header_top = (start_y - line_height * 0.85).min(header_bottom);
         let header_height = (header_bottom - header_top).max(0.0);
         if header_height > 0.0 {
             svg.push_str(&format!(
-                "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" fill-opacity=\"0.35\" stroke=\"none\"/>",
+                "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" fill-opacity=\"0.25\" stroke=\"none\"/>",
                 node.x + 0.5,
                 header_top,
                 (node.width - 1.0).max(0.0),
@@ -4052,7 +4148,7 @@ fn render_er_node_label(
 
         let pad_x = config.node_padding_x.max(10.0);
         let content_width = (node.width - pad_x * 2.0).max(0.0);
-        let gap = theme.font_size * 0.8;
+        let gap = theme.font_size * 0.65;
         let name_x = left_x + max_type_width + gap;
 
         if use_columns && name_x < node.x + pad_x + content_width {
@@ -4226,13 +4322,12 @@ fn is_divider_line(line: &str) -> bool {
 fn divider_lines_svg(
     node: &crate::layout::NodeLayout,
     theme: &Theme,
-    config: &LayoutConfig,
+    line_height: f32,
 ) -> String {
     if !node.label.lines.iter().any(|line| is_divider_line(line)) {
         return String::new();
     }
 
-    let line_height = theme.font_size * config.label_line_height;
     let total_height = node.label.lines.len() as f32 * line_height;
     let start_y = node.y + node.height / 2.0 - total_height / 2.0 + theme.font_size;
     let stroke = node
@@ -4872,7 +4967,11 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme, config: &LayoutCon
             )
         }
         crate::ir::NodeShape::MindmapDefault => {
-            let rd = config.mindmap.default_corner_radius.max(0.0);
+            let rd = config
+                .mindmap
+                .default_corner_radius
+                .max(theme.font_size * 0.55)
+                .max(4.0);
             let inner_h = (h - 2.0 * rd).max(0.0);
             let inner_w = (w - 2.0 * rd).max(0.0);
             let rect_path = format!(
@@ -4891,12 +4990,13 @@ fn shape_svg(node: &crate::layout::NodeLayout, theme: &Theme, config: &LayoutCon
             );
             let line_color = node.style.line_color.as_ref().unwrap_or(stroke);
             let line_width = config.mindmap.divider_line_width;
+            let line_y = y + h - stroke_width.max(0.8);
             svg.push_str(&format!(
-                "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" stroke-width=\"{:.2}\"/>",
+                "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" stroke-width=\"{:.2}\" stroke-opacity=\"0.35\"/>",
                 x,
-                y + h,
+                line_y,
                 x + w,
-                y + h,
+                line_y,
                 line_color,
                 line_width
             ));
