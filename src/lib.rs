@@ -8,7 +8,7 @@
 
 //! # mmdr - Fast Mermaid Diagram Renderer
 //!
-//! A pure Rust implementation of Mermaid diagram rendering, providing 500-1000x
+//! A pure Rust implementation of Mermaid diagram rendering, providing 100-600x
 //! faster rendering than mermaid-cli by eliminating browser dependencies.
 //!
 //! ## Quick Start
