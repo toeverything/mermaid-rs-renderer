@@ -181,22 +181,22 @@ impl FontFace {
         let scale = font_size / self.units_per_em as f32;
         let fallback = font_size * 0.56;
 
-        if text.is_ascii() {
-            if let Some(advances) = &self.ascii_advances {
-                let mut width = 0.0f32;
-                for byte in text.as_bytes() {
-                    if *byte == b'\n' {
-                        continue;
-                    }
-                    let advance = advances[*byte as usize];
-                    if advance == 0 {
-                        width += fallback;
-                    } else {
-                        width += advance as f32 * scale;
-                    }
+        if text.is_ascii()
+            && let Some(advances) = &self.ascii_advances
+        {
+            let mut width = 0.0f32;
+            for byte in text.as_bytes() {
+                if *byte == b'\n' {
+                    continue;
                 }
-                return Some(width.max(0.0));
+                let advance = advances[*byte as usize];
+                if advance == 0 {
+                    width += fallback;
+                } else {
+                    width += advance as f32 * scale;
+                }
             }
+            return Some(width.max(0.0));
         }
 
         let face = self.face.as_ref()?;

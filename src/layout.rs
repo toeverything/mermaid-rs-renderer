@@ -9752,6 +9752,7 @@ mod tests {
             end_side: EdgeSide::Left,
             start_offset: 0.0,
             end_offset: 0.0,
+            fast_route: false,
         };
         let mut occupancy = EdgeOccupancy::new(config.node_spacing.max(16.0) * 0.6);
         let start = anchor_point_for_node(&from, EdgeSide::Right, 0.0);
@@ -9784,6 +9785,7 @@ mod tests {
             end_side: EdgeSide::Left,
             start_offset: 0.0,
             end_offset: 0.0,
+            fast_route: false,
         };
         let points = route_edge_with_avoidance(&ctx, None, None);
         assert!(!points.is_empty());
@@ -9818,6 +9820,7 @@ mod tests {
             end_side: EdgeSide::Left,
             start_offset: 0.0,
             end_offset: 0.0,
+            fast_route: false,
         };
         let points = route_edge_with_grid(&ctx, &grid, None).expect("grid route");
         let hits = path_obstacle_intersections(&points, &obstacles, &from.id, &to.id);
