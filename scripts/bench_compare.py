@@ -10,6 +10,7 @@ Features:
 import json
 import os
 import re
+import shlex
 import statistics
 import subprocess
 import sys
@@ -38,6 +39,7 @@ CASE_NAMES = [
     "flowchart_small",
     "flowchart_medium",
     "flowchart_large",
+    "flowchart_tiny",
     "class_medium",
     "state_medium",
     "sequence_medium",
@@ -64,6 +66,9 @@ CASE_NAMES = [
     "sequence",
     "class",
     "state",
+    "class_tiny",
+    "state_tiny",
+    "sequence_tiny",
 ]
 
 
@@ -158,7 +163,9 @@ def get_memory_usage(cmd) -> Optional[int]:
 def bench_mmdr(path: Path):
     """Benchmark mmdr with timing breakdown."""
     out = ROOT / "target" / f"bench-{path.stem}.svg"
-    cmd = [BIN, "-i", str(path), "-o", str(out), "-e", "svg", "--timing"]
+    extra_args = shlex.split(os.environ.get("MMDR_ARGS", ""))
+    cmd_base = [BIN, "-i", str(path), "-o", str(out), "-e", "svg"] + extra_args
+    cmd = cmd_base + ["--timing"]
 
     times = []
     breakdowns = []
@@ -182,7 +189,7 @@ def bench_mmdr(path: Path):
                 pass
 
     # Get memory usage
-    memory_kb = get_memory_usage(cmd[:-1])  # Without --timing
+    memory_kb = get_memory_usage(cmd_base)
 
     return {
         "times": times,
@@ -530,16 +537,16 @@ def main():
         print(f"{name:<20} {mmdr_str:>12} {cli_str:>12}")
 
     # Write JSON
-    out_json = ROOT / "target" / "bench-results.json"
+    out_json = Path(os.environ.get("OUT_JSON", str(ROOT / "target" / "bench-results.json")))
     out_json.write_text(json.dumps(results, indent=2))
     print(f"\nWrote {out_json}")
 
-    # Generate charts
-    charts_dir = ROOT / "docs" / "benchmarks"
-    charts_dir.mkdir(parents=True, exist_ok=True)
-
-    generate_svg_chart(results, charts_dir / "comparison_chart.svg")
-    generate_breakdown_chart(results, charts_dir / "breakdown_chart.svg")
+    # Generate charts unless explicitly skipped
+    if not os.environ.get("SKIP_CHARTS"):
+        charts_dir = Path(os.environ.get("CHARTS_DIR", str(ROOT / "docs" / "benchmarks")))
+        charts_dir.mkdir(parents=True, exist_ok=True)
+        generate_svg_chart(results, charts_dir / "comparison_chart.svg")
+        generate_breakdown_chart(results, charts_dir / "breakdown_chart.svg")
 
 
 if __name__ == "__main__":

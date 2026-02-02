@@ -47,6 +47,22 @@ fn fixture(name: &str) -> &'static str {
             env!("CARGO_MANIFEST_DIR"),
             "/benches/fixtures/flowchart_large.mmd"
         )),
+        "flowchart_tiny" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_tiny.mmd"
+        )),
+        "class_tiny" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/class_tiny.mmd"
+        )),
+        "state_tiny" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/state_tiny.mmd"
+        )),
+        "sequence_tiny" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/sequence_tiny.mmd"
+        )),
         "class_medium" => include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/benches/fixtures/class_medium.mmd"
@@ -145,6 +161,10 @@ fn bench_parse(c: &mut Criterion) {
         "flowchart_small",
         "flowchart_medium",
         "flowchart_large",
+        "flowchart_tiny",
+        "class_tiny",
+        "state_tiny",
+        "sequence_tiny",
         "class_medium",
         "state_medium",
         "sequence_medium",
@@ -184,10 +204,14 @@ fn bench_layout(c: &mut Criterion) {
     let theme = Theme::modern();
     let config = LayoutConfig::default();
     for name in [
+        "flowchart_tiny",
         "flowchart_medium",
         "flowchart_large",
+        "class_tiny",
         "class_medium",
+        "state_tiny",
         "state_medium",
+        "sequence_tiny",
         "sequence_medium",
         "er_medium",
         "pie_medium",
@@ -232,12 +256,16 @@ fn bench_edge_routing(c: &mut Criterion) {
         let name = format!("dense_{}_{}", nodes, extra_edges);
         let input = dense_flowchart_source(nodes, extra_edges);
         let parsed = parse_mermaid(&input).expect("parse failed");
-        group.bench_with_input(BenchmarkId::from_parameter(name), &parsed.graph, |b, graph| {
-            b.iter(|| {
-                let layout = compute_layout(black_box(graph), &theme, &config);
-                black_box(layout.edges.len());
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(name),
+            &parsed.graph,
+            |b, graph| {
+                b.iter(|| {
+                    let layout = compute_layout(black_box(graph), &theme, &config);
+                    black_box(layout.edges.len());
+                });
+            },
+        );
     }
     group.finish();
 }
@@ -283,10 +311,14 @@ fn bench_render(c: &mut Criterion) {
     let theme = Theme::modern();
     let config = LayoutConfig::default();
     for name in [
+        "flowchart_tiny",
         "flowchart_medium",
         "flowchart_large",
+        "class_tiny",
         "class_medium",
+        "state_tiny",
         "state_medium",
+        "sequence_tiny",
         "sequence_medium",
         "er_medium",
         "pie_medium",
@@ -325,10 +357,14 @@ fn bench_end_to_end(c: &mut Criterion) {
     let theme = Theme::modern();
     let config = LayoutConfig::default();
     for name in [
+        "flowchart_tiny",
         "flowchart_small",
         "flowchart_medium",
+        "class_tiny",
         "class_medium",
+        "state_tiny",
         "state_medium",
+        "sequence_tiny",
         "sequence_medium",
         "er_medium",
         "pie_medium",
