@@ -3468,12 +3468,11 @@ fn parse_block_diagram(input: &str) -> Result<ParseOutput> {
         }
         if lower.starts_with("columns") {
             let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 2 {
-                if let Ok(cols) = parts[1].parse::<usize>() {
-                    if cols > 0 {
-                        block.columns = Some(cols);
-                    }
-                }
+            if parts.len() >= 2
+                && let Ok(cols) = parts[1].parse::<usize>()
+                && cols > 0
+            {
+                block.columns = Some(cols);
             }
             continue;
         }
@@ -3543,13 +3542,12 @@ fn parse_block_diagram(input: &str) -> Result<ParseOutput> {
                 continue;
             }
             let mut span = 1usize;
-            if let Some((base, span_str)) = token.rsplit_once(':') {
-                if let Ok(parsed_span) = span_str.parse::<usize>() {
-                    if parsed_span > 0 {
-                        span = parsed_span;
-                        token = base;
-                    }
-                }
+            if let Some((base, span_str)) = token.rsplit_once(':')
+                && let Ok(parsed_span) = span_str.parse::<usize>()
+                && parsed_span > 0
+            {
+                span = parsed_span;
+                token = base;
             }
             let is_space = token.eq_ignore_ascii_case("space");
             if is_space {
@@ -3921,10 +3919,10 @@ fn parse_treemap_diagram(input: &str) -> Result<ParseOutput> {
             Some(node_label),
             Some(crate::ir::NodeShape::Rectangle),
         );
-        if let Some(parsed) = numeric_value {
-            if let Some(node) = graph.nodes.get_mut(&node_id) {
-                node.value = Some(parsed);
-            }
+        if let Some(parsed) = numeric_value
+            && let Some(node) = graph.nodes.get_mut(&node_id)
+        {
+            node.value = Some(parsed);
         }
 
         if level > 0 {

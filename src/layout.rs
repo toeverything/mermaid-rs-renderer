@@ -4286,17 +4286,17 @@ fn compute_block_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
             row += 1;
             row_heights.push(0.0);
         }
-        if !node.is_space {
-            if let Some(layout) = nodes.get(&node.id) {
-                let per_col = layout.width / span as f32;
-                for i in 0..span {
-                    let idx = col + i;
-                    if idx < columns {
-                        column_widths[idx] = column_widths[idx].max(per_col);
-                    }
+        if !node.is_space
+            && let Some(layout) = nodes.get(&node.id)
+        {
+            let per_col = layout.width / span as f32;
+            for i in 0..span {
+                let idx = col + i;
+                if idx < columns {
+                    column_widths[idx] = column_widths[idx].max(per_col);
                 }
-                row_heights[row] = row_heights[row].max(layout.height);
             }
+            row_heights[row] = row_heights[row].max(layout.height);
         }
         col += span;
     }
@@ -4324,24 +4324,24 @@ fn compute_block_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
             col = 0;
             row += 1;
         }
-        if !node.is_space {
-            if let Some(layout) = nodes.get_mut(&node.id) {
-                let start_x = column_x[col];
-                let mut span_width = 0.0;
-                for i in 0..span {
-                    let idx = col + i;
-                    if idx < columns {
-                        span_width += column_widths[idx];
-                        if i + 1 < span {
-                            span_width += column_gap;
-                        }
+        if !node.is_space
+            && let Some(layout) = nodes.get_mut(&node.id)
+        {
+            let start_x = column_x[col];
+            let mut span_width = 0.0;
+            for i in 0..span {
+                let idx = col + i;
+                if idx < columns {
+                    span_width += column_widths[idx];
+                    if i + 1 < span {
+                        span_width += column_gap;
                     }
                 }
-                let x = start_x + (span_width - layout.width) / 2.0;
-                let y = row_y[row] + (row_heights[row] - layout.height) / 2.0;
-                layout.x = x;
-                layout.y = y;
             }
+            let x = start_x + (span_width - layout.width) / 2.0;
+            let y = row_y[row] + (row_heights[row] - layout.height) / 2.0;
+            layout.x = x;
+            layout.y = y;
         }
         col += span;
     }
@@ -5543,7 +5543,7 @@ fn layout_treemap_nodes(
         return;
     }
     let gap = config.treemap.gap.max(0.0);
-    let horizontal = depth % 2 == 0;
+    let horizontal = depth.is_multiple_of(2);
     let count = ids.len();
     let available = if horizontal {
         (rect.w - gap * (count.saturating_sub(1) as f32)).max(0.0)
@@ -5648,13 +5648,13 @@ fn treemap_weight(
         .get(id)
         .and_then(|node| node.value)
         .unwrap_or(0.0);
-    if weight <= 0.0 {
-        if let Some(child_ids) = children.get(id) {
-            weight = child_ids
-                .iter()
-                .map(|child| treemap_weight(child, graph, children, cache))
-                .sum();
-        }
+    if weight <= 0.0
+        && let Some(child_ids) = children.get(id)
+    {
+        weight = child_ids
+            .iter()
+            .map(|child| treemap_weight(child, graph, children, cache))
+            .sum();
     }
     if weight <= 0.0 {
         weight = 1.0;
@@ -7823,10 +7823,10 @@ impl EdgeOccupancy {
                 let t = i as f32 / steps as f32;
                 let x = x1 + dx * t;
                 let y = y1 + dy * t;
-                if let Some(weight) = self.weights.get(&self.cell_index(x, y)) {
-                    if *weight > 0 {
-                        count = count.saturating_add(1);
-                    }
+                if let Some(weight) = self.weights.get(&self.cell_index(x, y))
+                    && *weight > 0
+                {
+                    count = count.saturating_add(1);
                 }
             }
         }
@@ -8327,10 +8327,11 @@ fn route_edge_with_grid(
             if nx < 0 || ny < 0 || nx >= cols || ny >= rows {
                 continue;
             }
-            if (nx != end_ix || ny != end_iy) && (nx != start_ix || ny != start_iy) {
-                if cell_blocked(grid, ctx.obstacles, nx, ny, ctx) {
-                    continue;
-                }
+            if (nx != end_ix || ny != end_iy)
+                && (nx != start_ix || ny != start_iy)
+                && cell_blocked(grid, ctx.obstacles, nx, ny, ctx)
+            {
+                continue;
             }
             let mut next_cost = cost.saturating_add(step_cost);
             if state.dir != dir_idx as u8 {
@@ -8349,7 +8350,7 @@ fn route_edge_with_grid(
             }
             best_cost[next_idx] = next_cost;
             prev[next_idx] = Some(state);
-            let manhattan = (nx - end_ix).abs() as u32 + (ny - end_iy).abs() as u32;
+            let manhattan = (nx - end_ix).unsigned_abs() + (ny - end_iy).unsigned_abs();
             let est = next_cost.saturating_add(manhattan.saturating_mul(step_cost));
             heap.push(GridEntry {
                 est,
@@ -8512,27 +8513,27 @@ fn route_edge_with_avoidance(
 
     let min_hits = intersections.iter().copied().min().unwrap_or(0);
     let mut needs_detour = false;
-    if min_hits == 0 {
-        if let Some(occ) = occupancy {
-            let mut best_idx = 0usize;
-            let mut best_score = u32::MAX;
-            let mut best_len = f32::MAX;
-            for (idx, points) in candidates.iter().enumerate() {
-                let score = occ.score_path(points);
-                let len = path_length(points);
-                if score < best_score || (score == best_score && len < best_len) {
-                    best_score = score;
-                    best_len = len;
-                    best_idx = idx;
-                }
+    if min_hits == 0
+        && let Some(occ) = occupancy
+    {
+        let mut best_idx = 0usize;
+        let mut best_score = u32::MAX;
+        let mut best_len = f32::MAX;
+        for (idx, points) in candidates.iter().enumerate() {
+            let score = occ.score_path(points);
+            let len = path_length(points);
+            if score < best_score || (score == best_score && len < best_len) {
+                best_score = score;
+                best_len = len;
+                best_idx = idx;
             }
-            if let Some(points) = candidates.get(best_idx) {
-                let overlap = occ.overlap_count(points);
-                let path_len = path_length(points);
-                let overlap_trigger = ((path_len / occ.cell) * 0.35).max(4.0).ceil() as u32;
-                if overlap >= overlap_trigger {
-                    needs_detour = true;
-                }
+        }
+        if let Some(points) = candidates.get(best_idx) {
+            let overlap = occ.overlap_count(points);
+            let path_len = path_length(points);
+            let overlap_trigger = ((path_len / occ.cell) * 0.35).max(4.0).ceil() as u32;
+            if overlap >= overlap_trigger {
+                needs_detour = true;
             }
         }
     }
@@ -8558,15 +8559,13 @@ fn route_edge_with_avoidance(
     }
 
     let min_hits = intersections.iter().copied().min().unwrap_or(0);
-    if min_hits > 0 || needs_detour {
-        if let Some(grid) = grid {
-            if let Some(points) = route_edge_with_grid(ctx, grid, occupancy) {
-                let hits =
-                    path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
-                candidates.push(points);
-                intersections.push(hits);
-            }
-        }
+    if (min_hits > 0 || needs_detour)
+        && let Some(grid) = grid
+        && let Some(points) = route_edge_with_grid(ctx, grid, occupancy)
+    {
+        let hits = path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
+        candidates.push(points);
+        intersections.push(hits);
     }
 
     if let Some(grid) = occupancy {
