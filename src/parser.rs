@@ -1815,6 +1815,10 @@ fn parse_journey_diagram(input: &str) -> Result<ParseOutput> {
             continue;
         }
         if lower.starts_with("title") {
+            let title = line.get(5..).unwrap_or("").trim();
+            if !title.is_empty() {
+                graph.journey_title = Some(title.to_string());
+            }
             continue;
         }
         if lower.starts_with("section") {
@@ -1834,9 +1838,6 @@ fn parse_journey_diagram(input: &str) -> Result<ParseOutput> {
         if let Some((label, score, actors)) = parse_journey_task_line(line) {
             let node_id = format!("journey_{}", graph.nodes.len());
             let mut node_label = label;
-            if let Some(score) = score {
-                node_label.push_str(&format!("\nscore: {}", score));
-            }
             if !actors.is_empty() {
                 node_label.push_str(&format!("\n{}", actors.join(", ")));
             }
@@ -1845,6 +1846,11 @@ fn parse_journey_diagram(input: &str) -> Result<ParseOutput> {
                 Some(node_label),
                 Some(crate::ir::NodeShape::Rectangle),
             );
+            if let Some(score) = score {
+                if let Some(node) = graph.nodes.get_mut(&node_id) {
+                    node.value = Some(score);
+                }
+            }
             if let Some(idx) = current_section
                 && let Some(subgraph) = graph.subgraphs.get_mut(idx)
             {
@@ -1874,7 +1880,7 @@ fn parse_journey_diagram(input: &str) -> Result<ParseOutput> {
     Ok(ParseOutput { graph, init_config })
 }
 
-fn parse_journey_task_line(line: &str) -> Option<(String, Option<String>, Vec<String>)> {
+fn parse_journey_task_line(line: &str) -> Option<(String, Option<f32>, Vec<String>)> {
     let mut parts = line.split(':').map(|part| part.trim()).collect::<Vec<_>>();
     if parts.len() < 2 {
         return None;
@@ -1883,10 +1889,7 @@ fn parse_journey_task_line(line: &str) -> Option<(String, Option<String>, Vec<St
     if label.is_empty() {
         return None;
     }
-    let score = parts
-        .first()
-        .map(|value| value.to_string())
-        .filter(|value| !value.is_empty());
+    let score = parts.first().and_then(|value| value.parse::<f32>().ok());
     let actors = if parts.len() >= 2 {
         parts[1]
             .split(',')
@@ -5966,9 +5969,15 @@ mod tests {
         let input = "journey\n  title My Journey\n  section Start\n    Step one: 5: Alice\n    Step two: 3: Alice, Bob";
         let parsed = parse_mermaid(input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::Journey);
+        assert_eq!(parsed.graph.journey_title.as_deref(), Some("My Journey"));
         assert_eq!(parsed.graph.subgraphs.len(), 1);
         assert_eq!(parsed.graph.nodes.len(), 2);
         assert_eq!(parsed.graph.edges.len(), 1);
+        let node = parsed.graph.nodes.get("journey_0").unwrap();
+        assert_eq!(node.value, Some(5.0));
+        assert!(node.label.contains("Step one"));
+        assert!(node.label.contains("Alice"));
+        assert!(!node.label.contains("score:"));
     }
 
     #[test]

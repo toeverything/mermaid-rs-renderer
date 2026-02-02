@@ -3,8 +3,9 @@ use crate::config::LayoutConfig;
 use crate::config::RenderConfig;
 use crate::layout::{
     C4BoundaryLayout, C4Layout, C4RelLayout, C4ShapeLayout, EdgeLayout, ErrorLayout,
-    GitGraphLayout, Layout, SankeyLayout, TextBlock,
+    GitGraphLayout, JourneyLayout, Layout, SankeyLayout, TextBlock,
 };
+use crate::text_metrics;
 use crate::theme::Theme;
 use anyhow::Result;
 use std::cmp::Ordering;
@@ -270,6 +271,12 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
 
     if let Some(ref timeline) = layout.timeline {
         svg.push_str(&render_timeline(timeline, theme, config));
+        svg.push_str("</svg>");
+        return svg;
+    }
+
+    if let Some(ref journey) = layout.journey {
+        svg.push_str(&render_journey(journey, theme, config));
         svg.push_str("</svg>");
         return svg;
     }
@@ -622,18 +629,21 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 let end = edge.points.last().copied().unwrap_or(start);
                 let mid_x = (start.0 + end.0) / 2.0;
                 let line_y = start.1;
-                let label_y = line_y - theme.font_size * 1.95;
-                let label_text = label.lines.join("\n");
-                svg.push_str(&text_line_svg(
+                let gap = (theme.font_size * 0.6).max(8.0);
+                let label_y = line_y - gap - label.height / 2.0;
+                let label_color = edge
+                    .override_style
+                    .label_color
+                    .as_deref()
+                    .unwrap_or(theme.primary_text_color.as_str());
+                svg.push_str(&text_block_svg(
                     mid_x,
                     label_y,
-                    label_text.trim(),
+                    label,
                     theme,
-                    edge.override_style
-                        .label_color
-                        .as_deref()
-                        .unwrap_or(theme.primary_text_color.as_str()),
-                    "middle",
+                    config,
+                    false,
+                    Some(label_color),
                 ));
             }
 
@@ -913,6 +923,27 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                         "start",
                         node.style.text_color.as_deref(),
                     )
+                } else if layout.kind == crate::ir::DiagramKind::Er {
+                    render_er_node_label(node, theme, config).unwrap_or_else(|| {
+                        if node.label.lines.iter().any(|line| is_divider_line(line)) {
+                            text_block_svg_class(
+                                node,
+                                theme,
+                                config,
+                                node.style.text_color.as_deref(),
+                            )
+                        } else {
+                            text_block_svg(
+                                center_x,
+                                center_y,
+                                &node.label,
+                                theme,
+                                config,
+                                false,
+                                node.style.text_color.as_deref(),
+                            )
+                        }
+                    })
                 } else if node.label.lines.iter().any(|line| is_divider_line(line)) {
                     text_block_svg_class(node, theme, config, node.style.text_color.as_deref())
                 } else {
@@ -2599,6 +2630,159 @@ fn render_timeline(
     svg
 }
 
+fn render_journey(layout: &JourneyLayout, theme: &Theme, config: &LayoutConfig) -> String {
+    let mut svg = String::new();
+
+    if let Some(ref title) = layout.title {
+        svg.push_str(&text_block_svg(
+            layout.width / 2.0,
+            layout.title_y,
+            title,
+            theme,
+            config,
+            false,
+            Some(theme.primary_text_color.as_str()),
+        ));
+    }
+
+    let mut actor_colors: HashMap<String, String> = HashMap::new();
+    for actor in &layout.actors {
+        actor_colors.insert(actor.name.clone(), actor.color.clone());
+        svg.push_str(&format!(
+            "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\"/>",
+            actor.x,
+            actor.y,
+            actor.radius,
+            actor.color,
+            theme.line_color
+        ));
+        let label_x = actor.x + actor.radius + layout.actor_gap;
+        svg.push_str(&text_line_svg(
+            label_x,
+            layout.actor_label_y,
+            actor.name.as_str(),
+            theme,
+            theme.primary_text_color.as_str(),
+            "start",
+        ));
+    }
+
+    for section in &layout.sections {
+        let fill = section.color.as_str();
+        svg.push_str(&format!(
+            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"8\" ry=\"8\" fill=\"{}\" fill-opacity=\"0.18\" stroke=\"{}\" stroke-width=\"1\"/>",
+            section.x,
+            section.y,
+            section.width,
+            section.height,
+            fill,
+            theme.cluster_border
+        ));
+        if !section.label.lines.is_empty()
+            && !section.label.lines.iter().all(|l| l.trim().is_empty())
+        {
+            let label_x = section.x + section.width / 2.0;
+            let label_y = section.y + section.height / 2.0;
+            svg.push_str(&text_block_svg(
+                label_x,
+                label_y,
+                &section.label,
+                theme,
+                config,
+                false,
+                Some(theme.primary_text_color.as_str()),
+            ));
+        }
+    }
+
+    for task in &layout.tasks {
+        svg.push_str(&format!(
+            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"10\" ry=\"10\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1.2\"/>",
+            task.x,
+            task.y,
+            task.width,
+            task.height,
+            theme.primary_color,
+            theme.primary_border_color
+        ));
+        let label_x = task.x + task.width / 2.0;
+        let label_y = task.y + task.height / 2.0;
+        svg.push_str(&text_block_svg(
+            label_x,
+            label_y,
+            &task.label,
+            theme,
+            config,
+            false,
+            Some(theme.primary_text_color.as_str()),
+        ));
+
+        if let Some(score) = task.score {
+            let score_x = task.x + layout.score_radius + theme.font_size * 0.2;
+            svg.push_str(&format!(
+                "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\"/>",
+                score_x,
+                task.score_y,
+                layout.score_radius,
+                task.score_color,
+                theme.line_color
+            ));
+            let score_text = format!("{:.0}", score);
+            svg.push_str(&text_line_svg(
+                score_x,
+                task.score_y + theme.font_size * 0.35,
+                score_text.as_str(),
+                theme,
+                theme.primary_text_color.as_str(),
+                "middle",
+            ));
+        }
+
+        if let Some(actor_y) = task.actor_y {
+            let count = task.actors.len();
+            if count > 0 {
+                let total_width = count as f32 * layout.actor_radius * 2.0
+                    + (count.saturating_sub(1)) as f32 * layout.actor_gap;
+                let start_x = task.x + task.width / 2.0 - total_width / 2.0;
+                for (idx, actor) in task.actors.iter().enumerate() {
+                    let color = actor_colors
+                        .get(actor)
+                        .map(|c| c.as_str())
+                        .unwrap_or(theme.secondary_color.as_str());
+                    let cx = start_x
+                        + idx as f32 * (layout.actor_radius * 2.0 + layout.actor_gap)
+                        + layout.actor_radius;
+                    svg.push_str(&format!(
+                        "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\"/>",
+                        cx,
+                        actor_y,
+                        layout.actor_radius,
+                        color,
+                        theme.line_color
+                    ));
+                }
+            }
+        }
+    }
+
+    if let Some((x1, y, x2)) = layout.baseline {
+        svg.push_str(&format!(
+            "<line x1=\"{x1:.2}\" y1=\"{y:.2}\" x2=\"{x2:.2}\" y2=\"{y:.2}\" stroke=\"{}\" stroke-width=\"2\"/>",
+            theme.line_color
+        ));
+        let arrow = 8.0;
+        svg.push_str(&format!(
+            "<polygon points=\"{x2:.2},{y:.2} {ax:.2},{ay1:.2} {ax:.2},{ay2:.2}\" fill=\"{}\"/>",
+            theme.line_color,
+            ax = x2 - arrow,
+            ay1 = y - arrow * 0.6,
+            ay2 = y + arrow * 0.6
+        ));
+    }
+
+    svg
+}
+
 fn render_gitgraph(gitgraph: &GitGraphLayout, theme: &Theme, config: &LayoutConfig) -> String {
     let gg = &config.gitgraph;
     let mut svg = String::new();
@@ -3626,6 +3810,137 @@ fn text_block_svg_class(
         ));
     }
     svg
+}
+
+fn render_er_node_label(
+    node: &crate::layout::NodeLayout,
+    theme: &Theme,
+    config: &LayoutConfig,
+) -> Option<String> {
+    let divider_idx = node
+        .label
+        .lines
+        .iter()
+        .position(|line| is_divider_line(line))?;
+    let line_height = theme.font_size * config.class_label_line_height();
+    let total_height = node.label.lines.len() as f32 * line_height;
+    let start_y = node.y + node.height / 2.0 - total_height / 2.0 + theme.font_size;
+    let center_x = node.x + node.width / 2.0;
+    let left_x = node.x + config.node_padding_x.max(10.0);
+    let fill = node
+        .style
+        .text_color
+        .as_deref()
+        .unwrap_or(theme.primary_text_color.as_str());
+
+    let mut title_lines: Vec<(usize, &str)> = Vec::new();
+    for (idx, line) in node.label.lines.iter().enumerate().take(divider_idx) {
+        if !line.trim().is_empty() {
+            title_lines.push((idx, line.as_str()));
+        }
+    }
+    let mut attr_lines: Vec<(usize, &str)> = Vec::new();
+    for (idx, line) in node.label.lines.iter().enumerate().skip(divider_idx + 1) {
+        if !line.trim().is_empty() && !is_divider_line(line) {
+            attr_lines.push((idx, line.as_str()));
+        }
+    }
+
+    let mut svg = String::new();
+    if !title_lines.is_empty() {
+        let divider_baseline = start_y + divider_idx as f32 * line_height;
+        let header_bottom = divider_baseline - theme.font_size * 0.35;
+        let header_top = (start_y - theme.font_size * 0.85).min(header_bottom);
+        let header_height = (header_bottom - header_top).max(0.0);
+        if header_height > 0.0 {
+            svg.push_str(&format!(
+                "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" fill-opacity=\"0.35\" stroke=\"none\"/>",
+                node.x + 0.5,
+                header_top,
+                (node.width - 1.0).max(0.0),
+                header_height,
+                theme.cluster_background
+            ));
+        }
+        svg.push_str(&text_lines_svg(
+            &title_lines,
+            center_x,
+            start_y,
+            line_height,
+            "middle",
+            theme,
+            fill,
+            true,
+        ));
+    }
+
+    if !attr_lines.is_empty() {
+        let mut parsed: Vec<(usize, String, String)> = Vec::new();
+        let mut max_type_width: f32 = 0.0;
+        let mut use_columns = true;
+        for (idx, line) in &attr_lines {
+            let trimmed = line.trim();
+            let mut parts = trimmed.split_whitespace();
+            let Some(first) = parts.next() else {
+                continue;
+            };
+            let rest = trimmed[first.len()..].trim();
+            if rest.is_empty() {
+                use_columns = false;
+                break;
+            }
+            let width = text_metrics::measure_text_width(
+                first,
+                theme.font_size,
+                theme.font_family.as_str(),
+            )
+            .unwrap_or(first.chars().count() as f32 * theme.font_size * 0.6);
+            max_type_width = max_type_width.max(width);
+            parsed.push((*idx, first.to_string(), rest.to_string()));
+        }
+
+        let pad_x = config.node_padding_x.max(10.0);
+        let content_width = (node.width - pad_x * 2.0).max(0.0);
+        let gap = theme.font_size * 0.8;
+        let name_x = left_x + max_type_width + gap;
+
+        if use_columns && name_x < node.x + pad_x + content_width {
+            for (idx, ty, name) in parsed {
+                let y = start_y + idx as f32 * line_height;
+                svg.push_str(&format!(
+                    "<text x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"start\" font-family=\"{}\" font-size=\"{}\" fill=\"{}\">{}</text>",
+                    left_x,
+                    y,
+                    theme.font_family,
+                    theme.font_size,
+                    fill,
+                    escape_xml(&ty)
+                ));
+                svg.push_str(&format!(
+                    "<text x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"start\" font-family=\"{}\" font-size=\"{}\" fill=\"{}\">{}</text>",
+                    name_x,
+                    y,
+                    theme.font_family,
+                    theme.font_size,
+                    fill,
+                    escape_xml(&name)
+                ));
+            }
+        } else {
+            svg.push_str(&text_lines_svg(
+                &attr_lines,
+                left_x,
+                start_y,
+                line_height,
+                "start",
+                theme,
+                fill,
+                false,
+            ));
+        }
+    }
+
+    Some(svg)
 }
 
 fn text_lines_svg(
