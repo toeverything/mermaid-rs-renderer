@@ -56,6 +56,10 @@ pub struct Args {
     /// Output timing information as JSON to stderr
     #[arg(long = "timing")]
     pub timing: bool,
+
+    /// Use fast text metrics (approximate widths) for speed
+    #[arg(long = "fastText")]
+    pub fast_text_metrics: bool,
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy)]
@@ -74,6 +78,9 @@ pub fn run() -> Result<()> {
     }
     if let Some(spacing) = args.rank_spacing {
         base_config.layout.rank_spacing = spacing;
+    }
+    if args.fast_text_metrics {
+        base_config.layout.fast_text_metrics = true;
     }
 
     let (input, is_markdown) = read_input(args.input.as_deref())?;

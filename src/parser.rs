@@ -3907,7 +3907,9 @@ fn parse_treemap_diagram(input: &str) -> Result<ParseOutput> {
         }
 
         let (label, value) = parse_treemap_item(trimmed);
-        let numeric_value = value.as_ref().and_then(|raw| raw.trim().parse::<f32>().ok());
+        let numeric_value = value
+            .as_ref()
+            .and_then(|raw| raw.trim().parse::<f32>().ok());
         let node_id = format!("treemap_{}", graph.nodes.len());
         let node_label = if let Some(value) = value {
             format!("{}\n{}", label, value)

@@ -42,11 +42,15 @@ impl TextMeasurer {
     fn measure(&mut self, text: &str, font_size: f32, font_family: &str) -> Option<f32> {
         let family_key = normalize_family_key(font_family);
         let face = if self.cache.contains_key(&family_key) {
-            self.cache.get_mut(&family_key).and_then(|face| face.as_mut())
+            self.cache
+                .get_mut(&family_key)
+                .and_then(|face| face.as_mut())
         } else {
             let face = self.load_face(font_family);
             self.cache.insert(family_key.clone(), face);
-            self.cache.get_mut(&family_key).and_then(|face| face.as_mut())
+            self.cache
+                .get_mut(&family_key)
+                .and_then(|face| face.as_mut())
         }?;
         let normalized = text.replace('\t', "    ");
         face.measure_width(&normalized, font_size)

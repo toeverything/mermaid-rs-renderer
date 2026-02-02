@@ -849,21 +849,18 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
     }
 
     if !is_sequence {
-        let mut nodes_to_draw: Vec<&crate::layout::NodeLayout> = if layout.kind
-            == crate::ir::DiagramKind::Treemap
-        {
-            let mut nodes: Vec<&crate::layout::NodeLayout> = layout.nodes.values().collect();
-            nodes.sort_by(|a, b| {
-                let area_a = a.width * a.height;
-                let area_b = b.width * b.height;
-                area_b
-                    .partial_cmp(&area_a)
-                    .unwrap_or(Ordering::Equal)
-            });
-            nodes
-        } else {
-            layout.nodes.values().collect()
-        };
+        let mut nodes_to_draw: Vec<&crate::layout::NodeLayout> =
+            if layout.kind == crate::ir::DiagramKind::Treemap {
+                let mut nodes: Vec<&crate::layout::NodeLayout> = layout.nodes.values().collect();
+                nodes.sort_by(|a, b| {
+                    let area_a = a.width * a.height;
+                    let area_b = b.width * b.height;
+                    area_b.partial_cmp(&area_a).unwrap_or(Ordering::Equal)
+                });
+                nodes
+            } else {
+                layout.nodes.values().collect()
+            };
 
         for node in nodes_to_draw.drain(..) {
             if node.hidden {
@@ -888,8 +885,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             if !hide_label {
                 let label_svg = if layout.kind == crate::ir::DiagramKind::Treemap {
                     let label_x = node.x + config.treemap.label_padding_x;
-                    let label_y =
-                        node.y + config.treemap.label_padding_y + node.label.height / 2.0;
+                    let label_y = node.y + config.treemap.label_padding_y + node.label.height / 2.0;
                     text_block_svg_anchor(
                         label_x,
                         label_y,

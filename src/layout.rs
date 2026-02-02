@@ -592,6 +592,7 @@ fn edge_sides(
 
 fn compute_c4_layout(graph: &Graph, config: &LayoutConfig) -> Layout {
     let c4 = &graph.c4;
+    let fast_metrics = config.fast_text_metrics;
     let mut conf = config.c4.clone();
     if let Some(val) = c4.c4_shape_in_row_override {
         conf.c4_shape_in_row = val;
@@ -655,6 +656,7 @@ fn compute_c4_layout(graph: &Graph, config: &LayoutConfig) -> Layout {
         &boundaries_by_parent,
         &boundary_map,
         conf,
+        fast_metrics,
     );
 
     for rel in &c4.rels {
@@ -672,9 +674,10 @@ fn compute_c4_layout(graph: &Graph, config: &LayoutConfig) -> Layout {
             label_font_size,
             0.0,
             conf.wrap,
-            estimate_text_width(&rel.label, label_font_size, rel_font_family),
+            estimate_text_width(&rel.label, label_font_size, rel_font_family, fast_metrics),
             c4_text_line_height(conf, label_font_size),
             rel_font_family,
+            fast_metrics,
         );
         let techn_layout = rel.techn.as_ref().map(|t| {
             c4_text_layout(
@@ -682,9 +685,10 @@ fn compute_c4_layout(graph: &Graph, config: &LayoutConfig) -> Layout {
                 label_font_size,
                 0.0,
                 conf.wrap,
-                estimate_text_width(t, label_font_size, rel_font_family),
+                estimate_text_width(t, label_font_size, rel_font_family, fast_metrics),
                 c4_text_line_height(conf, label_font_size),
                 rel_font_family,
+                fast_metrics,
             )
         });
         rels_out.push(C4RelLayout {
@@ -873,6 +877,7 @@ fn layout_c4_boundaries(
     boundaries_by_parent: &std::collections::HashMap<String, Vec<String>>,
     boundary_map: &std::collections::HashMap<String, &crate::ir::C4Boundary>,
     conf: &crate::config::C4Config,
+    fast_metrics: bool,
 ) {
     if boundary_ids.is_empty() {
         return;
@@ -897,6 +902,7 @@ fn layout_c4_boundaries(
             current_bounds.data.width_limit,
             c4_text_line_height(conf, label_font_size),
             boundary_font_family,
+            fast_metrics,
         );
         y = label_layout.y + label_layout.height;
         let mut boundary_type_layout = None;
@@ -910,6 +916,7 @@ fn layout_c4_boundaries(
                 current_bounds.data.width_limit,
                 c4_text_line_height(conf, conf.boundary_font_size),
                 boundary_font_family,
+                fast_metrics,
             );
             y = type_layout.y + type_layout.height;
             boundary_type_layout = Some(type_layout);
@@ -924,6 +931,7 @@ fn layout_c4_boundaries(
                 current_bounds.data.width_limit,
                 c4_text_line_height(conf, (conf.boundary_font_size - 2.0).max(1.0)),
                 boundary_font_family,
+                fast_metrics,
             );
             y = descr_layout.y + descr_layout.height;
             boundary_descr_layout = Some(descr_layout);
@@ -957,7 +965,14 @@ fn layout_c4_boundaries(
         }
 
         if let Some(shape_ids) = shapes_by_boundary.get(boundary_id) {
-            layout_c4_shapes(&mut current_bounds, shape_ids, shapes_out, shape_map, conf);
+            layout_c4_shapes(
+                &mut current_bounds,
+                shape_ids,
+                shapes_out,
+                shape_map,
+                conf,
+                fast_metrics,
+            );
         }
 
         if let Some(child_boundaries) = boundaries_by_parent.get(boundary_id) {
@@ -973,6 +988,7 @@ fn layout_c4_boundaries(
                 boundaries_by_parent,
                 boundary_map,
                 conf,
+                fast_metrics,
             );
         }
 
@@ -1012,6 +1028,7 @@ fn layout_c4_shapes(
     shapes_out: &mut Vec<C4ShapeLayout>,
     shape_map: &std::collections::HashMap<String, &crate::ir::C4Shape>,
     conf: &crate::config::C4Config,
+    fast_metrics: bool,
 ) {
     for shape_id in shape_ids {
         let Some(shape) = shape_map.get(shape_id) else {
@@ -1020,7 +1037,12 @@ fn layout_c4_shapes(
         let type_font_size = (c4_shape_font_size(conf, shape.kind) - 2.0).max(1.0);
         let type_font_family = c4_shape_font_family(conf, shape.kind);
         let type_label_text = format!("<<{}>>", shape.kind.as_str());
-        let type_width = estimate_text_width(&type_label_text, type_font_size, type_font_family);
+        let type_width = estimate_text_width(
+            &type_label_text,
+            type_font_size,
+            type_font_family,
+            fast_metrics,
+        );
         let type_height = type_font_size + 2.0;
         let type_layout = C4TextLayout {
             text: type_label_text.clone(),
@@ -1054,6 +1076,7 @@ fn layout_c4_shapes(
             text_limit_width,
             c4_text_line_height(conf, label_font_size),
             label_font_family,
+            fast_metrics,
         );
         y = label_layout.y + label_layout.height;
 
@@ -1074,6 +1097,7 @@ fn layout_c4_shapes(
                 text_limit_width,
                 c4_text_line_height(conf, font_size),
                 font_family,
+                fast_metrics,
             );
             y = layout.y + layout.height;
             type_or_techn_layout = Some(layout);
@@ -1093,6 +1117,7 @@ fn layout_c4_shapes(
                 text_limit_width,
                 c4_text_line_height(conf, font_size),
                 font_family,
+                fast_metrics,
             );
             y = layout.y + layout.height;
             rect_width = rect_width.max(layout.width);
@@ -1167,13 +1192,17 @@ fn c4_shape_font_family(conf: &crate::config::C4Config, kind: crate::ir::C4Shape
         crate::ir::C4ShapeKind::ContainerQueue => &conf.container_queue_font_family,
         crate::ir::C4ShapeKind::ExternalContainer => &conf.external_container_font_family,
         crate::ir::C4ShapeKind::ExternalContainerDb => &conf.external_container_db_font_family,
-        crate::ir::C4ShapeKind::ExternalContainerQueue => &conf.external_container_queue_font_family,
+        crate::ir::C4ShapeKind::ExternalContainerQueue => {
+            &conf.external_container_queue_font_family
+        }
         crate::ir::C4ShapeKind::Component => &conf.component_font_family,
         crate::ir::C4ShapeKind::ComponentDb => &conf.component_db_font_family,
         crate::ir::C4ShapeKind::ComponentQueue => &conf.component_queue_font_family,
         crate::ir::C4ShapeKind::ExternalComponent => &conf.external_component_font_family,
         crate::ir::C4ShapeKind::ExternalComponentDb => &conf.external_component_db_font_family,
-        crate::ir::C4ShapeKind::ExternalComponentQueue => &conf.external_component_queue_font_family,
+        crate::ir::C4ShapeKind::ExternalComponentQueue => {
+            &conf.external_component_queue_font_family
+        }
     }
 }
 
@@ -1193,11 +1222,18 @@ fn c4_text_layout(
     max_width: f32,
     line_height: f32,
     font_family: &str,
+    fast_metrics: bool,
 ) -> C4TextLayout {
     let mut lines = Vec::new();
     for raw in split_lines(text) {
         if wrap {
-            lines.extend(wrap_text_to_width(&raw, max_width, font_size, font_family));
+            lines.extend(wrap_text_to_width(
+                &raw,
+                max_width,
+                font_size,
+                font_family,
+                fast_metrics,
+            ));
         } else {
             lines.push(raw);
         }
@@ -1207,7 +1243,7 @@ fn c4_text_layout(
     }
     let width = lines
         .iter()
-        .map(|line| estimate_text_width(line, font_size, font_family))
+        .map(|line| estimate_text_width(line, font_size, font_family, fast_metrics))
         .fold(0.0, f32::max);
     let height = line_height * lines.len().max(1) as f32;
     C4TextLayout {
@@ -1219,7 +1255,13 @@ fn c4_text_layout(
     }
 }
 
-fn wrap_text_to_width(text: &str, max_width: f32, font_size: f32, font_family: &str) -> Vec<String> {
+fn wrap_text_to_width(
+    text: &str,
+    max_width: f32,
+    font_size: f32,
+    font_family: &str,
+    fast_metrics: bool,
+) -> Vec<String> {
     let mut lines = Vec::new();
     let mut current = String::new();
     for word in text.split_whitespace() {
@@ -1228,7 +1270,9 @@ fn wrap_text_to_width(text: &str, max_width: f32, font_size: f32, font_family: &
         } else {
             format!("{} {}", current, word)
         };
-        if estimate_text_width(&candidate, font_size, font_family) <= max_width || current.is_empty() {
+        if estimate_text_width(&candidate, font_size, font_family, fast_metrics) <= max_width
+            || current.is_empty()
+        {
             current = candidate;
         } else {
             lines.push(current);
@@ -1244,7 +1288,10 @@ fn wrap_text_to_width(text: &str, max_width: f32, font_size: f32, font_family: &
     lines
 }
 
-fn estimate_text_width(text: &str, font_size: f32, font_family: &str) -> f32 {
+fn estimate_text_width(text: &str, font_size: f32, font_family: &str, fast_metrics: bool) -> f32 {
+    if fast_metrics && text.is_ascii() {
+        return text.chars().map(c4_char_width_factor).sum::<f32>() * font_size;
+    }
     text_metrics::measure_text_width(text, font_size, font_family)
         .unwrap_or_else(|| text.chars().map(c4_char_width_factor).sum::<f32>() * font_size)
 }
@@ -1998,6 +2045,7 @@ fn compute_gitgraph_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
             gg.branch_label_line_height,
             gg.text_width_scale,
             theme.font_family.as_str(),
+            config.fast_text_metrics,
         );
         let spacing_rotate_extra = if gg.rotate_commit_label {
             gg.branch_spacing_rotate_extra
@@ -2106,6 +2154,7 @@ fn compute_gitgraph_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
                 gg.commit_label_line_height,
                 gg.text_width_scale,
                 theme.font_family.as_str(),
+                config.fast_text_metrics,
             );
             let (text_x, text_y, bg_x, bg_y, transform) = if is_vertical {
                 let text_x = x - (label_width + gg.commit_label_tb_text_extra);
@@ -2176,6 +2225,7 @@ fn compute_gitgraph_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
                     gg.tag_label_line_height,
                     gg.text_width_scale,
                     theme.font_family.as_str(),
+                    config.fast_text_metrics,
                 );
                 max_width = max_width.max(w);
                 max_height = max_height.max(h);
@@ -2480,11 +2530,12 @@ fn measure_gitgraph_text(
     line_height: f32,
     width_scale: f32,
     font_family: &str,
+    fast_metrics: bool,
 ) -> (f32, f32) {
     let lines = split_lines(text);
     let max_width = lines
         .iter()
-        .map(|line| text_width(line, font_size, font_family))
+        .map(|line| text_width(line, font_size, font_family, fast_metrics))
         .fold(0.0, f32::max);
     let width = max_width * width_scale;
     let height = lines.len() as f32 * font_size * line_height;
@@ -3156,14 +3207,13 @@ fn compute_pie_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         } else {
             std::f32::consts::PI * 2.0 / fallback_total
         };
-        let label =
-            measure_label_with_font_size(
-                &datum.label,
-                theme.pie_section_text_size,
-                config,
-                false,
-                theme.font_family.as_str(),
-            );
+        let label = measure_label_with_font_size(
+            &datum.label,
+            theme.pie_section_text_size,
+            config,
+            false,
+            theme.font_family.as_str(),
+        );
         let color = resolve_color(&datum.label);
         slices.push(PieSliceLayout {
             label,
@@ -3183,14 +3233,13 @@ fn compute_pie_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         } else {
             slice.label.clone()
         };
-        let label =
-            measure_label_with_font_size(
-                &label_text,
-                theme.pie_legend_text_size,
-                config,
-                false,
-                theme.font_family.as_str(),
-            );
+        let label = measure_label_with_font_size(
+            &label_text,
+            theme.pie_legend_text_size,
+            config,
+            false,
+            theme.font_family.as_str(),
+        );
         legend_width = legend_width.max(label.width);
         let color = resolve_color(&slice.label);
         legend_items.push((label, color));
@@ -4317,7 +4366,10 @@ fn compute_block_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
             .start_label
             .as_ref()
             .map(|l| measure_label(l, theme, config));
-        let end_label = edge.end_label.as_ref().map(|l| measure_label(l, theme, config));
+        let end_label = edge
+            .end_label
+            .as_ref()
+            .map(|l| measure_label(l, theme, config));
         let mut override_style = resolve_edge_style(edges.len(), graph);
         if edge.style == crate::ir::EdgeStyle::Dotted && override_style.dasharray.is_none() {
             override_style.dasharray = Some("3 3".to_string());
@@ -4853,6 +4905,14 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
                 (effective_config.rank_spacing * scale).max(auto.min_spacing);
         }
     }
+    let node_count = graph.nodes.len();
+    let edge_count = graph.edges.len();
+    let tiny_graph = graph.subgraphs.is_empty() && node_count <= 4 && edge_count <= 4;
+    if tiny_graph {
+        effective_config.flowchart.order_passes = 1;
+        effective_config.flowchart.routing.enable_grid_router = false;
+        effective_config.flowchart.routing.snap_ports_to_grid = false;
+    }
     let config = &effective_config;
     let mut nodes = BTreeMap::new();
 
@@ -4984,7 +5044,11 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     let mut subgraphs = build_subgraph_layouts(graph, &nodes, theme, config);
     apply_subgraph_anchors(graph, &subgraphs, &mut nodes);
     let obstacles = build_obstacles(&nodes, &subgraphs, config);
-    let routing_grid = build_routing_grid(&obstacles, config);
+    let routing_grid = if config.flowchart.routing.enable_grid_router && !tiny_graph {
+        build_routing_grid(&obstacles, config)
+    } else {
+        None
+    };
     let mut edge_ports: Vec<EdgePortInfo> = Vec::with_capacity(graph.edges.len());
     let mut port_candidates: HashMap<(String, EdgeSide), Vec<PortCandidate>> = HashMap::new();
     for (idx, edge) in graph.edges.iter().enumerate() {
@@ -5165,7 +5229,12 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     route_order.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
 
     let mut routed_points: Vec<Vec<(f32, f32)>> = vec![Vec::new(); graph.edges.len()];
-    let mut edge_occupancy = EdgeOccupancy::new(config.node_spacing.max(16.0) * 0.6);
+    let use_occupancy = !tiny_graph && graph.edges.len() > 2;
+    let mut edge_occupancy = if use_occupancy {
+        Some(EdgeOccupancy::new(config.node_spacing.max(16.0) * 0.6))
+    } else {
+        None
+    };
     for (_, idx) in &route_order {
         let edge = &graph.edges[*idx];
         let key = edge_pair_key(edge);
@@ -5209,8 +5278,10 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             end_offset: port_info.end_offset,
         };
         let points =
-            route_edge_with_avoidance(&route_ctx, Some(&edge_occupancy), routing_grid.as_ref());
-        edge_occupancy.add_path(&points);
+            route_edge_with_avoidance(&route_ctx, edge_occupancy.as_ref(), routing_grid.as_ref());
+        if let Some(occ) = edge_occupancy.as_mut() {
+            occ.add_path(&points);
+        }
         routed_points[*idx] = points;
     }
 
@@ -5796,7 +5867,8 @@ fn assign_positions_manual(
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| a.3.cmp(&b.3))
         });
-        let desired_mean = entries.iter().map(|(_, d, _, _)| *d).sum::<f32>() / entries.len() as f32;
+        let desired_mean =
+            entries.iter().map(|(_, d, _, _)| *d).sum::<f32>() / entries.len() as f32;
         let mut assigned: Vec<(String, f32, f32)> = Vec::new();
         let mut prev_center: Option<f32> = None;
         let mut prev_half = 0.0;
@@ -7407,9 +7479,10 @@ fn compute_ranks_subset(
         fallback_order.insert(id.as_str(), idx);
     }
     let order_key = |id: &str| -> usize {
-        node_order.get(id).copied().unwrap_or_else(|| {
-            fallback_order.get(id).copied().unwrap_or(usize::MAX)
-        })
+        node_order
+            .get(id)
+            .copied()
+            .unwrap_or_else(|| fallback_order.get(id).copied().unwrap_or(usize::MAX))
     };
 
     let mut indeg: HashMap<String, usize> = HashMap::new();
@@ -7709,7 +7782,10 @@ impl EdgeOccupancy {
     }
 
     fn cell_index(&self, x: f32, y: f32) -> (i32, i32) {
-        ((x / self.cell).floor() as i32, (y / self.cell).floor() as i32)
+        (
+            (x / self.cell).floor() as i32,
+            (y / self.cell).floor() as i32,
+        )
     }
 
     fn score_path(&self, points: &[(f32, f32)]) -> u32 {
@@ -8168,16 +8244,13 @@ fn compress_path(points: &[(f32, f32)]) -> Vec<(f32, f32)> {
         let dy1 = curr.1 - prev.1;
         let dx2 = next.0 - curr.0;
         let dy2 = next.1 - curr.1;
-        if (dx1.abs() <= 1e-4 && dx2.abs() <= 1e-4)
-            || (dy1.abs() <= 1e-4 && dy2.abs() <= 1e-4)
-        {
+        if (dx1.abs() <= 1e-4 && dx2.abs() <= 1e-4) || (dy1.abs() <= 1e-4 && dy2.abs() <= 1e-4) {
             continue;
         }
         out.push(curr);
     }
     let last = points[points.len() - 1];
-    if (last.0 - out[out.len() - 1].0).abs() > 1e-4
-        || (last.1 - out[out.len() - 1].1).abs() > 1e-4
+    if (last.0 - out[out.len() - 1].0).abs() > 1e-4 || (last.1 - out[out.len() - 1].1).abs() > 1e-4
     {
         out.push(last);
     }
@@ -8204,7 +8277,8 @@ fn route_edge_with_grid(
 
     let dirs: [(i32, i32); 4] = [(0, -1), (0, 1), (-1, 0), (1, 0)];
     let step_cost = (grid.cell * 1000.0).round() as u32;
-    let turn_penalty = (ctx.config.flowchart.routing.turn_penalty * grid.cell * 1000.0).round() as u32;
+    let turn_penalty =
+        (ctx.config.flowchart.routing.turn_penalty * grid.cell * 1000.0).round() as u32;
     let occupancy_weight =
         (ctx.config.flowchart.routing.occupancy_weight * grid.cell * 1000.0).round() as u32;
     let max_steps = ctx.config.flowchart.routing.max_steps.max(10_000);
@@ -8455,8 +8529,7 @@ fn route_edge_with_avoidance(
             if let Some(points) = candidates.get(best_idx) {
                 let overlap = occ.overlap_count(points);
                 let path_len = path_length(points);
-                let overlap_trigger =
-                    ((path_len / occ.cell) * 0.35).max(4.0).ceil() as u32;
+                let overlap_trigger = ((path_len / occ.cell) * 0.35).max(4.0).ceil() as u32;
                 if overlap >= overlap_trigger {
                     needs_detour = true;
                 }
@@ -8476,7 +8549,8 @@ fn route_edge_with_avoidance(
                     let mid_y = (start.1 + end.1) / 2.0 + offset;
                     vec![start, (start.0, mid_y), (end.0, mid_y), end]
                 };
-                let hits = path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
+                let hits =
+                    path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
                 candidates.push(points);
                 intersections.push(hits);
             }
@@ -8487,7 +8561,8 @@ fn route_edge_with_avoidance(
     if min_hits > 0 || needs_detour {
         if let Some(grid) = grid {
             if let Some(points) = route_edge_with_grid(ctx, grid, occupancy) {
-                let hits = path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
+                let hits =
+                    path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
                 candidates.push(points);
                 intersections.push(hits);
             }
@@ -8666,22 +8741,17 @@ fn segment_intersects_rect(a: (f32, f32), b: (f32, f32), rect: &Obstacle) -> boo
     let max_x = x1.max(x2);
     let min_y = y1.min(y2);
     let max_y = y1.max(y2);
-    if max_x < rect.x || min_x > rect.x + rect.width || max_y < rect.y || min_y > rect.y + rect.height
+    if max_x < rect.x
+        || min_x > rect.x + rect.width
+        || max_y < rect.y
+        || min_y > rect.y + rect.height
     {
         return false;
     }
-    if x1 >= rect.x
-        && x1 <= rect.x + rect.width
-        && y1 >= rect.y
-        && y1 <= rect.y + rect.height
-    {
+    if x1 >= rect.x && x1 <= rect.x + rect.width && y1 >= rect.y && y1 <= rect.y + rect.height {
         return true;
     }
-    if x2 >= rect.x
-        && x2 <= rect.x + rect.width
-        && y2 >= rect.y
-        && y2 <= rect.y + rect.height
-    {
+    if x2 >= rect.x && x2 <= rect.x + rect.width && y2 >= rect.y && y2 <= rect.y + rect.height {
         return true;
     }
     let corners = [
@@ -8762,10 +8832,16 @@ fn measure_label_with_font_size(
 ) -> TextBlock {
     let raw_lines = split_lines(text);
     let mut lines = Vec::new();
-    let max_width_px = max_label_width_px(config.max_label_width_chars, font_size, font_family);
+    let fast_metrics = config.fast_text_metrics;
+    let max_width_px = max_label_width_px(
+        config.max_label_width_chars,
+        font_size,
+        font_family,
+        fast_metrics,
+    );
     for line in raw_lines {
         if wrap {
-            let wrapped = wrap_line(&line, max_width_px, font_size, font_family);
+            let wrapped = wrap_line(&line, max_width_px, font_size, font_family, fast_metrics);
             lines.extend(wrapped);
         } else {
             lines.push(line);
@@ -8779,9 +8855,9 @@ fn measure_label_with_font_size(
     let max_len = lines.iter().map(|l| l.chars().count()).max().unwrap_or(1);
     let max_width = lines
         .iter()
-        .map(|line| text_width(line, font_size, font_family))
+        .map(|line| text_width(line, font_size, font_family, fast_metrics))
         .fold(0.0, f32::max);
-    let avg_char = average_char_width(font_family, font_size);
+    let avg_char = average_char_width(font_family, font_size, fast_metrics);
     let guard_width = max_len as f32 * avg_char;
     let width = max_width.max(guard_width);
     let height = lines.len() as f32 * font_size * config.label_line_height;
@@ -8874,8 +8950,14 @@ fn split_lines(text: &str) -> Vec<String> {
     lines
 }
 
-fn wrap_line(line: &str, max_width: f32, font_size: f32, font_family: &str) -> Vec<String> {
-    if text_width(line, font_size, font_family) <= max_width {
+fn wrap_line(
+    line: &str,
+    max_width: f32,
+    font_size: f32,
+    font_family: &str,
+    fast_metrics: bool,
+) -> Vec<String> {
+    if text_width(line, font_size, font_family, fast_metrics) <= max_width {
         return vec![line.to_string()];
     }
 
@@ -8887,7 +8969,7 @@ fn wrap_line(line: &str, max_width: f32, font_size: f32, font_family: &str) -> V
         } else {
             format!("{} {}", current, word)
         };
-        if text_width(&candidate, font_size, font_family) > max_width {
+        if text_width(&candidate, font_size, font_family, fast_metrics) > max_width {
             if !current.is_empty() {
                 lines.push(current.clone());
                 current.clear();
@@ -8903,7 +8985,10 @@ fn wrap_line(line: &str, max_width: f32, font_size: f32, font_family: &str) -> V
     lines
 }
 
-fn text_width(text: &str, font_size: f32, font_family: &str) -> f32 {
+fn text_width(text: &str, font_size: f32, font_family: &str, fast_metrics: bool) -> f32 {
+    if fast_metrics && text.is_ascii() {
+        return fallback_text_width(text, font_size);
+    }
     text_metrics::measure_text_width(text, font_size, font_family)
         .unwrap_or_else(|| fallback_text_width(text, font_size))
 }
@@ -8912,12 +8997,20 @@ fn fallback_text_width(text: &str, font_size: f32) -> f32 {
     text.chars().map(char_width_factor).sum::<f32>() * font_size
 }
 
-fn average_char_width(font_family: &str, font_size: f32) -> f32 {
+fn average_char_width(font_family: &str, font_size: f32, fast_metrics: bool) -> f32 {
+    if fast_metrics {
+        return font_size * 0.56;
+    }
     text_metrics::average_char_width(font_family, font_size).unwrap_or(font_size * 0.56)
 }
 
-fn max_label_width_px(max_chars: usize, font_size: f32, font_family: &str) -> f32 {
-    let avg_char = average_char_width(font_family, font_size);
+fn max_label_width_px(
+    max_chars: usize,
+    font_size: f32,
+    font_family: &str,
+    fast_metrics: bool,
+) -> f32 {
+    let avg_char = average_char_width(font_family, font_size, fast_metrics);
     (max_chars.max(1) as f32) * avg_char
 }
 
@@ -9662,7 +9755,10 @@ mod tests {
         occupancy.add_path(&[start, end]);
 
         let points = route_edge_with_avoidance(&ctx, Some(&occupancy), None);
-        assert!(points.len() > 2, "expected a detoured path to avoid occupied lane");
+        assert!(
+            points.len() > 2,
+            "expected a detoured path to avoid occupied lane"
+        );
     }
 
     #[test]

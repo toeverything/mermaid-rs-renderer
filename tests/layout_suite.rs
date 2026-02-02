@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use mermaid_rs_renderer::{parse_mermaid, render_svg, LayoutConfig, Theme};
+use mermaid_rs_renderer::{LayoutConfig, Theme, parse_mermaid, render_svg};
 
 fn assert_valid_svg(svg: &str, fixture: &str) {
     assert!(svg.contains("<svg"), "{fixture}: missing <svg tag");
@@ -18,7 +18,9 @@ fn render_fixture(path: &Path) -> String {
 
 #[test]
 fn render_all_fixtures() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("fixtures");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures");
     let mut fixtures: Vec<String> = Vec::new();
 
     // Keep this list explicit so new diagram types must be added intentionally.

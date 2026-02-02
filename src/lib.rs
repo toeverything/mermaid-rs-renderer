@@ -96,8 +96,8 @@ pub mod layout;
 pub mod layout_dump;
 pub mod parser;
 pub mod render;
-pub mod theme;
 mod text_metrics;
+pub mod theme;
 
 // Re-export commonly used types at crate root for ergonomic library usage
 pub use config::{Config, LayoutConfig, RenderConfig};
