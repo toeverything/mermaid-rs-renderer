@@ -968,15 +968,14 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 }
             }
             svg.push_str(&shape_svg(node, theme, config));
-            let divider_line_height = if matches!(
-                layout.kind,
-                crate::ir::DiagramKind::Class | crate::ir::DiagramKind::Er
-            ) {
-                theme.font_size * config.class_label_line_height()
-            } else {
-                theme.font_size * config.label_line_height
-            };
-            svg.push_str(&divider_lines_svg(node, theme, divider_line_height));
+            if layout.kind != crate::ir::DiagramKind::Er {
+                let divider_line_height = if layout.kind == crate::ir::DiagramKind::Class {
+                    theme.font_size * config.class_label_line_height()
+                } else {
+                    theme.font_size * config.label_line_height
+                };
+                svg.push_str(&divider_lines_svg(node, theme, divider_line_height));
+            }
             let center_x = node.x + node.width / 2.0;
             let center_y = node.y + node.height / 2.0;
             let hide_label = node.label.lines.iter().all(|line| line.trim().is_empty())
@@ -4096,12 +4095,12 @@ fn render_er_node_label(
     let mut svg = String::new();
     if !title_lines.is_empty() {
         let divider_baseline = start_y + divider_idx as f32 * line_height;
-        let header_bottom = divider_baseline - line_height * 0.28;
-        let header_top = (start_y - line_height * 0.85).min(header_bottom);
+        let header_bottom = divider_baseline - line_height * 0.3;
+        let header_top = (start_y - line_height * 0.9).min(header_bottom);
         let header_height = (header_bottom - header_top).max(0.0);
         if header_height > 0.0 {
             svg.push_str(&format!(
-                "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" fill-opacity=\"0.25\" stroke=\"none\"/>",
+                "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"6\" ry=\"6\" fill=\"{}\" fill-opacity=\"0.22\" stroke=\"none\"/>",
                 node.x + 0.5,
                 header_top,
                 (node.width - 1.0).max(0.0),
@@ -4118,6 +4117,14 @@ fn render_er_node_label(
             theme,
             fill,
             true,
+        ));
+        svg.push_str(&format!(
+            "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" stroke-width=\"1\" stroke-opacity=\"0.35\"/>",
+            node.x + 0.8,
+            header_bottom,
+            node.x + node.width - 0.8,
+            header_bottom,
+            theme.primary_border_color
         ));
     }
 
@@ -4150,12 +4157,38 @@ fn render_er_node_label(
         let content_width = (node.width - pad_x * 2.0).max(0.0);
         let gap = theme.font_size * 0.65;
         let name_x = left_x + max_type_width + gap;
+        let body_top = start_y + (divider_idx as f32 + 0.15) * line_height;
+        let body_bottom = node.y + node.height - line_height * 0.25;
+
+        for (row_idx, (idx, _)) in attr_lines.iter().enumerate() {
+            if row_idx % 2 == 0 {
+                let row_top = start_y + *idx as f32 * line_height - line_height * 0.85;
+                let row_height = line_height;
+                svg.push_str(&format!(
+                    "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" fill-opacity=\"0.12\" stroke=\"none\"/>",
+                    node.x + 0.5,
+                    row_top,
+                    (node.width - 1.0).max(0.0),
+                    row_height,
+                    theme.secondary_color
+                ));
+            }
+        }
 
         if use_columns && name_x < node.x + pad_x + content_width {
+            let divider_x = name_x - gap * 0.5;
+            svg.push_str(&format!(
+                "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" stroke-width=\"1\" stroke-opacity=\"0.2\"/>",
+                divider_x,
+                body_top,
+                divider_x,
+                body_bottom,
+                theme.primary_border_color
+            ));
             for (idx, ty, name) in parsed {
                 let y = start_y + idx as f32 * line_height;
                 svg.push_str(&format!(
-                    "<text x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"start\" font-family=\"{}\" font-size=\"{}\" fill=\"{}\">{}</text>",
+                    "<text x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"start\" font-family=\"{}\" font-size=\"{}\" fill=\"{}\" fill-opacity=\"0.75\">{}</text>",
                     left_x,
                     y,
                     theme.font_family,

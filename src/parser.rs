@@ -1464,8 +1464,8 @@ fn parse_er_diagram(input: &str) -> Result<ParseOutput> {
             style,
         )) = parse_er_relation_line(line)
         {
-            graph.ensure_node(&left, None, Some(crate::ir::NodeShape::Rectangle));
-            graph.ensure_node(&right, None, Some(crate::ir::NodeShape::Rectangle));
+            graph.ensure_node(&left, None, Some(crate::ir::NodeShape::RoundRect));
+            graph.ensure_node(&right, None, Some(crate::ir::NodeShape::RoundRect));
             // Don't use start_label/end_label for ER diagrams - crow's foot symbols convey cardinality
             graph.edges.push(crate::ir::Edge {
                 from: left,
@@ -1489,7 +1489,7 @@ fn parse_er_diagram(input: &str) -> Result<ParseOutput> {
             let name = line[..open_idx].trim();
             let name = strip_quotes(name);
             if !name.is_empty() {
-                graph.ensure_node(&name, None, Some(crate::ir::NodeShape::Rectangle));
+                graph.ensure_node(&name, None, Some(crate::ir::NodeShape::RoundRect));
                 current_entity = Some(name.clone());
                 let tail = line[open_idx + 1..].trim();
                 if let Some(close_idx) = tail.find('}') {
@@ -1507,7 +1507,7 @@ fn parse_er_diagram(input: &str) -> Result<ParseOutput> {
 
         let entity = strip_quotes(line);
         if !entity.is_empty() {
-            graph.ensure_node(&entity, None, Some(crate::ir::NodeShape::Rectangle));
+            graph.ensure_node(&entity, None, Some(crate::ir::NodeShape::RoundRect));
         }
     }
 
