@@ -571,22 +571,42 @@ fn edge_sides(
     to: &NodeLayout,
     direction: Direction,
 ) -> (EdgeSide, EdgeSide, bool) {
-    let is_backward = if is_horizontal(direction) {
-        to.x + to.width < from.x
+    let from_cx = from.x + from.width / 2.0;
+    let from_cy = from.y + from.height / 2.0;
+    let to_cx = to.x + to.width / 2.0;
+    let to_cy = to.y + to.height / 2.0;
+    let dx = to_cx - from_cx;
+    let dy = to_cy - from_cy;
+    let x_overlap = (from.x.max(to.x) - (from.x + from.width).min(to.x + to.width)).abs() < 1e-3
+        || from.x < to.x + to.width && to.x < from.x + from.width;
+    let y_overlap = (from.y.max(to.y) - (from.y + from.height).min(to.y + to.height)).abs() < 1e-3
+        || from.y < to.y + to.height && to.y < from.y + from.height;
+
+    let ratio = dx.abs() / (dy.abs().max(1e-3));
+    let horiz_pref = ratio > 1.35 || (y_overlap && ratio > 0.9);
+    let vert_pref = ratio < (1.0 / 1.35) || (x_overlap && ratio < 1.1);
+    let use_horizontal = if horiz_pref && !vert_pref {
+        true
+    } else if vert_pref && !horiz_pref {
+        false
     } else {
-        to.y + to.height < from.y
+        is_horizontal(direction)
     };
 
-    if is_horizontal(direction) {
-        if is_backward {
-            (EdgeSide::Left, EdgeSide::Right, true)
+    if use_horizontal {
+        let is_backward = to.x + to.width < from.x;
+        if dx >= 0.0 {
+            (EdgeSide::Right, EdgeSide::Left, is_backward)
         } else {
-            (EdgeSide::Right, EdgeSide::Left, false)
+            (EdgeSide::Left, EdgeSide::Right, is_backward)
         }
-    } else if is_backward {
-        (EdgeSide::Top, EdgeSide::Bottom, true)
     } else {
-        (EdgeSide::Bottom, EdgeSide::Top, false)
+        let is_backward = to.y + to.height < from.y;
+        if dy >= 0.0 {
+            (EdgeSide::Bottom, EdgeSide::Top, is_backward)
+        } else {
+            (EdgeSide::Top, EdgeSide::Bottom, is_backward)
+        }
     }
 }
 
@@ -4875,6 +4895,28 @@ fn compute_timeline_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
     }
 }
 
+fn adaptive_spacing_for_nodes(
+    nodes: &BTreeMap<String, NodeLayout>,
+    min_spacing: f32,
+    max_spacing: f32,
+) -> f32 {
+    let mut total = 0.0f32;
+    let mut count = 0usize;
+    for node in nodes.values() {
+        if node.hidden || node.anchor_subgraph.is_some() {
+            continue;
+        }
+        total += (node.width + node.height) * 0.5;
+        count += 1;
+    }
+    if count == 0 {
+        return max_spacing;
+    }
+    let avg = total / count as f32;
+    let target = (avg * 0.5).max(min_spacing);
+    target.min(max_spacing)
+}
+
 fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
     let mut effective_config = config.clone();
     if graph.kind == crate::ir::DiagramKind::Requirement {
@@ -4913,13 +4955,24 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         effective_config.flowchart.routing.enable_grid_router = false;
         effective_config.flowchart.routing.snap_ports_to_grid = false;
     }
-    let config = &effective_config;
     let mut nodes = BTreeMap::new();
+    let measure_font_size = theme.font_size;
+    let mut label_config = effective_config.clone();
+    if graph.kind == crate::ir::DiagramKind::Class {
+        label_config.label_line_height = label_config.class_label_line_height();
+    }
 
     for node in graph.nodes.values() {
-        let label = measure_label(&node.label, theme, config);
+        let label = measure_label_with_font_size(
+            &node.label,
+            measure_font_size,
+            &label_config,
+            true,
+            theme.font_family.as_str(),
+        );
         let label_empty = label.lines.len() == 1 && label.lines[0].trim().is_empty();
-        let (mut width, mut height) = shape_size(node.shape, &label, config, theme, graph.kind);
+        let (mut width, mut height) =
+            shape_size(node.shape, &label, &effective_config, theme, graph.kind);
         if graph.kind == crate::ir::DiagramKind::State
             && label_empty
             && matches!(
@@ -4949,6 +5002,25 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             },
         );
     }
+
+    let adaptive_node_spacing = adaptive_spacing_for_nodes(
+        &nodes,
+        effective_config.flowchart.auto_spacing.min_spacing,
+        effective_config.node_spacing,
+    );
+    let adaptive_rank_spacing = adaptive_spacing_for_nodes(
+        &nodes,
+        effective_config.flowchart.auto_spacing.min_spacing,
+        effective_config.rank_spacing,
+    );
+    if adaptive_node_spacing < effective_config.node_spacing {
+        effective_config.node_spacing = adaptive_node_spacing;
+    }
+    if adaptive_rank_spacing < effective_config.rank_spacing {
+        effective_config.rank_spacing = adaptive_rank_spacing;
+    }
+
+    let config = &effective_config;
 
     let anchor_ids = mark_subgraph_anchor_nodes_hidden(graph, &mut nodes);
     let mut anchor_info = apply_subgraph_anchor_sizes(graph, &mut nodes, theme, config);
@@ -5018,13 +5090,12 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         &layout_edges,
     );
 
-    let mut anchored_nodes: HashSet<String> = anchored_subgraph_nodes;
     if !graph.subgraphs.is_empty() {
         if graph.kind != crate::ir::DiagramKind::State {
             apply_subgraph_direction_overrides(graph, &mut nodes, config, &anchored_indices);
         }
         if !anchor_info.is_empty() {
-            anchored_nodes =
+            let _anchored_nodes =
                 align_subgraphs_to_anchor_nodes(graph, &anchor_info, &mut nodes, config);
         }
         if graph.kind == crate::ir::DiagramKind::State && !anchor_info.is_empty() {
@@ -5032,14 +5103,16 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         }
         apply_orthogonal_region_bands(graph, &mut nodes, config);
         if graph.kind != crate::ir::DiagramKind::State {
-            apply_subgraph_bands(graph, &mut nodes, &anchored_nodes, config);
+            apply_subgraph_bands(graph, &mut nodes, config);
         }
     }
 
+    compress_linear_subgraphs(graph, &mut nodes, config);
     enforce_top_level_subgraph_gap(graph, &mut nodes, theme, config);
 
     // Separate overlapping sibling subgraphs
     separate_sibling_subgraphs(graph, &mut nodes, theme, config);
+    align_disconnected_top_level_subgraphs(graph, &mut nodes);
 
     let mut subgraphs = build_subgraph_layouts(graph, &nodes, theme, config);
     apply_subgraph_anchors(graph, &subgraphs, &mut nodes);
@@ -5074,17 +5147,17 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             end_offset: 0.0,
         });
 
-        let from_center = (from.x + from.width / 2.0, from.y + from.height / 2.0);
-        let to_center = (to.x + to.width / 2.0, to.y + to.height / 2.0);
+        let from_anchor = anchor_point_for_node(from, start_side, 0.0);
+        let to_anchor = anchor_point_for_node(to, end_side, 0.0);
         let start_other = if side_is_vertical(start_side) {
-            to_center.1
+            to_anchor.1
         } else {
-            to_center.0
+            to_anchor.0
         };
         let end_other = if side_is_vertical(end_side) {
-            from_center.1
+            from_anchor.1
         } else {
-            from_center.0
+            from_anchor.0
         };
         port_candidates
             .entry((edge.from.clone(), start_side))
@@ -5235,6 +5308,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     } else {
         None
     };
+    let mut existing_segments: Vec<Segment> = Vec::new();
     for (_, idx) in &route_order {
         let edge = &graph.edges[*idx];
         let key = edge_pair_key(edge);
@@ -5278,10 +5352,19 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             start_offset: port_info.start_offset,
             end_offset: port_info.end_offset,
         };
-        let points =
-            route_edge_with_avoidance(&route_ctx, edge_occupancy.as_ref(), routing_grid.as_ref());
+        let points = route_edge_with_avoidance(
+            &route_ctx,
+            edge_occupancy.as_ref(),
+            routing_grid.as_ref(),
+            Some(&existing_segments),
+        );
         if let Some(occ) = edge_occupancy.as_mut() {
             occ.add_path(&points);
+        }
+        if points.len() >= 2 {
+            for segment in points.windows(2) {
+                existing_segments.push((segment[0], segment[1]));
+            }
         }
         routed_points[*idx] = points;
     }
@@ -6649,7 +6732,6 @@ fn median_position(
 fn apply_subgraph_bands(
     graph: &Graph,
     nodes: &mut BTreeMap<String, NodeLayout>,
-    anchored_nodes: &HashSet<String>,
     config: &LayoutConfig,
 ) {
     let mut group_nodes: Vec<Vec<String>> = Vec::new();
@@ -6657,12 +6739,6 @@ fn apply_subgraph_bands(
 
     // Group 0: nodes not in any subgraph.
     group_nodes.push(Vec::new());
-    for node_id in graph.nodes.keys() {
-        if anchored_nodes.contains(node_id) {
-            continue;
-        }
-        node_group.insert(node_id.clone(), 0);
-    }
 
     let top_level = top_level_subgraph_indices(graph);
     for (pos, idx) in top_level.iter().enumerate() {
@@ -6670,13 +6746,22 @@ fn apply_subgraph_bands(
         let sub = &graph.subgraphs[*idx];
         group_nodes.push(Vec::new());
         for node_id in &sub.nodes {
-            if anchored_nodes.contains(node_id) {
-                continue;
-            }
             if nodes.contains_key(node_id) {
                 node_group.insert(node_id.clone(), group_idx);
             }
         }
+        if let Some(anchor_id) = subgraph_anchor_id(sub, nodes) {
+            if nodes.contains_key(anchor_id) {
+                node_group.insert(anchor_id.to_string(), group_idx);
+            }
+        }
+    }
+
+    for node_id in graph.nodes.keys() {
+        if node_group.contains_key(node_id) {
+            continue;
+        }
+        node_group.insert(node_id.clone(), 0);
     }
 
     for (node_id, group_idx) in &node_group {
@@ -6707,6 +6792,29 @@ fn apply_subgraph_bands(
         }
     }
 
+    let mut inter_group_edges = 0usize;
+    let mut group_links: HashSet<(usize, usize)> = HashSet::new();
+    let mut group_degree: HashMap<usize, usize> = HashMap::new();
+    for edge in &graph.edges {
+        let from_group = node_group.get(&edge.from);
+        let to_group = node_group.get(&edge.to);
+        if let (Some(a), Some(b)) = (from_group, to_group) {
+            if a != b {
+                inter_group_edges += 1;
+                let (min_g, max_g) = if a < b { (*a, *b) } else { (*b, *a) };
+                group_links.insert((min_g, max_g));
+                *group_degree.entry(*a).or_insert(0) += 1;
+                *group_degree.entry(*b).or_insert(0) += 1;
+            }
+        }
+    }
+    let max_degree = group_degree.values().copied().max().unwrap_or(0);
+    let path_like = inter_group_edges > 0
+        && group_links.len() <= groups.len().saturating_sub(1)
+        && max_degree <= 2;
+    let grid_pack = inter_group_edges == 0;
+    let align_cross = path_like;
+
     // Order groups by their current position to minimize crossing shifts.
     // Keep the non-subgraph group first to bias subgraphs after the main flow.
     if is_horizontal(graph.direction) {
@@ -6729,44 +6837,306 @@ fn apply_subgraph_bands(
 
     let spacing = config.rank_spacing * 0.8;
     if is_horizontal(graph.direction) {
-        let mut cursor = groups
-            .iter()
-            .find(|group| group.0 == 0)
-            .map(|group| group.3)
-            .unwrap_or(0.0)
-            + spacing;
-        for (group_idx, min_x, _min_y, max_x, _max_y) in groups {
-            if group_idx == 0 {
-                continue;
-            }
-            let width = max_x - min_x;
-            let offset = cursor - min_x;
-            for node_id in group_nodes[group_idx].iter() {
-                if let Some(node) = nodes.get_mut(node_id) {
-                    node.x += offset;
+        if align_cross && !groups.is_empty() {
+            let target_y = groups.iter().map(|group| group.2).fold(f32::MAX, f32::min);
+            for (group_idx, _min_x, min_y, _max_x, _max_y) in &groups {
+                let offset_y = target_y - *min_y;
+                for node_id in group_nodes[*group_idx].iter() {
+                    if let Some(node) = nodes.get_mut(node_id) {
+                        node.y += offset_y;
+                    }
                 }
             }
-            cursor += width + spacing;
+        } else if grid_pack && groups.len() > 1 {
+            let mut bounds: HashMap<usize, (f32, f32, f32, f32)> = HashMap::new();
+            for (group_idx, min_x, min_y, max_x, max_y) in &groups {
+                bounds.insert(*group_idx, (*min_x, *min_y, max_x - min_x, max_y - min_y));
+            }
+            let origin_x = groups.iter().map(|group| group.1).fold(f32::MAX, f32::min);
+            let origin_y = groups.iter().map(|group| group.2).fold(f32::MAX, f32::min);
+
+            let mut best_area = f32::MAX;
+            let mut best_rows: Vec<Vec<usize>> = Vec::new();
+            for cols in 1..=groups.len() {
+                let mut rows: Vec<Vec<usize>> = Vec::new();
+                let mut idx = 0usize;
+                while idx < groups.len() {
+                    let mut row = Vec::new();
+                    for _ in 0..cols {
+                        if idx >= groups.len() {
+                            break;
+                        }
+                        row.push(groups[idx].0);
+                        idx += 1;
+                    }
+                    rows.push(row);
+                }
+                let mut max_row_width = 0.0f32;
+                let mut total_height = 0.0f32;
+                for row in &rows {
+                    let mut row_width = 0.0f32;
+                    let mut row_height = 0.0f32;
+                    for (pos, group_idx) in row.iter().enumerate() {
+                        if let Some((_, _, width, height)) = bounds.get(group_idx) {
+                            row_width += *width;
+                            if pos + 1 < row.len() {
+                                row_width += spacing;
+                            }
+                            row_height = row_height.max(*height);
+                        }
+                    }
+                    max_row_width = max_row_width.max(row_width);
+                    total_height += row_height;
+                }
+                if !rows.is_empty() {
+                    total_height += spacing * (rows.len().saturating_sub(1) as f32);
+                }
+                let area = max_row_width * total_height;
+                if area < best_area {
+                    best_area = area;
+                    best_rows = rows;
+                }
+            }
+
+            let mut cursor_y = origin_y;
+            for row in best_rows {
+                let mut row_height = 0.0f32;
+                let mut cursor_x = origin_x;
+                for group_idx in row {
+                    let Some((min_x, min_y, width, height)) = bounds.get(&group_idx) else {
+                        continue;
+                    };
+                    let offset_x = cursor_x - min_x;
+                    let offset_y = cursor_y - min_y;
+                    for node_id in group_nodes[group_idx].iter() {
+                        if let Some(node) = nodes.get_mut(node_id) {
+                            node.x += offset_x;
+                            node.y += offset_y;
+                        }
+                    }
+                    cursor_x += width + spacing;
+                    row_height = row_height.max(*height);
+                }
+                cursor_y += row_height + spacing;
+            }
+        } else {
+            let mut cursor = groups
+                .iter()
+                .find(|group| group.0 == 0)
+                .map(|group| group.3)
+                .unwrap_or(0.0)
+                + spacing;
+            for (group_idx, min_x, _min_y, max_x, _max_y) in groups {
+                if group_idx == 0 {
+                    continue;
+                }
+                let width = max_x - min_x;
+                let offset = cursor - min_x;
+                for node_id in group_nodes[group_idx].iter() {
+                    if let Some(node) = nodes.get_mut(node_id) {
+                        node.x += offset;
+                    }
+                }
+                cursor += width + spacing;
+            }
         }
     } else {
-        let mut cursor = groups
-            .iter()
-            .find(|group| group.0 == 0)
-            .map(|group| group.4)
-            .unwrap_or(0.0)
-            + spacing;
-        for (group_idx, _min_x, min_y, _max_x, max_y) in groups {
-            if group_idx == 0 {
-                continue;
-            }
-            let height = max_y - min_y;
-            let offset = cursor - min_y;
-            for node_id in group_nodes[group_idx].iter() {
-                if let Some(node) = nodes.get_mut(node_id) {
-                    node.y += offset;
+        if align_cross && !groups.is_empty() {
+            let target_x = groups.iter().map(|group| group.1).fold(f32::MAX, f32::min);
+            for (group_idx, min_x, _min_y, _max_x, _max_y) in &groups {
+                let offset_x = target_x - *min_x;
+                for node_id in group_nodes[*group_idx].iter() {
+                    if let Some(node) = nodes.get_mut(node_id) {
+                        node.x += offset_x;
+                    }
                 }
             }
-            cursor += height + spacing;
+        } else if grid_pack && groups.len() > 1 {
+            let mut bounds: HashMap<usize, (f32, f32, f32, f32)> = HashMap::new();
+            for (group_idx, min_x, min_y, max_x, max_y) in &groups {
+                bounds.insert(*group_idx, (*min_x, *min_y, max_x - min_x, max_y - min_y));
+            }
+            let origin_x = groups.iter().map(|group| group.1).fold(f32::MAX, f32::min);
+            let origin_y = groups.iter().map(|group| group.2).fold(f32::MAX, f32::min);
+
+            let mut best_rows = Vec::new();
+            let mut best_area = f32::MAX;
+            for rows in 1..=groups.len() {
+                let cols = (groups.len() + rows - 1) / rows;
+                let mut grid: Vec<Vec<usize>> = Vec::new();
+                let mut idx = 0usize;
+                for _ in 0..rows {
+                    let mut col = Vec::new();
+                    for _ in 0..cols {
+                        if idx >= groups.len() {
+                            break;
+                        }
+                        col.push(groups[idx].0);
+                        idx += 1;
+                    }
+                    grid.push(col);
+                }
+                let mut max_col_height = 0.0f32;
+                let mut total_width = 0.0f32;
+                for col in &grid {
+                    let mut col_height = 0.0f32;
+                    let mut col_width = 0.0f32;
+                    for (pos, group_idx) in col.iter().enumerate() {
+                        if let Some((_, _, width, height)) = bounds.get(group_idx) {
+                            col_height += *height;
+                            if pos + 1 < col.len() {
+                                col_height += spacing;
+                            }
+                            col_width = col_width.max(*width);
+                        }
+                    }
+                    max_col_height = max_col_height.max(col_height);
+                    total_width += col_width;
+                }
+                if !grid.is_empty() {
+                    total_width += spacing * (grid.len().saturating_sub(1) as f32);
+                }
+                let area = total_width * max_col_height;
+                if area < best_area {
+                    best_area = area;
+                    best_rows = grid;
+                }
+            }
+
+            let mut cursor_x = origin_x;
+            for col in best_rows {
+                let mut col_width = 0.0f32;
+                let mut cursor_y = origin_y;
+                for group_idx in col {
+                    let Some((min_x, min_y, width, height)) = bounds.get(&group_idx) else {
+                        continue;
+                    };
+                    let offset_x = cursor_x - min_x;
+                    let offset_y = cursor_y - min_y;
+                    for node_id in group_nodes[group_idx].iter() {
+                        if let Some(node) = nodes.get_mut(node_id) {
+                            node.x += offset_x;
+                            node.y += offset_y;
+                        }
+                    }
+                    cursor_y += height + spacing;
+                    col_width = col_width.max(*width);
+                }
+                cursor_x += col_width + spacing;
+            }
+        } else {
+            let mut cursor = groups
+                .iter()
+                .find(|group| group.0 == 0)
+                .map(|group| group.4)
+                .unwrap_or(0.0)
+                + spacing;
+            for (group_idx, _min_x, min_y, _max_x, max_y) in groups {
+                if group_idx == 0 {
+                    continue;
+                }
+                let height = max_y - min_y;
+                let offset = cursor - min_y;
+                for node_id in group_nodes[group_idx].iter() {
+                    if let Some(node) = nodes.get_mut(node_id) {
+                        node.y += offset;
+                    }
+                }
+                cursor += height + spacing;
+            }
+        }
+    }
+}
+
+fn compress_linear_subgraphs(
+    graph: &Graph,
+    nodes: &mut BTreeMap<String, NodeLayout>,
+    config: &LayoutConfig,
+) {
+    if graph.kind != crate::ir::DiagramKind::Flowchart || graph.subgraphs.is_empty() {
+        return;
+    }
+    let gap = config.flowchart.auto_spacing.min_spacing;
+    let horizontal = is_horizontal(graph.direction);
+
+    for sub in &graph.subgraphs {
+        if sub.nodes.len() < 3 {
+            continue;
+        }
+        let sub_set: HashSet<&str> = sub.nodes.iter().map(|id| id.as_str()).collect();
+        let mut in_deg: HashMap<String, usize> = HashMap::new();
+        let mut out_deg: HashMap<String, usize> = HashMap::new();
+        let mut next_map: HashMap<String, String> = HashMap::new();
+        let mut edges_in_sub = 0usize;
+
+        for node_id in &sub.nodes {
+            in_deg.insert(node_id.clone(), 0);
+            out_deg.insert(node_id.clone(), 0);
+        }
+
+        for edge in &graph.edges {
+            if !sub_set.contains(edge.from.as_str()) || !sub_set.contains(edge.to.as_str()) {
+                continue;
+            }
+            edges_in_sub += 1;
+            let out = out_deg.entry(edge.from.clone()).or_insert(0);
+            *out += 1;
+            if *out == 1 {
+                next_map.insert(edge.from.clone(), edge.to.clone());
+            } else {
+                next_map.remove(&edge.from);
+            }
+            let entry = in_deg.entry(edge.to.clone()).or_insert(0);
+            *entry += 1;
+        }
+
+        if edges_in_sub + 1 != sub.nodes.len() {
+            continue;
+        }
+        if in_deg.values().any(|&d| d > 1) || out_deg.values().any(|&d| d > 1) {
+            continue;
+        }
+
+        let starts: Vec<&String> = sub
+            .nodes
+            .iter()
+            .filter(|id| *in_deg.get(*id).unwrap_or(&0) == 0)
+            .collect();
+        if starts.len() != 1 {
+            continue;
+        }
+
+        let mut order: Vec<String> = Vec::with_capacity(sub.nodes.len());
+        let mut visited: HashSet<String> = HashSet::new();
+        let mut current = starts[0].clone();
+        while visited.insert(current.clone()) {
+            order.push(current.clone());
+            if let Some(next) = next_map.get(&current) {
+                current = next.clone();
+            } else {
+                break;
+            }
+        }
+        if order.len() != sub.nodes.len() {
+            continue;
+        }
+
+        let min_main = order
+            .iter()
+            .filter_map(|id| nodes.get(id))
+            .map(|node| if horizontal { node.x } else { node.y })
+            .fold(f32::MAX, f32::min);
+        let mut cursor = min_main;
+        for node_id in order {
+            if let Some(node) = nodes.get_mut(&node_id) {
+                if horizontal {
+                    node.x = cursor;
+                    cursor += node.width + gap;
+                } else {
+                    node.y = cursor;
+                    cursor += node.height + gap;
+                }
+            }
         }
     }
 }
@@ -8411,6 +8781,7 @@ fn route_edge_with_avoidance(
     ctx: &RouteContext<'_>,
     occupancy: Option<&EdgeOccupancy>,
     grid: Option<&RoutingGrid>,
+    existing: Option<&[Segment]>,
 ) -> Vec<(f32, f32)> {
     if ctx.from_id == ctx.to_id {
         return route_self_loop(ctx.from, ctx.direction, ctx.config);
@@ -8426,6 +8797,10 @@ fn route_edge_with_avoidance(
     }
     let mut candidates: Vec<Vec<(f32, f32)>> = Vec::new();
     let mut intersections: Vec<usize> = Vec::new();
+    let mut crossings: Vec<usize> = Vec::new();
+    let mut overlaps: Vec<f32> = Vec::new();
+    let existing_segments = existing.unwrap_or(&[]);
+    let use_existing = !existing_segments.is_empty();
 
     // For backward edges, try routing around obstacles (both left and right)
     if is_backward {
@@ -8459,8 +8834,15 @@ fn route_edge_with_avoidance(
             let route_x = max_right + pad;
             let points = vec![start, (route_x, start.1), (route_x, end.1), end];
             let hits = path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
+            let (cross, overlap) = if use_existing {
+                edge_crossings_with_existing(&points, existing_segments)
+            } else {
+                (0, 0.0)
+            };
             candidates.push(points);
             intersections.push(hits);
+            crossings.push(cross);
+            overlaps.push(overlap);
         }
 
         // Try routing around the left side
@@ -8468,16 +8850,30 @@ fn route_edge_with_avoidance(
             let route_x = min_left - pad;
             let points = vec![start, (route_x, start.1), (route_x, end.1), end];
             let hits = path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
+            let (cross, overlap) = if use_existing {
+                edge_crossings_with_existing(&points, existing_segments)
+            } else {
+                (0, 0.0)
+            };
             candidates.push(points);
             intersections.push(hits);
+            crossings.push(cross);
+            overlaps.push(overlap);
         }
     }
 
     // Check if a direct line is possible (no obstacles in the way)
     let direct_path = vec![start, end];
     let hits = path_obstacle_intersections(&direct_path, ctx.obstacles, ctx.from_id, ctx.to_id);
+    let (cross, overlap) = if use_existing {
+        edge_crossings_with_existing(&direct_path, existing_segments)
+    } else {
+        (0, 0.0)
+    };
     candidates.push(direct_path);
     intersections.push(hits);
+    crossings.push(cross);
+    overlaps.push(overlap);
 
     // Fall back to orthogonal routing with control points
     let step = ctx.config.node_spacing.max(16.0) * 0.6;
@@ -8493,31 +8889,60 @@ fn route_edge_with_avoidance(
             let mid_x = (start.0 + end.0) / 2.0 + offset;
             let points = vec![start, (mid_x, start.1), (mid_x, end.1), end];
             let hits = path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
+            let (cross, overlap) = if use_existing {
+                edge_crossings_with_existing(&points, existing_segments)
+            } else {
+                (0, 0.0)
+            };
             candidates.push(points);
             intersections.push(hits);
+            crossings.push(cross);
+            overlaps.push(overlap);
 
             let mid_y = (start.1 + end.1) / 2.0 + offset;
             let alt = vec![start, (start.0, mid_y), (end.0, mid_y), end];
             let hits = path_obstacle_intersections(&alt, ctx.obstacles, ctx.from_id, ctx.to_id);
+            let (cross, overlap) = if use_existing {
+                edge_crossings_with_existing(&alt, existing_segments)
+            } else {
+                (0, 0.0)
+            };
             candidates.push(alt);
             intersections.push(hits);
+            crossings.push(cross);
+            overlaps.push(overlap);
         } else {
             let mid_y = (start.1 + end.1) / 2.0 + offset;
             let points = vec![start, (start.0, mid_y), (end.0, mid_y), end];
             let hits = path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
+            let (cross, overlap) = if use_existing {
+                edge_crossings_with_existing(&points, existing_segments)
+            } else {
+                (0, 0.0)
+            };
             candidates.push(points);
             intersections.push(hits);
+            crossings.push(cross);
+            overlaps.push(overlap);
 
             let mid_x = (start.0 + end.0) / 2.0 + offset;
             let alt = vec![start, (mid_x, start.1), (mid_x, end.1), end];
             let hits = path_obstacle_intersections(&alt, ctx.obstacles, ctx.from_id, ctx.to_id);
+            let (cross, overlap) = if use_existing {
+                edge_crossings_with_existing(&alt, existing_segments)
+            } else {
+                (0, 0.0)
+            };
             candidates.push(alt);
             intersections.push(hits);
+            crossings.push(cross);
+            overlaps.push(overlap);
         }
     }
 
     let min_hits = intersections.iter().copied().min().unwrap_or(0);
-    let mut needs_detour = false;
+    let min_crossings = crossings.iter().copied().min().unwrap_or(0);
+    let mut needs_detour = min_crossings > 0;
     if min_hits == 0
         && let Some(occ) = occupancy
     {
@@ -8557,8 +8982,15 @@ fn route_edge_with_avoidance(
                 };
                 let hits =
                     path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
+                let (cross, overlap) = if use_existing {
+                    edge_crossings_with_existing(&points, existing_segments)
+                } else {
+                    (0, 0.0)
+                };
                 candidates.push(points);
                 intersections.push(hits);
+                crossings.push(cross);
+                overlaps.push(overlap);
             }
         }
     }
@@ -8569,24 +9001,46 @@ fn route_edge_with_avoidance(
         && let Some(points) = route_edge_with_grid(ctx, grid, occupancy)
     {
         let hits = path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
+        let (cross, overlap) = if use_existing {
+            edge_crossings_with_existing(&points, existing_segments)
+        } else {
+            (0, 0.0)
+        };
         candidates.push(points);
         intersections.push(hits);
+        crossings.push(cross);
+        overlaps.push(overlap);
     }
 
     if let Some(grid) = occupancy {
         let mut best_idx = 0usize;
         let mut best_hits = usize::MAX;
+        let mut best_cross = usize::MAX;
+        let mut best_overlap = f32::MAX;
         let mut best_score = u32::MAX;
         let mut best_len = f32::MAX;
         for (idx, points) in candidates.iter().enumerate() {
             let hits = intersections.get(idx).copied().unwrap_or(0);
+            let cross = crossings.get(idx).copied().unwrap_or(0);
+            let overlap = overlaps.get(idx).copied().unwrap_or(0.0);
             let score = grid.score_path(points);
             let len = path_length(points);
             if hits < best_hits
-                || (hits == best_hits && score < best_score)
-                || (hits == best_hits && score == best_score && len < best_len)
+                || (hits == best_hits && cross < best_cross)
+                || (hits == best_hits && cross == best_cross && overlap < best_overlap)
+                || (hits == best_hits
+                    && cross == best_cross
+                    && overlap == best_overlap
+                    && score < best_score)
+                || (hits == best_hits
+                    && cross == best_cross
+                    && overlap == best_overlap
+                    && score == best_score
+                    && len < best_len)
             {
                 best_hits = hits;
+                best_cross = cross;
+                best_overlap = overlap;
                 best_score = score;
                 best_len = len;
                 best_idx = idx;
@@ -8597,12 +9051,25 @@ fn route_edge_with_avoidance(
 
     let mut best_idx = 0usize;
     let mut best_hits = usize::MAX;
+    let mut best_cross = usize::MAX;
+    let mut best_overlap = f32::MAX;
     let mut best_len = f32::MAX;
     for (idx, points) in candidates.iter().enumerate() {
         let hits = intersections.get(idx).copied().unwrap_or(0);
+        let cross = crossings.get(idx).copied().unwrap_or(0);
+        let overlap = overlaps.get(idx).copied().unwrap_or(0.0);
         let len = path_length(points);
-        if hits < best_hits || (hits == best_hits && len < best_len) {
+        if hits < best_hits
+            || (hits == best_hits && cross < best_cross)
+            || (hits == best_hits && cross == best_cross && overlap < best_overlap)
+            || (hits == best_hits
+                && cross == best_cross
+                && overlap == best_overlap
+                && len < best_len)
+        {
             best_hits = hits;
+            best_cross = cross;
+            best_overlap = overlap;
             best_len = len;
             best_idx = idx;
         }
@@ -8778,6 +9245,8 @@ fn segment_intersects_rect(a: (f32, f32), b: (f32, f32), rect: &Obstacle) -> boo
     false
 }
 
+type Segment = ((f32, f32), (f32, f32));
+
 fn segments_intersect(a: (f32, f32), b: (f32, f32), c: (f32, f32), d: (f32, f32)) -> bool {
     fn orient(a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> f32 {
         (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0)
@@ -8811,6 +9280,53 @@ fn segments_intersect(a: (f32, f32), b: (f32, f32), c: (f32, f32), d: (f32, f32)
         return true;
     }
     false
+}
+
+fn collinear_overlap_length(a: (f32, f32), b: (f32, f32), c: (f32, f32), d: (f32, f32)) -> f32 {
+    let cross1 = (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0);
+    let cross2 = (b.0 - a.0) * (d.1 - a.1) - (b.1 - a.1) * (d.0 - a.0);
+    if cross1.abs() > 1e-6 || cross2.abs() > 1e-6 {
+        return 0.0;
+    }
+    let dx = b.0 - a.0;
+    let dy = b.1 - a.1;
+    let seg_len_sq = dx * dx + dy * dy;
+    if seg_len_sq < 1e-6 {
+        return 0.0;
+    }
+    let proj = |p: (f32, f32)| ((p.0 - a.0) * dx + (p.1 - a.1) * dy) / seg_len_sq;
+    let t1 = proj(c);
+    let t2 = proj(d);
+    let tmin = t1.min(t2);
+    let tmax = t1.max(t2);
+    let overlap = (tmax.min(1.0) - tmin.max(0.0)).max(0.0);
+    overlap * seg_len_sq.sqrt()
+}
+
+fn edge_crossings_with_existing(points: &[(f32, f32)], existing: &[Segment]) -> (usize, f32) {
+    if points.len() < 2 || existing.is_empty() {
+        return (0, 0.0);
+    }
+    let mut crossings = 0usize;
+    let mut overlap = 0.0f32;
+    for segment in points.windows(2) {
+        let a1 = segment[0];
+        let a2 = segment[1];
+        for &(b1, b2) in existing {
+            if (a1.0 - b1.0).abs() < 1e-6 && (a1.1 - b1.1).abs() < 1e-6
+                || (a1.0 - b2.0).abs() < 1e-6 && (a1.1 - b2.1).abs() < 1e-6
+                || (a2.0 - b1.0).abs() < 1e-6 && (a2.1 - b1.1).abs() < 1e-6
+                || (a2.0 - b2.0).abs() < 1e-6 && (a2.1 - b2.1).abs() < 1e-6
+            {
+                continue;
+            }
+            overlap += collinear_overlap_length(a1, a2, b1, b2);
+            if segments_intersect(a1, a2, b1, b2) {
+                crossings += 1;
+            }
+        }
+    }
+    (crossings, overlap)
 }
 
 fn measure_label(text: &str, theme: &Theme, config: &LayoutConfig) -> TextBlock {
@@ -9376,6 +9892,163 @@ fn separate_sibling_subgraphs(
     }
 }
 
+fn align_disconnected_top_level_subgraphs(graph: &Graph, nodes: &mut BTreeMap<String, NodeLayout>) {
+    if graph.kind != crate::ir::DiagramKind::Flowchart || graph.subgraphs.len() < 2 {
+        return;
+    }
+
+    let top_level = top_level_subgraph_indices(graph);
+    if top_level.len() < 2 {
+        return;
+    }
+
+    let mut seen: HashSet<&str> = HashSet::new();
+    let mut union_count = 0usize;
+    for &idx in &top_level {
+        let sub = &graph.subgraphs[idx];
+        for node_id in &sub.nodes {
+            if !seen.insert(node_id.as_str()) {
+                return;
+            }
+            union_count += 1;
+        }
+        if let Some(anchor_id) = subgraph_anchor_id(sub, nodes) {
+            if !seen.insert(anchor_id) {
+                return;
+            }
+            union_count += 1;
+        }
+    }
+    if union_count != graph.nodes.len() {
+        return;
+    }
+
+    let mut node_to_top_level: HashMap<&str, usize> = HashMap::new();
+    for &idx in &top_level {
+        let sub = &graph.subgraphs[idx];
+        for node_id in &sub.nodes {
+            node_to_top_level.insert(node_id.as_str(), idx);
+        }
+        if let Some(anchor_id) = subgraph_anchor_id(sub, nodes) {
+            node_to_top_level.insert(anchor_id, idx);
+        }
+    }
+    let has_cross_edges = graph.edges.iter().any(|edge| {
+        let from = node_to_top_level.get(edge.from.as_str());
+        let to = node_to_top_level.get(edge.to.as_str());
+        matches!((from, to), (Some(a), Some(b)) if a != b)
+    });
+    if has_cross_edges {
+        return;
+    }
+
+    #[derive(Clone)]
+    struct Bounds {
+        idx: usize,
+        min_x: f32,
+        min_y: f32,
+        max_x: f32,
+        max_y: f32,
+        anchor_id: Option<String>,
+    }
+
+    let mut bounds: Vec<Bounds> = Vec::new();
+    for &idx in &top_level {
+        let sub = &graph.subgraphs[idx];
+        if sub.nodes.is_empty() {
+            continue;
+        }
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+        for node_id in &sub.nodes {
+            if let Some(node) = nodes.get(node_id) {
+                min_x = min_x.min(node.x);
+                min_y = min_y.min(node.y);
+                max_x = max_x.max(node.x + node.width);
+                max_y = max_y.max(node.y + node.height);
+            }
+        }
+        let anchor_id = subgraph_anchor_id(sub, nodes).map(|id| id.to_string());
+        if let Some(anchor) = anchor_id.as_deref().and_then(|id| nodes.get(id)) {
+            min_x = min_x.min(anchor.x);
+            min_y = min_y.min(anchor.y);
+            max_x = max_x.max(anchor.x + anchor.width);
+            max_y = max_y.max(anchor.y + anchor.height);
+        }
+        if min_x == f32::MAX {
+            continue;
+        }
+        bounds.push(Bounds {
+            idx,
+            min_x,
+            min_y,
+            max_x,
+            max_y,
+            anchor_id,
+        });
+    }
+
+    if bounds.len() < 2 {
+        return;
+    }
+
+    let horizontal = is_horizontal(graph.direction);
+    bounds.sort_by(|a, b| {
+        let a_key = if horizontal { a.min_x } else { a.min_y };
+        let b_key = if horizontal { b.min_x } else { b.min_y };
+        a_key
+            .partial_cmp(&b_key)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| a.idx.cmp(&b.idx))
+    });
+
+    let mut prev_max: Option<f32> = None;
+    for bound in &bounds {
+        let min_main = if horizontal { bound.min_x } else { bound.min_y };
+        let max_main = if horizontal { bound.max_x } else { bound.max_y };
+        if let Some(prev) = prev_max {
+            if min_main < prev {
+                return;
+            }
+        }
+        prev_max = Some(max_main);
+    }
+
+    let target_cross = bounds
+        .iter()
+        .map(|b| if horizontal { b.min_y } else { b.min_x })
+        .fold(f32::MAX, f32::min);
+
+    for bound in bounds {
+        let current_cross = if horizontal { bound.min_y } else { bound.min_x };
+        let delta = target_cross - current_cross;
+        if delta.abs() < 0.5 {
+            continue;
+        }
+        let sub = &graph.subgraphs[bound.idx];
+        for node_id in &sub.nodes {
+            if let Some(node) = nodes.get_mut(node_id) {
+                if horizontal {
+                    node.y += delta;
+                } else {
+                    node.x += delta;
+                }
+            }
+        }
+        if let Some(anchor_id) = bound.anchor_id.as_deref() {
+            if let Some(node) = nodes.get_mut(anchor_id) {
+                if horizontal {
+                    node.y += delta;
+                } else {
+                    node.x += delta;
+                }
+            }
+        }
+    }
+}
+
 fn build_subgraph_layouts(
     graph: &Graph,
     nodes: &BTreeMap<String, NodeLayout>,
@@ -9759,7 +10432,7 @@ mod tests {
         let end = anchor_point_for_node(&to, EdgeSide::Left, 0.0);
         occupancy.add_path(&[start, end]);
 
-        let points = route_edge_with_avoidance(&ctx, Some(&occupancy), None);
+        let points = route_edge_with_avoidance(&ctx, Some(&occupancy), None, None);
         assert!(
             points.len() > 2,
             "expected a detoured path to avoid occupied lane"
@@ -9787,7 +10460,7 @@ mod tests {
             end_offset: 0.0,
             fast_route: false,
         };
-        let points = route_edge_with_avoidance(&ctx, None, None);
+        let points = route_edge_with_avoidance(&ctx, None, None, None);
         assert!(!points.is_empty());
     }
 

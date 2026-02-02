@@ -775,6 +775,12 @@ impl Default for LayoutConfig {
     }
 }
 
+impl LayoutConfig {
+    pub fn class_label_line_height(&self) -> f32 {
+        self.label_line_height * 0.85
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlowchartLayoutConfig {
     pub order_passes: usize,

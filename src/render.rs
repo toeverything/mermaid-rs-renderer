@@ -3467,7 +3467,7 @@ fn text_block_svg_class(
     config: &LayoutConfig,
     override_color: Option<&str>,
 ) -> String {
-    let line_height = theme.font_size * config.label_line_height;
+    let line_height = theme.font_size * config.class_label_line_height();
     let total_height = node.label.lines.len() as f32 * line_height;
     let start_y = node.y + node.height / 2.0 - total_height / 2.0 + theme.font_size;
     let center_x = node.x + node.width / 2.0;
@@ -3480,14 +3480,22 @@ fn text_block_svg_class(
         .iter()
         .position(|line| is_divider_line(line))
     else {
-        return text_block_svg(
+        let lines: Vec<(usize, &str)> = node
+            .label
+            .lines
+            .iter()
+            .enumerate()
+            .map(|(idx, line)| (idx, line.as_str()))
+            .collect();
+        return text_lines_svg(
+            &lines,
             center_x,
-            node.y + node.height / 2.0,
-            &node.label,
+            start_y,
+            line_height,
+            "middle",
             theme,
-            config,
+            fill,
             false,
-            override_color,
         );
     };
 
