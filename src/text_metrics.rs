@@ -1,6 +1,9 @@
 use fontdb::{Database, Family, Query, Stretch, Style, Weight};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::fs;
+use std::hash::{Hash, Hasher};
+use std::path::PathBuf;
 use std::sync::Mutex;
 use ttf_parser::{Face, GlyphId};
 
@@ -26,15 +29,16 @@ pub fn average_char_width(font_family: &str, font_size: f32) -> Option<f32> {
 
 struct TextMeasurer {
     db: Database,
+    loaded_system_fonts: bool,
     cache: HashMap<String, Option<FontFace>>,
 }
 
 impl TextMeasurer {
     fn new() -> Self {
-        let mut db = Database::new();
-        db.load_system_fonts();
+        let db = Database::new();
         Self {
             db,
+            loaded_system_fonts: false,
             cache: HashMap::new(),
         }
     }
@@ -57,6 +61,10 @@ impl TextMeasurer {
     }
 
     fn load_face(&mut self, font_family: &str) -> Option<FontFace> {
+        let family_key = normalize_family_key(font_family);
+        if let Some(face) = load_cached_face(&family_key) {
+            return Some(face);
+        }
         #[derive(Clone, Copy)]
         enum FamilyToken {
             Generic(fontdb::Family<'static>),
@@ -100,6 +108,11 @@ impl TextMeasurer {
             }
         }
 
+        if !self.loaded_system_fonts {
+            self.db.load_system_fonts();
+            self.loaded_system_fonts = true;
+        }
+
         let query = Query {
             families: &families,
             weight: Weight::NORMAL,
@@ -112,6 +125,15 @@ impl TextMeasurer {
             let bytes = data.to_vec();
             if let Ok(face) = Face::parse(&bytes, index) {
                 let units_per_em = face.units_per_em().max(1);
+                if let Some((font_path, meta_path)) = cache_paths(&family_key)
+                    && !font_path.exists()
+                {
+                    if let Some(parent) = font_path.parent() {
+                        let _ = fs::create_dir_all(parent);
+                    }
+                    let _ = fs::write(&font_path, &bytes);
+                    let _ = fs::write(&meta_path, index.to_string());
+                }
                 loaded = Some(FontFace::new(bytes, index, units_per_em));
             }
         });
@@ -120,29 +142,66 @@ impl TextMeasurer {
 }
 
 struct FontFace {
-    data: Vec<u8>,
-    index: u32,
+    _data: Vec<u8>,
+    _index: u32,
     units_per_em: u16,
+    face: Option<Face<'static>>,
+    ascii_advances: Option<[u16; 128]>,
     glyph_cache: HashMap<char, Option<u16>>,
     advance_cache: HashMap<u16, u16>,
 }
 
 impl FontFace {
     fn new(data: Vec<u8>, index: u32, units_per_em: u16) -> Self {
+        let face = Face::parse(&data, index)
+            .ok()
+            .map(|parsed| unsafe { std::mem::transmute::<Face<'_>, Face<'static>>(parsed) });
+        let ascii_advances = face.as_ref().map(|parsed| {
+            let mut advances = [0u16; 128];
+            for byte in 0u8..=127 {
+                let ch = byte as char;
+                if let Some(glyph_id) = parsed.glyph_index(ch) {
+                    advances[byte as usize] = parsed.glyph_hor_advance(glyph_id).unwrap_or(0);
+                }
+            }
+            advances
+        });
         Self {
-            data,
-            index,
+            _data: data,
+            _index: index,
             units_per_em,
+            face,
+            ascii_advances,
             glyph_cache: HashMap::new(),
             advance_cache: HashMap::new(),
         }
     }
 
     fn measure_width(&mut self, text: &str, font_size: f32) -> Option<f32> {
-        let face = Face::parse(&self.data, self.index).ok()?;
+        let scale = font_size / self.units_per_em as f32;
+        let fallback = font_size * 0.56;
+
+        if text.is_ascii() {
+            if let Some(advances) = &self.ascii_advances {
+                let mut width = 0.0f32;
+                for byte in text.as_bytes() {
+                    if *byte == b'\n' {
+                        continue;
+                    }
+                    let advance = advances[*byte as usize];
+                    if advance == 0 {
+                        width += fallback;
+                    } else {
+                        width += advance as f32 * scale;
+                    }
+                }
+                return Some(width.max(0.0));
+            }
+        }
+
+        let face = self.face.as_ref()?;
         let scale = font_size / self.units_per_em as f32;
         let mut width = 0.0f32;
-        let fallback = font_size * 0.56;
 
         for ch in text.chars() {
             if ch == '\n' {
@@ -182,4 +241,29 @@ fn normalize_family_key(font_family: &str) -> String {
     } else {
         trimmed.to_string()
     }
+}
+
+fn cache_paths(family_key: &str) -> Option<(PathBuf, PathBuf)> {
+    let base = std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))?;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    family_key.hash(&mut hasher);
+    let hash = hasher.finish();
+    let dir = base.join("mmdr").join("font-cache");
+    let font_path = dir.join(format!("{hash:x}.font"));
+    let meta_path = dir.join(format!("{hash:x}.meta"));
+    Some((font_path, meta_path))
+}
+
+fn load_cached_face(family_key: &str) -> Option<FontFace> {
+    let (font_path, meta_path) = cache_paths(family_key)?;
+    if !font_path.exists() || !meta_path.exists() {
+        return None;
+    }
+    let bytes = fs::read(font_path).ok()?;
+    let index: u32 = fs::read_to_string(meta_path).ok()?.trim().parse().ok()?;
+    let face = Face::parse(&bytes, index).ok()?;
+    let units_per_em = face.units_per_em().max(1);
+    Some(FontFace::new(bytes, index, units_per_em))
 }

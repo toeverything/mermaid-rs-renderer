@@ -5271,6 +5271,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             direction: graph.direction,
             config,
             obstacles: &obstacles,
+            fast_route: tiny_graph,
             base_offset,
             start_side: port_info.start_side,
             end_side: port_info.end_side,
@@ -7759,6 +7760,7 @@ struct RouteContext<'a> {
     direction: Direction,
     config: &'a LayoutConfig,
     obstacles: &'a [Obstacle],
+    fast_route: bool,
     base_offset: f32,
     start_side: EdgeSide,
     end_side: EdgeSide,
@@ -8419,6 +8421,9 @@ fn route_edge_with_avoidance(
     // Anchor edges using resolved port offsets to reduce overlap
     let start = anchor_point_for_node(ctx.from, ctx.start_side, ctx.start_offset);
     let end = anchor_point_for_node(ctx.to, ctx.end_side, ctx.end_offset);
+    if ctx.fast_route {
+        return vec![start, end];
+    }
     let mut candidates: Vec<Vec<(f32, f32)>> = Vec::new();
     let mut intersections: Vec<usize> = Vec::new();
 
