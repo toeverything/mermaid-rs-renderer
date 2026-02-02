@@ -3553,7 +3553,7 @@ fn quadrant_palette(_theme: &Theme) -> Vec<String> {
 
 fn compute_gantt_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
     let padding = theme.font_size * 1.2;
-    let row_height = theme.font_size * 2.2;
+    let row_height = theme.font_size * 2.6;
     let label_gap = theme.font_size * 0.9;
     let default_duration = 3.0_f32;
 
@@ -3696,7 +3696,8 @@ fn compute_gantt_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
         y += row_height;
     }
 
-    let height = y + padding;
+    let axis_pad = row_height * 0.9 + theme.font_size;
+    let height = y + padding + axis_pad;
     let width = chart_x + chart_width + padding;
 
     Layout {
@@ -5522,6 +5523,12 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     let mut effective_config = config.clone();
     if graph.kind == crate::ir::DiagramKind::Requirement {
         effective_config.max_label_width_chars = effective_config.max_label_width_chars.max(32);
+    }
+    if graph.kind == crate::ir::DiagramKind::State {
+        effective_config.node_spacing *= 1.25;
+        effective_config.rank_spacing *= 1.25;
+        effective_config.node_padding_x *= 1.1;
+        effective_config.node_padding_y *= 1.15;
     }
     if graph.kind == crate::ir::DiagramKind::Flowchart {
         let node_count = graph.nodes.len();

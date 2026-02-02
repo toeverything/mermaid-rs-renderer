@@ -14,6 +14,11 @@ use std::path::Path;
 
 pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
     let mut svg = String::new();
+    let state_font_size = if layout.kind == crate::ir::DiagramKind::State {
+        theme.font_size * 0.85
+    } else {
+        theme.font_size
+    };
     let (width, height, viewbox_x, viewbox_y, viewbox_width, viewbox_height) =
         if let Some(error) = layout.error.as_ref() {
             (
@@ -328,14 +333,16 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             if !label_empty {
                 let label_x = subgraph.x + 12.0;
                 let label_y = subgraph.y + header_h / 2.0;
-                svg.push_str(&text_block_svg_anchor(
+                svg.push_str(&text_block_svg_with_font_size(
                     label_x,
                     label_y,
                     &subgraph.label_block,
                     theme,
                     config,
+                    state_font_size,
                     "start",
                     subgraph.style.text_color.as_deref(),
+                    false,
                 ));
             }
         } else {
@@ -553,14 +560,16 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             ));
             let center_x = note.x + note.width / 2.0;
             let center_y = note.y + note.height / 2.0;
-            svg.push_str(&text_block_svg(
+            svg.push_str(&text_block_svg_with_font_size(
                 center_x,
                 center_y,
                 &note.label,
                 theme,
                 config,
-                false,
+                state_font_size,
+                "middle",
                 Some(theme.primary_text_color.as_str()),
+                false,
             ));
         }
     }
@@ -820,25 +829,46 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             if let Some((x, y, label)) = label_positions.get(&idx).and_then(|v| v.clone()) {
                 let pad_x = 4.0;
                 let pad_y = 2.0;
-                let rect_x = x - label.width / 2.0 - pad_x;
-                let rect_y = y - label.height / 2.0 - pad_y;
-                let rect_w = label.width + pad_x * 2.0;
-                let rect_h = label.height + pad_y * 2.0;
+                let label_scale = if layout.kind == crate::ir::DiagramKind::State {
+                    (state_font_size / theme.font_size).min(1.0)
+                } else {
+                    1.0
+                };
+                let label_w = label.width * label_scale;
+                let label_h = label.height * label_scale;
+                let rect_x = x - label_w / 2.0 - pad_x;
+                let rect_y = y - label_h / 2.0 - pad_y;
+                let rect_w = label_w + pad_x * 2.0;
+                let rect_h = label_h + pad_y * 2.0;
                 let label_fill = theme.edge_label_background.as_str();
                 svg.push_str(&format!(
                     "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"0.85\" stroke=\"{}\" stroke-opacity=\"0.35\" stroke-width=\"0.8\"/>",
                     label_fill,
                     theme.primary_border_color
                 ));
-                svg.push_str(&text_block_svg(
-                    x,
-                    y,
-                    &label,
-                    theme,
-                    config,
-                    true,
-                    edge.override_style.label_color.as_deref(),
-                ));
+                if layout.kind == crate::ir::DiagramKind::State {
+                    svg.push_str(&text_block_svg_with_font_size(
+                        x,
+                        y,
+                        &label,
+                        theme,
+                        config,
+                        state_font_size,
+                        "middle",
+                        edge.override_style.label_color.as_deref(),
+                        false,
+                    ));
+                } else {
+                    svg.push_str(&text_block_svg(
+                        x,
+                        y,
+                        &label,
+                        theme,
+                        config,
+                        true,
+                        edge.override_style.label_color.as_deref(),
+                    ));
+                }
             }
 
             let end_label_offset = (theme.font_size * 0.6).max(8.0);
@@ -850,28 +880,56 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             if let Some(label) = edge.start_label.as_ref()
                 && let Some((x, y)) = edge_endpoint_label_position(edge, true, end_label_offset)
             {
-                svg.push_str(&text_block_svg(
-                    x,
-                    y,
-                    label,
-                    theme,
-                    config,
-                    false,
-                    Some(label_color),
-                ));
+                if layout.kind == crate::ir::DiagramKind::State {
+                    svg.push_str(&text_block_svg_with_font_size(
+                        x,
+                        y,
+                        label,
+                        theme,
+                        config,
+                        state_font_size,
+                        "middle",
+                        Some(label_color),
+                        false,
+                    ));
+                } else {
+                    svg.push_str(&text_block_svg(
+                        x,
+                        y,
+                        label,
+                        theme,
+                        config,
+                        false,
+                        Some(label_color),
+                    ));
+                }
             }
             if let Some(label) = edge.end_label.as_ref()
                 && let Some((x, y)) = edge_endpoint_label_position(edge, false, end_label_offset)
             {
-                svg.push_str(&text_block_svg(
-                    x,
-                    y,
-                    label,
-                    theme,
-                    config,
-                    false,
-                    Some(label_color),
-                ));
+                if layout.kind == crate::ir::DiagramKind::State {
+                    svg.push_str(&text_block_svg_with_font_size(
+                        x,
+                        y,
+                        label,
+                        theme,
+                        config,
+                        state_font_size,
+                        "middle",
+                        Some(label_color),
+                        false,
+                    ));
+                } else {
+                    svg.push_str(&text_block_svg(
+                        x,
+                        y,
+                        label,
+                        theme,
+                        config,
+                        false,
+                        Some(label_color),
+                    ));
+                }
             }
         }
     }
@@ -946,6 +1004,18 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     })
                 } else if node.label.lines.iter().any(|line| is_divider_line(line)) {
                     text_block_svg_class(node, theme, config, node.style.text_color.as_deref())
+                } else if layout.kind == crate::ir::DiagramKind::State {
+                    text_block_svg_with_font_size(
+                        center_x,
+                        center_y,
+                        &node.label,
+                        theme,
+                        config,
+                        state_font_size,
+                        "middle",
+                        node.style.text_color.as_deref(),
+                        false,
+                    )
                 } else {
                     text_block_svg(
                         center_x,
@@ -2070,20 +2140,55 @@ fn render_pie(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
         if span <= 0.0001 || total <= 0.0 {
             continue;
         }
-        let percent_text = format!("{:.0}", slice.value / total * 100.0);
-        if percent_text == "0" {
+        let percent = slice.value / total * 100.0;
+        if percent < pie_cfg.min_percent {
             continue;
         }
+        let percent_text = format!("{:.0}%", percent);
         let mid_angle = (slice.start_angle + slice.end_angle) / 2.0;
-        let label_radius = radius * pie_cfg.text_position;
-        let label_x = cx + label_radius * mid_angle.cos();
-        let label_y = cy + label_radius * mid_angle.sin();
+        let font_size = theme.pie_section_text_size;
+        let text_width =
+            text_metrics::measure_text_width(&percent_text, font_size, theme.font_family.as_str())
+                .unwrap_or(percent_text.chars().count() as f32 * font_size * 0.55);
+        let arc_len = radius * span;
+        let mut label_radius = radius * pie_cfg.text_position;
+        let mut anchor = "middle";
+        let mut label_x = cx + label_radius * mid_angle.cos();
+        let mut label_y = cy + label_radius * mid_angle.sin();
+        if arc_len < text_width * 1.2 {
+            let bump = (font_size * 1.4).max(radius * 0.15);
+            label_radius = radius + bump;
+            label_x = cx + label_radius * mid_angle.cos();
+            label_y = cy + label_radius * mid_angle.sin();
+            let edge_x = cx + radius * mid_angle.cos();
+            let edge_y = cy + radius * mid_angle.sin();
+            svg.push_str(&format!(
+                "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" stroke-width=\"1\"/>",
+                edge_x,
+                edge_y,
+                label_x,
+                label_y,
+                theme.pie_stroke_color
+            ));
+            anchor = if mid_angle.cos() >= 0.0 {
+                "start"
+            } else {
+                "end"
+            };
+            let offset = 4.0;
+            if anchor == "start" {
+                label_x += offset;
+            } else {
+                label_x -= offset;
+            }
+        }
         svg.push_str(&format!(
-            "<text x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"middle\" font-family=\"{}\" font-size=\"{}\" fill=\"{}\">{}%</text>",
+            "<text x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"{}\" font-family=\"{}\" font-size=\"{}\" fill=\"{}\">{}</text>",
             label_x,
             label_y,
+            anchor,
             theme.font_family,
-            theme.pie_section_text_size,
+            font_size,
             escape_xml(&theme.pie_section_text_color),
             percent_text
         ));
@@ -2340,18 +2445,20 @@ fn render_gantt(
     }
 
     // Grid/ticks
-    let axis_y = layout.chart_y + layout.chart_height + layout.row_height * 0.6;
+    let axis_y = layout.chart_y + layout.chart_height + layout.row_height * 0.7;
+    let tick_font = theme.font_size * 0.8;
     for tick in &layout.ticks {
         svg.push_str(&format!(
             "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"#E2E8F0\" stroke-width=\"1\"/>",
             tick.x, layout.chart_y, tick.x, layout.chart_y + layout.chart_height
         ));
         if !tick.label.trim().is_empty() {
-            svg.push_str(&text_line_svg(
+            svg.push_str(&text_line_svg_with_font_size(
                 tick.x,
                 axis_y,
                 tick.label.as_str(),
                 theme,
+                tick_font,
                 theme.text_color.as_str(),
                 "middle",
             ));
@@ -2367,6 +2474,7 @@ fn render_gantt(
     ));
 
     // Draw sections
+    let label_font = theme.font_size * 0.9;
     for section in &layout.sections {
         svg.push_str(&format!(
             "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" stroke=\"none\"/>",
@@ -2376,14 +2484,16 @@ fn render_gantt(
             section.height,
             theme.cluster_background
         ));
-        svg.push_str(&text_block_svg_anchor(
+        svg.push_str(&text_block_svg_with_font_size(
             layout.label_x,
             section.y + section.height / 2.0,
             &section.label,
             theme,
             config,
+            label_font,
             "start",
             Some(theme.primary_text_color.as_str()),
+            false,
         ));
     }
 
@@ -2422,14 +2532,16 @@ fn render_gantt(
             ));
         }
         // Task label
-        svg.push_str(&text_block_svg_anchor(
+        svg.push_str(&text_block_svg_with_font_size(
             layout.label_x,
             row_center,
             &task.label,
             theme,
             config,
+            label_font,
             "start",
             Some(theme.primary_text_color.as_str()),
+            false,
         ));
     }
 
@@ -3182,6 +3294,24 @@ fn text_block_svg_with_font_size(
 
     text.push_str("</text>");
     text
+}
+
+fn text_line_svg_with_font_size(
+    x: f32,
+    y: f32,
+    text: &str,
+    theme: &Theme,
+    font_size: f32,
+    fill: &str,
+    anchor: &str,
+) -> String {
+    format!(
+        "<text x=\"{x:.2}\" y=\"{y:.2}\" text-anchor=\"{anchor}\" font-family=\"{}\" font-size=\"{}\" fill=\"{}\">{}</text>",
+        theme.font_family,
+        font_size,
+        fill,
+        escape_xml(text)
+    )
 }
 
 fn text_line_svg(x: f32, y: f32, text: &str, theme: &Theme, fill: &str, anchor: &str) -> String {
