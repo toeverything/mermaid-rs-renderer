@@ -342,26 +342,47 @@ def parse_mermaid_edges(svg_path: Path):
         cur_ty = acc_ty + ty
         tag = strip_ns(elem.tag)
         cls = elem.attrib.get("class", "")
-        is_edge_group = in_edge_group or ("edgePaths" in cls)
+        cls_lower = cls.lower()
+        is_edge_group = (
+            in_edge_group
+            or ("edgepaths" in cls_lower)
+            or ("links" in cls_lower)
+            or (cls_lower == "link")
+        )
+        is_edge_class = any(
+            token in cls_lower
+            for token in (
+                "edgepath",
+                "message",
+                "signal",
+                "arrow",
+                "link",
+            )
+        )
+        if "actor-line" in cls_lower or "actorline" in cls_lower or "lifeline" in cls_lower:
+            is_edge_class = False
+        has_marker = "marker-end" in elem.attrib or "marker-start" in elem.attrib
 
         if tag == "path":
-            if is_edge_group or "edge" in cls or "edgePath" in cls:
+            if is_edge_group or is_edge_class or has_marker:
                 d = elem.attrib.get("d", "")
                 points = parse_path_points(d)
                 if points:
                     points = [(x + cur_tx, y + cur_ty) for x, y in points]
                     edges.append(points)
-        elif tag == "polyline" and is_edge_group:
-            pts = parse_points(elem.attrib.get("points", ""))
-            if pts:
-                points = [(x + cur_tx, y + cur_ty) for x, y in pts]
-                edges.append(points)
-        elif tag == "line" and is_edge_group:
-            x1 = parse_svg_number(elem.attrib.get("x1", "0")) + cur_tx
-            y1 = parse_svg_number(elem.attrib.get("y1", "0")) + cur_ty
-            x2 = parse_svg_number(elem.attrib.get("x2", "0")) + cur_tx
-            y2 = parse_svg_number(elem.attrib.get("y2", "0")) + cur_ty
-            edges.append([(x1, y1), (x2, y2)])
+        elif tag == "polyline":
+            if is_edge_group or is_edge_class or has_marker:
+                pts = parse_points(elem.attrib.get("points", ""))
+                if pts:
+                    points = [(x + cur_tx, y + cur_ty) for x, y in pts]
+                    edges.append(points)
+        elif tag == "line":
+            if is_edge_group or is_edge_class or has_marker:
+                x1 = parse_svg_number(elem.attrib.get("x1", "0")) + cur_tx
+                y1 = parse_svg_number(elem.attrib.get("y1", "0")) + cur_ty
+                x2 = parse_svg_number(elem.attrib.get("x2", "0")) + cur_tx
+                y2 = parse_svg_number(elem.attrib.get("y2", "0")) + cur_ty
+                edges.append([(x1, y1), (x2, y2)])
 
         for child in list(elem):
             visit(child, cur_tx, cur_ty, is_edge_group)
@@ -376,8 +397,22 @@ def svg_size(root):
         parts = [p for p in view_box.replace(",", " ").split() if p]
         if len(parts) >= 4:
             return parse_svg_number(parts[2]), parse_svg_number(parts[3])
-    width = parse_svg_number(root.attrib.get("width", "0"))
-    height = parse_svg_number(root.attrib.get("height", "0"))
+    width_attr = root.attrib.get("width", "")
+    height_attr = root.attrib.get("height", "")
+    width = parse_svg_number(width_attr)
+    height = parse_svg_number(height_attr)
+    if width <= 0.0 or height <= 0.0 or width_attr.strip().endswith("%") or height_attr.strip().endswith("%"):
+        style = root.attrib.get("style", "")
+        if style:
+            for part in style.split(";"):
+                if ":" not in part:
+                    continue
+                key, value = part.split(":", 1)
+                key = key.strip().lower()
+                if key == "width" and (width <= 0.0 or width_attr.strip().endswith("%")):
+                    width = parse_svg_number(value)
+                elif key == "height" and (height <= 0.0 or height_attr.strip().endswith("%")):
+                    height = parse_svg_number(value)
     return width, height
 
 
