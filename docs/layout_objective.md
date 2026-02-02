@@ -36,5 +36,6 @@ Weights are initial targets and can be tuned after baseline measurements.
 
 - Fixture render smoke tests for every diagram type.
 - Benchmarks on all medium fixtures plus flowchart small/large.
+- `scripts/quality_bench.py --engine both` to compare objective layout metrics against mermaid-cli (set `MMD_CLI` if needed).
 - Optional conformance report vs mermaid-cli (image diff + layout diff).
 - Automated quality gate (`scripts/quality_gate.py`) comparing against `tests/quality_baseline.json`.
