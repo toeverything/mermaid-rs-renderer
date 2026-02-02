@@ -26,6 +26,17 @@ Mermaid CLI (mmdc + Puppeteer):
 - p50: 2.3491
 - min/max: 2.3208 / 2.7941
 
+## Font cache (warm)
+
+After the font cache is populated (default behavior), tiny/common diagrams reach 500–1100×:
+
+| Diagram | mmdr (warm cache) | mermaid-cli | Speedup |
+|:--|--:|--:|--:|
+| Flowchart (tiny) | 4.72 ms | 2,371 ms | 502× |
+| Class (tiny) | 1.89 ms | 2,057 ms | 1,089× |
+| State (tiny) | 2.78 ms | 2,113 ms | 760× |
+| Sequence (tiny) | 2.86 ms | 2,258 ms | 790× |
+
 ## Fast text metrics (tiny diagrams)
 
 Using `mmdr --fastText` on tiny/common diagrams (measured Feb 2, 2026):

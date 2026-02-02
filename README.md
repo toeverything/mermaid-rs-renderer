@@ -11,6 +11,7 @@
 ## Performance
 
 mmdr renders diagrams **100-600x faster** than mermaid-cli by eliminating browser overhead.
+With the built-in font cache (warm after first run), tiny diagrams can exceed **1000x**.
 
 <p align="center">
   <img src="docs/benchmarks/comparison.svg" alt="Performance comparison" width="600">
@@ -28,6 +29,21 @@ mmdr renders diagrams **100-600x faster** than mermaid-cli by eliminating browse
 <sub>Tested on Intel Core Ultra 7 265V, Linux 6.18.2 | mermaid-cli 11.4.2 via Puppeteer/Chromium</sub>
 
 </div>
+
+<details>
+<summary><strong>Font cache (default, warm after first run)</strong></summary>
+
+Once the font cache is populated, tiny/common diagrams reach **500–1100×**:
+
+| Diagram (tiny) | mmdr (warm cache) | mermaid-cli | Speedup |
+|:--|--:|--:|--:|
+| Flowchart | 4.72 ms | 2,371 ms | **502×** |
+| Class | 1.89 ms | 2,057 ms | **1,089×** |
+| State | 2.78 ms | 2,113 ms | **760×** |
+| Sequence | 2.86 ms | 2,258 ms | **790×** |
+
+<sub>Measured Feb 2, 2026 on the same machine.</sub>
+</details>
 
 <details>
 <summary><strong>Fast text metrics (optional, fastest)</strong></summary>
