@@ -5068,16 +5068,22 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             .max(config.flowchart.port_pad_min);
         let usable = (node_len - 2.0 * pad).max(1.0);
         let min_sep = usable / (candidates.len() as f32 + 1.0);
+        let span_ratio = if node_len > 1.0 { span / node_len } else { 1.0 };
+        let position_weight = (1.0 / (1.0 + span_ratio)).clamp(0.25, 0.85);
+        let rank_weight = 1.0 - position_weight;
         let desired: Vec<(usize, f32)> = order
             .iter()
-            .map(|&idx| {
+            .enumerate()
+            .map(|(rank, &idx)| {
                 let candidate = &candidates[idx];
-                let pos = if span <= 1.0 {
-                    pad + usable * 0.5
+                let t_pos = if span <= 1.0 {
+                    0.5
                 } else {
-                    let t = (candidate.other_pos - min_other) / span;
-                    pad + t * usable
+                    (candidate.other_pos - min_other) / span
                 };
+                let t_rank = (rank as f32 + 0.5) / candidates.len() as f32;
+                let t = t_pos * position_weight + t_rank * rank_weight;
+                let pos = pad + t * usable;
                 (idx, pos)
             })
             .collect();
@@ -7728,6 +7734,29 @@ impl EdgeOccupancy {
         score
     }
 
+    fn overlap_count(&self, points: &[(f32, f32)]) -> u32 {
+        let mut count = 0u32;
+        for segment in points.windows(2) {
+            let (x1, y1) = segment[0];
+            let (x2, y2) = segment[1];
+            let dx = x2 - x1;
+            let dy = y2 - y1;
+            let len = (dx * dx + dy * dy).sqrt();
+            let steps = ((len / self.cell).ceil() as usize).max(1);
+            for i in 0..=steps {
+                let t = i as f32 / steps as f32;
+                let x = x1 + dx * t;
+                let y = y1 + dy * t;
+                if let Some(weight) = self.weights.get(&self.cell_index(x, y)) {
+                    if *weight > 0 {
+                        count = count.saturating_add(1);
+                    }
+                }
+            }
+        }
+        count
+    }
+
     fn add_path(&mut self, points: &[(f32, f32)]) {
         for segment in points.windows(2) {
             let (x1, y1) = segment[0];
@@ -8408,7 +8437,34 @@ fn route_edge_with_avoidance(
     }
 
     let min_hits = intersections.iter().copied().min().unwrap_or(0);
-    if min_hits > 0 {
+    let mut needs_detour = false;
+    if min_hits == 0 {
+        if let Some(occ) = occupancy {
+            let mut best_idx = 0usize;
+            let mut best_score = u32::MAX;
+            let mut best_len = f32::MAX;
+            for (idx, points) in candidates.iter().enumerate() {
+                let score = occ.score_path(points);
+                let len = path_length(points);
+                if score < best_score || (score == best_score && len < best_len) {
+                    best_score = score;
+                    best_len = len;
+                    best_idx = idx;
+                }
+            }
+            if let Some(points) = candidates.get(best_idx) {
+                let overlap = occ.overlap_count(points);
+                let path_len = path_length(points);
+                let overlap_trigger =
+                    ((path_len / occ.cell) * 0.35).max(4.0).ceil() as u32;
+                if overlap >= overlap_trigger {
+                    needs_detour = true;
+                }
+            }
+        }
+    }
+
+    if min_hits > 0 || needs_detour {
         for i in 7..=9 {
             let delta = step * i as f32;
             for sign in [1.0, -1.0] {
@@ -8428,7 +8484,7 @@ fn route_edge_with_avoidance(
     }
 
     let min_hits = intersections.iter().copied().min().unwrap_or(0);
-    if min_hits > 0 {
+    if min_hits > 0 || needs_detour {
         if let Some(grid) = grid {
             if let Some(points) = route_edge_with_grid(ctx, grid, occupancy) {
                 let hits = path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
