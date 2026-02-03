@@ -195,7 +195,7 @@ fn default_pie_colors(primary: &str, secondary: &str, tertiary: &str) -> [String
     ]
 }
 
-fn adjust_color(color: &str, delta_h: f32, delta_s: f32, delta_l: f32) -> String {
+pub(crate) fn adjust_color(color: &str, delta_h: f32, delta_s: f32, delta_l: f32) -> String {
     let Some((h, s, l)) = parse_color_to_hsl(color) else {
         return color.to_string();
     };
@@ -210,7 +210,7 @@ fn adjust_color(color: &str, delta_h: f32, delta_s: f32, delta_l: f32) -> String
     format!("hsl({:.10}, {:.10}%, {:.10}%)", h, s, l)
 }
 
-fn parse_color_to_hsl(color: &str) -> Option<(f32, f32, f32)> {
+pub(crate) fn parse_color_to_hsl(color: &str) -> Option<(f32, f32, f32)> {
     let color = color.trim();
     if let Some(hsl) = parse_hsl(color) {
         return Some(hsl);

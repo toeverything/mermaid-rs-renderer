@@ -2694,7 +2694,7 @@ fn render_gantt(
             section.y,
             label_band_width,
             section.height,
-            theme.cluster_background
+            section.band_color
         ));
         svg.push_str(&format!(
             "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" fill-opacity=\"0.12\" stroke=\"none\"/>",
@@ -2702,7 +2702,15 @@ fn render_gantt(
             section.y,
             layout.chart_width,
             section.height,
-            theme.cluster_background
+            section.band_color
+        ));
+        svg.push_str(&format!(
+            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" fill-opacity=\"0.9\" stroke=\"none\"/>",
+            0.0,
+            section.y,
+            (theme.font_size * 0.3).max(3.0),
+            section.height,
+            section.color
         ));
         let label_y = (section.y + layout.row_height * 0.55)
             .min(section.y + section.height - layout.row_height * 0.45);

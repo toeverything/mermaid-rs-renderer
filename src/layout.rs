@@ -1,7 +1,7 @@
 use crate::config::{LayoutConfig, PieRenderMode, TreemapRenderMode};
 use crate::ir::{Direction, Graph};
 use crate::text_metrics;
-use crate::theme::Theme;
+use crate::theme::{adjust_color, parse_color_to_hsl, Theme};
 use std::cmp::{Ordering, Reverse};
 use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet, VecDeque};
 
@@ -598,6 +598,8 @@ pub struct GanttSectionLayout {
     pub label: TextBlock,
     pub y: f32,
     pub height: f32,
+    pub color: String,
+    pub band_color: String,
 }
 
 #[derive(Debug, Clone)]
@@ -3675,6 +3677,7 @@ fn compute_gantt_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
     }
 
     let palette = gantt_palette(theme);
+    let section_palette = gantt_section_palette(theme, &graph.gantt_sections);
     let mut current_section: Option<String> = None;
     let mut current_section_idx: Option<usize> = None;
     let mut sections: Vec<GanttSectionLayout> = Vec::new();
@@ -3688,10 +3691,17 @@ fn compute_gantt_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
                     let height = (y - sections[prev_idx].y).max(row_height);
                     sections[prev_idx].height = height;
                 }
+                let base_color = section_palette
+                    .get(sec)
+                    .cloned()
+                    .unwrap_or_else(|| palette[idx % palette.len()].clone());
+                let band_color = shift_color(&base_color, 20.0, 92.0, 0.7);
                 sections.push(GanttSectionLayout {
                     label: measure_label(sec, theme, config),
                     y,
                     height: 0.0,
+                    color: base_color,
+                    band_color,
                 });
                 current_section_idx = Some(sections.len() - 1);
             } else if let Some(prev_idx) = current_section_idx {
@@ -3708,7 +3718,15 @@ fn compute_gantt_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
         if bar_width < min_width {
             bar_width = min_width;
         }
-        let color = gantt_status_color(*status, theme, &palette, idx);
+        let base_color = if let Some(sec) = section.as_ref() {
+            section_palette
+                .get(sec)
+                .cloned()
+                .unwrap_or_else(|| palette[idx % palette.len()].clone())
+        } else {
+            palette[idx % palette.len()].clone()
+        };
+        let color = gantt_task_color(*status, &base_color, &palette[0]);
 
         tasks.push(GanttTaskLayout {
             label: measure_label(label, theme, config),
@@ -3785,29 +3803,71 @@ fn compute_gantt_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
 
 fn gantt_palette(theme: &Theme) -> Vec<String> {
     vec![
-        theme.primary_color.clone(),
-        "#60a5fa".to_string(), // blue-400
-        "#34d399".to_string(), // emerald-400
-        "#a78bfa".to_string(), // violet-400
-        "#fb923c".to_string(), // orange-400
+        theme.primary_border_color.clone(),
+        "#0ea5e9".to_string(), // sky-500
+        "#10b981".to_string(), // emerald-500
+        "#6366f1".to_string(), // indigo-500
+        "#f97316".to_string(), // orange-500
     ]
 }
 
-fn gantt_status_color(
+fn hsl_color(h: f32, s: f32, l: f32) -> String {
+    format!("hsl({:.10}, {:.10}%, {:.10}%)", h, s, l)
+}
+
+fn shift_color(color: &str, target_s: f32, target_l: f32, strength: f32) -> String {
+    let Some((_h, s, l)) = parse_color_to_hsl(color) else {
+        return color.to_string();
+    };
+    let delta_s = (target_s - s) * strength;
+    let delta_l = (target_l - l) * strength;
+    adjust_color(color, 0.0, delta_s, delta_l)
+}
+
+fn gantt_section_palette(theme: &Theme, sections: &[String]) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    if sections.is_empty() {
+        return map;
+    }
+    let base = theme.primary_border_color.as_str();
+    let step = 360.0 / sections.len().max(1) as f32;
+    for (idx, name) in sections.iter().enumerate() {
+        let hue_shift = step * idx as f32;
+        let mut color = adjust_color(base, hue_shift, 0.0, 0.0);
+        color = shift_color(&color, 60.0, 55.0, 0.4);
+        map.insert(name.clone(), color);
+    }
+    map
+}
+
+fn gantt_task_color(
     status: Option<crate::ir::GanttStatus>,
-    theme: &Theme,
-    palette: &[String],
-    idx: usize,
+    base: &str,
+    fallback: &str,
 ) -> String {
+    let base = if parse_color_to_hsl(base).is_some() {
+        base.to_string()
+    } else {
+        fallback.to_string()
+    };
     match status {
-        Some(crate::ir::GanttStatus::Done) => "#86efac".to_string(),
-        Some(crate::ir::GanttStatus::Active) => "#60a5fa".to_string(),
-        Some(crate::ir::GanttStatus::Crit) => "#f87171".to_string(),
-        Some(crate::ir::GanttStatus::Milestone) => "#fbbf24".to_string(),
-        None => palette
-            .get(idx % palette.len())
-            .cloned()
-            .unwrap_or_else(|| theme.primary_color.clone()),
+        Some(crate::ir::GanttStatus::Done) => shift_color(&base, 30.0, 80.0, 0.7),
+        Some(crate::ir::GanttStatus::Active) => shift_color(&base, 70.0, 52.0, 0.6),
+        Some(crate::ir::GanttStatus::Crit) => {
+            if let Some((_, s, l)) = parse_color_to_hsl(&base) {
+                hsl_color(0.0, s.max(65.0), l.clamp(45.0, 60.0))
+            } else {
+                "#ef4444".to_string()
+            }
+        }
+        Some(crate::ir::GanttStatus::Milestone) => {
+            if let Some((_, s, l)) = parse_color_to_hsl(&base) {
+                hsl_color(45.0, s.max(65.0), l.clamp(50.0, 65.0))
+            } else {
+                "#f59e0b".to_string()
+            }
+        }
+        None => base,
     }
 }
 
