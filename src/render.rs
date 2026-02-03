@@ -711,8 +711,22 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             ));
         }
     } else {
-        let label_positions =
-            compute_edge_label_positions(&layout.edges, &layout.nodes, &layout.subgraphs);
+        let label_positions = compute_edge_label_positions(
+            &layout.edges,
+            &layout.nodes,
+            &layout.subgraphs,
+            Some((layout.width, layout.height)),
+        );
+        let edge_obstacles = build_edge_obstacles(&layout.edges, 6.0);
+        let mut endpoint_occupied = build_label_obstacles(&layout.nodes, &layout.subgraphs);
+        for pos in label_positions.values().flatten() {
+            endpoint_occupied.push((
+                pos.0 - pos.2.width / 2.0 - 6.0,
+                pos.1 - pos.2.height / 2.0 - 4.0,
+                pos.2.width + 12.0,
+                pos.2.height + 8.0,
+            ));
+        }
 
         let base_edge_width = match layout.kind {
             crate::ir::DiagramKind::Class
@@ -903,11 +917,21 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 .as_deref()
                 .unwrap_or(theme.primary_text_color.as_str());
             if let Some(label) = edge.start_label.as_ref()
-                && let Some((x, y)) = edge_endpoint_label_position(edge, true, end_label_offset)
+                && let Some((x, y)) = edge_endpoint_label_position_with_avoid(
+                    edge,
+                    idx,
+                    true,
+                    end_label_offset,
+                    label.width * endpoint_label_scale,
+                    label.height * endpoint_label_scale,
+                    &endpoint_occupied,
+                    &edge_obstacles,
+                    Some((layout.width, layout.height)),
+                )
             {
+                let label_w = label.width * endpoint_label_scale;
+                let label_h = label.height * endpoint_label_scale;
                 if endpoint_label_fill != "none" {
-                    let label_w = label.width * endpoint_label_scale;
-                    let label_h = label.height * endpoint_label_scale;
                     let rect_x = x - label_w / 2.0 - endpoint_pad_x;
                     let rect_y = y - label_h / 2.0 - endpoint_pad_y;
                     let rect_w = label_w + endpoint_pad_x * 2.0;
@@ -920,6 +944,12 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                         endpoint_stroke_opacity
                     ));
                 }
+                endpoint_occupied.push((
+                    x - label_w / 2.0 - endpoint_pad_x,
+                    y - label_h / 2.0 - endpoint_pad_y,
+                    label_w + endpoint_pad_x * 2.0,
+                    label_h + endpoint_pad_y * 2.0,
+                ));
                 if layout.kind == crate::ir::DiagramKind::State {
                     svg.push_str(&text_block_svg_with_font_size(
                         x,
@@ -945,11 +975,21 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 }
             }
             if let Some(label) = edge.end_label.as_ref()
-                && let Some((x, y)) = edge_endpoint_label_position(edge, false, end_label_offset)
+                && let Some((x, y)) = edge_endpoint_label_position_with_avoid(
+                    edge,
+                    idx,
+                    false,
+                    end_label_offset,
+                    label.width * endpoint_label_scale,
+                    label.height * endpoint_label_scale,
+                    &endpoint_occupied,
+                    &edge_obstacles,
+                    Some((layout.width, layout.height)),
+                )
             {
+                let label_w = label.width * endpoint_label_scale;
+                let label_h = label.height * endpoint_label_scale;
                 if endpoint_label_fill != "none" {
-                    let label_w = label.width * endpoint_label_scale;
-                    let label_h = label.height * endpoint_label_scale;
                     let rect_x = x - label_w / 2.0 - endpoint_pad_x;
                     let rect_y = y - label_h / 2.0 - endpoint_pad_y;
                     let rect_w = label_w + endpoint_pad_x * 2.0;
@@ -962,6 +1002,12 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                         endpoint_stroke_opacity
                     ));
                 }
+                endpoint_occupied.push((
+                    x - label_w / 2.0 - endpoint_pad_x,
+                    y - label_h / 2.0 - endpoint_pad_y,
+                    label_w + endpoint_pad_x * 2.0,
+                    label_h + endpoint_pad_y * 2.0,
+                ));
                 if layout.kind == crate::ir::DiagramKind::State {
                     svg.push_str(&text_block_svg_with_font_size(
                         x,
@@ -1631,8 +1677,12 @@ fn render_requirement(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> 
         ));
     }
 
-    let label_positions =
-        compute_edge_label_positions(&layout.edges, &layout.nodes, &layout.subgraphs);
+    let label_positions = compute_edge_label_positions(
+        &layout.edges,
+        &layout.nodes,
+        &layout.subgraphs,
+        Some((layout.width, layout.height)),
+    );
     for (idx, edge) in layout.edges.iter().enumerate() {
         let stroke = edge
             .override_style
@@ -4327,10 +4377,82 @@ fn compute_edge_label_positions(
     edges: &[EdgeLayout],
     nodes: &std::collections::BTreeMap<String, crate::layout::NodeLayout>,
     subgraphs: &[crate::layout::SubgraphLayout],
+    bounds: Option<(f32, f32)>,
 ) -> HashMap<usize, Option<(f32, f32, TextBlock)>> {
-    let mut occupied: Vec<(f32, f32, f32, f32)> = Vec::new();
+    let mut occupied: Vec<(f32, f32, f32, f32)> = build_label_obstacles(nodes, subgraphs);
     let edge_obstacles = build_edge_obstacles(edges, 6.0);
+    let mut positions = HashMap::new();
 
+    for (idx, edge) in edges.iter().enumerate() {
+        let Some(label) = edge.label.clone() else {
+            positions.insert(idx, None);
+            continue;
+        };
+        let (anchor_x, anchor_y, dir_x, dir_y) = edge_label_anchor(edge);
+        let normal_x = -dir_y;
+        let normal_y = dir_x;
+        let step_n = if normal_x.abs() > normal_y.abs() {
+            label.width + 10.0
+        } else {
+            label.height + 8.0
+        };
+        let step_t = if dir_x.abs() > dir_y.abs() {
+            label.width + 12.0
+        } else {
+            label.height + 10.0
+        };
+        let normal_steps = [0.0, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0];
+        let tangent_steps = [0.0, 0.6, -0.6, 1.2, -1.2];
+        let mut best_pos = (anchor_x, anchor_y);
+        let mut best_cost = f32::INFINITY;
+        for t in tangent_steps {
+            let base_x = anchor_x + dir_x * step_t * t;
+            let base_y = anchor_y + dir_y * step_t * t;
+            for n in normal_steps {
+                let x = base_x + normal_x * step_n * n;
+                let y = base_y + normal_y * step_n * n;
+                let rect = (
+                    x - label.width / 2.0 - 6.0,
+                    y - label.height / 2.0 - 4.0,
+                    label.width + 12.0,
+                    label.height + 8.0,
+                );
+                let cost = label_cost(
+                    rect,
+                    (anchor_x, anchor_y),
+                    label.width,
+                    label.height,
+                    &occupied,
+                    &edge_obstacles,
+                    idx,
+                    bounds,
+                );
+                if cost < best_cost {
+                    best_cost = cost;
+                    best_pos = (x, y);
+                }
+            }
+        }
+        let rect = (
+            best_pos.0 - label.width / 2.0 - 6.0,
+            best_pos.1 - label.height / 2.0 - 4.0,
+            label.width + 12.0,
+            label.height + 8.0,
+        );
+        occupied.push(rect);
+        let placed = Some((best_pos.0, best_pos.1, label.clone()));
+
+        positions.insert(idx, placed);
+    }
+
+    positions
+}
+
+fn build_label_obstacles(
+    nodes: &std::collections::BTreeMap<String, crate::layout::NodeLayout>,
+    subgraphs: &[crate::layout::SubgraphLayout],
+) -> Vec<Rect> {
+    let mut occupied: Vec<Rect> = Vec::new();
     for node in nodes.values() {
         if node.anchor_subgraph.is_some() {
             continue;
@@ -4342,7 +4464,6 @@ fn compute_edge_label_positions(
             node.height + 12.0,
         ));
     }
-
     for sub in subgraphs {
         if sub.label.trim().is_empty() {
             continue;
@@ -4353,55 +4474,7 @@ fn compute_edge_label_positions(
         let y = sub.y + 6.0;
         occupied.push((x - 4.0, y, width + 8.0, height + 4.0));
     }
-    let mut positions = HashMap::new();
-
-    for (idx, edge) in edges.iter().enumerate() {
-        let Some(label) = edge.label.clone() else {
-            positions.insert(idx, None);
-            continue;
-        };
-        let (mid_x, mid_y, offset_axis) = edge_label_anchor(edge);
-        let mut placed = None;
-
-        let step = match offset_axis {
-            OffsetAxis::X => (label.width / 2.0 + 12.0).max(18.0),
-            OffsetAxis::Y => (label.height + 8.0).max(18.0),
-        };
-
-        for attempt in 0..6 {
-            let dir = if attempt % 2 == 0 { 1.0 } else { -1.0 };
-            let offset = if attempt == 0 {
-                0.0
-            } else {
-                let step_mul = ((attempt + 1) / 2) as f32;
-                dir * step_mul * step
-            };
-
-            let (x, y) = match offset_axis {
-                OffsetAxis::X => (mid_x + offset, mid_y),
-                OffsetAxis::Y => (mid_x, mid_y + offset),
-            };
-            let rect = (
-                x - label.width / 2.0 - 6.0,
-                y - label.height / 2.0 - 4.0,
-                label.width + 12.0,
-                label.height + 8.0,
-            );
-            if !collides(&rect, &occupied) && !collides_edges(&rect, &edge_obstacles, idx) {
-                occupied.push(rect);
-                placed = Some((x, y, label.clone()));
-                break;
-            }
-        }
-
-        if placed.is_none() {
-            placed = Some((mid_x, mid_y, label));
-        }
-
-        positions.insert(idx, placed);
-    }
-
-    positions
+    occupied
 }
 
 fn is_divider_line(line: &str) -> bool {
@@ -4781,15 +4854,9 @@ fn render_er_node(
     svg
 }
 
-#[derive(Debug, Clone, Copy)]
-enum OffsetAxis {
-    X,
-    Y,
-}
-
-fn edge_label_anchor(edge: &EdgeLayout) -> (f32, f32, OffsetAxis) {
+fn edge_label_anchor(edge: &EdgeLayout) -> (f32, f32, f32, f32) {
     if edge.points.len() < 2 {
-        return (0.0, 0.0, OffsetAxis::Y);
+        return (0.0, 0.0, 1.0, 0.0);
     }
     let segment_count = edge.points.len() - 1;
     let mut best_idx: Option<usize> = None;
@@ -4830,26 +4897,70 @@ fn edge_label_anchor(edge: &EdgeLayout) -> (f32, f32, OffsetAxis) {
     let idx = best_idx.unwrap_or(0);
     let p1 = edge.points[idx];
     let p2 = edge.points[idx + 1];
-    let dx = (p2.0 - p1.0).abs();
-    let dy = (p2.1 - p1.1).abs();
-    let axis = if dx > dy {
-        OffsetAxis::Y
-    } else {
-        OffsetAxis::X
-    };
-    ((p1.0 + p2.0) / 2.0, (p1.1 + p2.1) / 2.0, axis)
+    let dx = p2.0 - p1.0;
+    let dy = p2.1 - p1.1;
+    let len = (dx * dx + dy * dy).sqrt().max(1e-3);
+    let dir_x = dx / len;
+    let dir_y = dy / len;
+    ((p1.0 + p2.0) / 2.0, (p1.1 + p2.1) / 2.0, dir_x, dir_y)
 }
 
 type Rect = (f32, f32, f32, f32);
 type EdgeObstacle = (usize, Rect);
 
-fn collides(rect: &Rect, occupied: &[Rect]) -> bool {
-    for (x, y, w, h) in occupied {
-        if rect.0 < x + w && rect.0 + rect.2 > *x && rect.1 < y + h && rect.1 + rect.3 > *y {
-            return true;
-        }
+fn overlap_area(a: &Rect, b: &Rect) -> f32 {
+    let x0 = a.0.max(b.0);
+    let y0 = a.1.max(b.1);
+    let x1 = (a.0 + a.2).min(b.0 + b.2);
+    let y1 = (a.1 + a.3).min(b.1 + b.3);
+    let w = (x1 - x0).max(0.0);
+    let h = (y1 - y0).max(0.0);
+    w * h
+}
+
+fn outside_area(rect: &Rect, bounds: (f32, f32)) -> f32 {
+    let (w, h) = bounds;
+    let rect_area = rect.2.max(0.0) * rect.3.max(0.0);
+    if rect_area <= 0.0 {
+        return 0.0;
     }
-    false
+    let x0 = rect.0.max(0.0);
+    let y0 = rect.1.max(0.0);
+    let x1 = (rect.0 + rect.2).min(w);
+    let y1 = (rect.1 + rect.3).min(h);
+    let inside_w = (x1 - x0).max(0.0);
+    let inside_h = (y1 - y0).max(0.0);
+    rect_area - inside_w * inside_h
+}
+
+fn label_cost(
+    rect: Rect,
+    anchor: (f32, f32),
+    label_w: f32,
+    label_h: f32,
+    occupied: &[Rect],
+    edge_obstacles: &[EdgeObstacle],
+    edge_idx: usize,
+    bounds: Option<(f32, f32)>,
+) -> f32 {
+    let area = (label_w * label_h).max(1.0);
+    let mut overlap = 0.0;
+    for occ in occupied {
+        overlap += overlap_area(&rect, occ);
+    }
+    for (idx, obs) in edge_obstacles {
+        if *idx == edge_idx {
+            continue;
+        }
+        overlap += overlap_area(&rect, obs);
+    }
+    if let Some(bound) = bounds {
+        overlap += outside_area(&rect, bound);
+    }
+    let dx = (rect.0 + rect.2 * 0.5) - anchor.0;
+    let dy = (rect.1 + rect.3 * 0.5) - anchor.1;
+    let dist = (dx * dx + dy * dy).sqrt();
+    overlap / area + dist / (label_w + label_h + 1.0)
 }
 
 fn build_edge_obstacles(edges: &[EdgeLayout], pad: f32) -> Vec<EdgeObstacle> {
@@ -4865,18 +4976,6 @@ fn build_edge_obstacles(edges: &[EdgeLayout], pad: f32) -> Vec<EdgeObstacle> {
         }
     }
     obstacles
-}
-
-fn collides_edges(rect: &Rect, obstacles: &[EdgeObstacle], edge_idx: usize) -> bool {
-    for (idx, (x, y, w, h)) in obstacles {
-        if *idx == edge_idx {
-            continue;
-        }
-        if rect.0 < x + w && rect.0 + rect.2 > *x && rect.1 < y + h && rect.1 + rect.3 > *y {
-            return true;
-        }
-    }
-    false
 }
 
 pub fn write_output_svg(svg: &str, output: Option<&Path>) -> Result<()> {
@@ -5090,6 +5189,77 @@ fn edge_endpoint_label_position(edge: &EdgeLayout, start: bool, offset: f32) -> 
     let perp_x = -dir_y;
     let perp_y = dir_x;
     Some((base_x + perp_x * offset, base_y + perp_y * offset))
+}
+
+fn edge_endpoint_label_position_with_avoid(
+    edge: &EdgeLayout,
+    edge_idx: usize,
+    start: bool,
+    offset: f32,
+    label_w: f32,
+    label_h: f32,
+    occupied: &[Rect],
+    edge_obstacles: &[EdgeObstacle],
+    bounds: Option<(f32, f32)>,
+) -> Option<(f32, f32)> {
+    if edge.points.len() < 2 {
+        return None;
+    }
+    let (p0, p1) = if start {
+        (edge.points[0], edge.points[1])
+    } else {
+        (
+            edge.points[edge.points.len() - 1],
+            edge.points[edge.points.len() - 2],
+        )
+    };
+    let dx = p1.0 - p0.0;
+    let dy = p1.1 - p0.1;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len <= f32::EPSILON {
+        return None;
+    }
+    let dir_x = dx / len;
+    let dir_y = dy / len;
+    let perp_x = -dir_y;
+    let perp_y = dir_x;
+    let anchor_x = p0.0 + dir_x * offset * 1.4;
+    let anchor_y = p0.1 + dir_y * offset * 1.4;
+    let along_steps = [0.0, 0.8, -0.8, 1.6, -1.6];
+    let perp_steps = [
+        1.0, -1.0, 1.7, -1.7, 2.4, -2.4, 3.2, -3.2, 3.9, -3.9, 4.6, -4.6,
+    ];
+    let mut best_pos = (anchor_x, anchor_y);
+    let mut best_cost = f32::INFINITY;
+    for along in along_steps {
+        let base_x = p0.0 + dir_x * offset * (1.4 + along);
+        let base_y = p0.1 + dir_y * offset * (1.4 + along);
+        for step in perp_steps {
+            let x = base_x + perp_x * offset * step;
+            let y = base_y + perp_y * offset * step;
+            let rect = (
+                x - label_w / 2.0 - 4.0,
+                y - label_h / 2.0 - 3.0,
+                label_w + 8.0,
+                label_h + 6.0,
+            );
+            let cost = label_cost(
+                rect,
+                (anchor_x, anchor_y),
+                label_w,
+                label_h,
+                occupied,
+                edge_obstacles,
+                edge_idx,
+                bounds,
+            );
+            if cost < best_cost {
+                best_cost = cost;
+                best_pos = (x, y);
+            }
+        }
+    }
+    Some(best_pos)
 }
 
 #[cfg(feature = "png")]
