@@ -2297,6 +2297,7 @@ fn render_pie(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
         y: f32,
         edge_x: f32,
         edge_y: f32,
+        line_color: String,
     }
 
     let mut labels: Vec<PieLabel> = Vec::new();
@@ -2340,6 +2341,7 @@ fn render_pie(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
             y: label_y,
             edge_x,
             edge_y,
+            line_color: slice.color.clone(),
         });
     }
 
@@ -2412,12 +2414,37 @@ fn render_pie(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
             };
             svg.push_str(&format!(
                 "<path d=\"M {sx:.2},{sy:.2} L {mx:.2},{ly:.2} L {lx:.2},{ly:.2}\" fill=\"none\" stroke=\"{}\" stroke-width=\"1\"/>",
-                theme.pie_stroke_color,
+                escape_xml(&label.line_color),
                 sx = label.edge_x,
                 sy = label.edge_y,
                 mx = elbow_x,
                 lx = label_x,
                 ly = label.y
+            ));
+            let label_width = text_metrics::measure_text_width(
+                label.text.as_str(),
+                label.font_size,
+                theme.font_family.as_str(),
+            )
+            .unwrap_or(label.text.chars().count() as f32 * label.font_size * 0.55);
+            let pad_x = (label.font_size * 0.35).max(4.0);
+            let pad_y = (label.font_size * 0.25).max(2.5);
+            let rect_w = label_width + pad_x * 2.0;
+            let rect_h = label.font_size + pad_y * 2.0;
+            let rect_x = if label.side >= 0 {
+                label_x - pad_x
+            } else {
+                label_x - rect_w + pad_x
+            };
+            let rect_y = label.y - rect_h / 2.0;
+            let bg = if theme.edge_label_background == "none" {
+                theme.background.as_str()
+            } else {
+                theme.edge_label_background.as_str()
+            };
+            svg.push_str(&format!(
+                "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" stroke=\"none\"/>",
+                escape_xml(bg)
             ));
         }
         svg.push_str(&format!(
