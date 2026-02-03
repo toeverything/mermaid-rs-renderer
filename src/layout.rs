@@ -8232,7 +8232,7 @@ fn subgraph_padding_from_label(
     } else if graph.kind == crate::ir::DiagramKind::Kanban {
         pad_y.max(label_height + 4.0)
     } else if graph.kind == crate::ir::DiagramKind::State {
-        (label_height + theme.font_size * 0.4).max(18.0)
+        (label_height + theme.font_size * 0.75).max(theme.font_size * 1.4)
     } else {
         pad_y + label_height + 8.0
     };
@@ -11137,7 +11137,6 @@ fn shape_size(
 ) -> (f32, f32) {
     let (pad_x_factor, pad_y_factor) = shape_padding_factors(shape);
     let (kind_pad_x_scale, kind_pad_y_scale) = match kind {
-        crate::ir::DiagramKind::State => (0.3, 0.58),
         crate::ir::DiagramKind::Class => {
             let pad_x_scale = if has_divider_line(label) { 0.85 } else { 0.4 };
             (pad_x_scale, 0.8)
@@ -11147,8 +11146,14 @@ fn shape_size(
         crate::ir::DiagramKind::Requirement => (0.1, 1.0),
         _ => (1.0, 1.0),
     };
-    let pad_x = config.node_padding_x * pad_x_factor * kind_pad_x_scale;
-    let pad_y = config.node_padding_y * pad_y_factor * kind_pad_y_scale;
+    let mut pad_x = config.node_padding_x * pad_x_factor * kind_pad_x_scale;
+    let mut pad_y = config.node_padding_y * pad_y_factor * kind_pad_y_scale;
+    if kind == crate::ir::DiagramKind::State {
+        let dynamic_pad_x = (theme.font_size * 0.9).max(label.width * 0.12);
+        let dynamic_pad_y = (theme.font_size * 0.65).max(label.height * 0.22);
+        pad_x = dynamic_pad_x;
+        pad_y = dynamic_pad_y;
+    }
     let base_width = label.width + pad_x * 2.0;
     let base_height = label.height + pad_y * 2.0;
     let mut width = base_width;

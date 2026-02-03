@@ -6,7 +6,7 @@ use crate::layout::{
     GitGraphLayout, JourneyLayout, Layout, SankeyLayout, TextBlock,
 };
 use crate::text_metrics;
-use crate::theme::Theme;
+use crate::theme::{adjust_color, Theme};
 use anyhow::Result;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -309,29 +309,66 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             if invisible {
                 continue;
             }
+            let header_h = if label_empty {
+                0.0
+            } else {
+                (subgraph.label_block.height + theme.font_size * 0.75)
+                    .max(theme.font_size * 1.4)
+            };
+            let header_fill = if sub_fill.as_str() == "none" {
+                "none".to_string()
+            } else {
+                adjust_color(sub_fill, 0.0, 0.0, -4.0)
+            };
+            let body_fill = if sub_fill.as_str() == "none" {
+                theme.background.clone()
+            } else {
+                adjust_color(sub_fill, 0.0, -12.0, 10.0)
+            };
+            if header_h > 0.0 {
+                svg.push_str(&format!(
+                    "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"6\" ry=\"6\" fill=\"{}\" stroke=\"none\"/>",
+                    subgraph.x,
+                    subgraph.y,
+                    subgraph.width,
+                    header_h,
+                    header_fill
+                ));
+            }
+            let inner_y = subgraph.y + header_h;
+            let inner_h = (subgraph.height - header_h).max(0.0);
+            if inner_h > 0.0 {
+                svg.push_str(&format!(
+                    "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" stroke=\"none\"/>",
+                    subgraph.x,
+                    inner_y,
+                    subgraph.width,
+                    inner_h,
+                    body_fill
+                ));
+            }
+            if header_h > 0.0 {
+                svg.push_str(&format!(
+                    "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" stroke-width=\"1\"/>",
+                    subgraph.x,
+                    inner_y,
+                    subgraph.x + subgraph.width,
+                    inner_y,
+                    sub_stroke
+                ));
+            }
             svg.push_str(&format!(
-                "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"5\" ry=\"5\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\"/>",
+                "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"6\" ry=\"6\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"/>",
                 subgraph.x,
                 subgraph.y,
                 subgraph.width,
                 subgraph.height,
-                sub_fill,
                 sub_stroke,
                 sub_stroke_width
             ));
-            let header_h = (theme.font_size * 1.4).max(subgraph.label_block.height + 4.0);
-            let inner_y = subgraph.y + header_h;
-            let inner_h = (subgraph.height - header_h).max(0.0);
-            svg.push_str(&format!(
-                "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" stroke=\"none\"/>",
-                subgraph.x,
-                inner_y,
-                subgraph.width,
-                inner_h,
-                theme.background
-            ));
             if !label_empty {
-                let label_x = subgraph.x + 12.0;
+                let label_pad_x = (theme.font_size * 0.6).max(subgraph.label_block.height * 0.35);
+                let label_x = subgraph.x + label_pad_x;
                 let label_y = subgraph.y + header_h / 2.0;
                 svg.push_str(&text_block_svg_with_font_size(
                     label_x,
