@@ -21,10 +21,11 @@ h2 { border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-top: 40px; }
 </head>
 <body>
 <h1>mmdr vs mermaid-cli Visual Comparison</h1>
-<p class="stats">Comparing output quality between mmdr (Rust) and mermaid-cli (Node.js + Chromium)<br>Last regenerated: 2026-02-02 23:44 UTC</p>
+<p class="stats">Comparing output quality between mmdr (Rust) and mermaid-cli (Node.js + Chromium)<br>Last regenerated: <span id="regen-ts" data-regen="2026-02-02T23:58:24Z">2026-02-02 23:58 UTC</span> (<span id="regen-ago">just now</span> ago)</p>
 
 <h2>Changelog</h2>
 <ul class="changelog">
+<li>2026-02-02 80546eb Add comparison changelog and regen timestamp</li>
 <li>2026-02-01 8ec7721 Regenerate layout comparison report</li>
 <li>2026-02-01 5f69174 Refine layout ordering, routing gating, and modern theme</li>
 <li>2026-02-01 09ad026 Regenerate layout comparison report</li>
@@ -34,7 +35,6 @@ h2 { border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-top: 40px; }
 <li>2026-02-01 91fad86 Add layout quality benchmark metrics</li>
 <li>2026-02-01 3a914fa Optimize edge occupancy scoring for dense routing</li>
 <li>2026-01-31 604014f Expand edge detours when overlaps persist</li>
-<li>2026-01-31 5dc8118 Tighten port placement and edge routing avoidance</li>
 </ul>
 
 <h2>Flowchart</h2>
@@ -193,5 +193,32 @@ ORDER {
 <div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/quadrant_official.svg?v=2" alt="official quadrant"></div>
 </div>
 
+<script>
+(() => {
+  const tsEl = document.getElementById("regen-ts");
+  const agoEl = document.getElementById("regen-ago");
+  if (!tsEl || !agoEl) return;
+  const ts = tsEl.getAttribute("data-regen");
+  if (!ts) return;
+  const then = new Date(ts);
+  if (Number.isNaN(then.getTime())) return;
+  const now = new Date();
+  const diffMs = Math.max(0, now - then);
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) {
+    agoEl.textContent = "just now";
+    return;
+  }
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  const parts = [];
+  if (days > 0) parts.push(`${days}d`);
+  const remHours = hours % 24;
+  if (remHours > 0 && parts.length < 2) parts.push(`${remHours}h`);
+  const remMinutes = minutes % 60;
+  if (remMinutes > 0 && parts.length < 2) parts.push(`${remMinutes}m`);
+  agoEl.textContent = parts.join(" ");
+})();
+</script>
 </body>
 </html>
