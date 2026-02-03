@@ -3330,10 +3330,16 @@ fn compute_pie_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
     let mut legend_width: f32 = 0.0;
     let mut legend_items: Vec<(TextBlock, String)> = Vec::new();
     for slice in &graph.pie_slices {
-        let label_text = if graph.pie_show_data {
-            format!("{} [{}]", slice.label, slice.value)
+        let percent = if total > 0.0 {
+            slice.value.max(0.0) / total * 100.0
         } else {
-            slice.label.clone()
+            0.0
+        };
+        let value_text = format_pie_value(slice.value);
+        let label_text = if graph.pie_show_data {
+            format!("{} — {} ({:.0}%)", slice.label, value_text, percent)
+        } else {
+            format!("{} ({:.0}%)", slice.label, percent)
         };
         let label = measure_label_with_font_size(
             &label_text,
@@ -3355,7 +3361,7 @@ fn compute_pie_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
     let radius = (pie_width.min(height) / 2.0 - pie_cfg.margin).max(1.0);
     let center_x = pie_width / 2.0;
     let center_y = height / 2.0;
-    let legend_x = center_x + pie_cfg.legend_horizontal_multiplier * pie_cfg.legend_rect_size;
+    let legend_x = center_x + radius + pie_cfg.margin * 0.6;
 
     for (idx, (label, color)) in legend_items.into_iter().enumerate() {
         let vertical = idx as f32 * legend_item_height - legend_offset;
@@ -3369,11 +3375,11 @@ fn compute_pie_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         });
     }
 
-    let width = pie_width
-        + pie_cfg.margin
+    let width = legend_x
         + pie_cfg.legend_rect_size
         + pie_cfg.legend_spacing
-        + legend_width;
+        + legend_width
+        + pie_cfg.margin * 0.4;
     let title_layout = title_block.map(|text| PieTitleLayout {
         x: center_x,
         y: center_y - (height - 50.0) / 2.0,
@@ -11041,7 +11047,7 @@ fn shape_size(
 ) -> (f32, f32) {
     let (pad_x_factor, pad_y_factor) = shape_padding_factors(shape);
     let (kind_pad_x_scale, kind_pad_y_scale) = match kind {
-        crate::ir::DiagramKind::State => (0.18, 0.47),
+        crate::ir::DiagramKind::State => (0.3, 0.58),
         crate::ir::DiagramKind::Class => {
             let pad_x_scale = if has_divider_line(label) { 0.85 } else { 0.4 };
             (pad_x_scale, 0.8)

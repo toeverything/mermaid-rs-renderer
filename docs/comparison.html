@@ -21,10 +21,11 @@ h2 { border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-top: 40px; }
 </head>
 <body>
 <h1>mmdr vs mermaid-cli Visual Comparison</h1>
-<p class="stats">Comparing output quality between mmdr (Rust) and mermaid-cli (Node.js + Chromium)<br>Last regenerated: <span id="regen-ts" data-regen="2026-02-03T01:06:51Z">2026-02-03 01:06 UTC</span> (<span id="regen-ago">just now</span> ago)</p>
+<p class="stats">Comparing output quality between mmdr (Rust) and mermaid-cli (Node.js + Chromium)<br>Last regenerated: <span id="regen-ts" data-regen="2026-02-03T01:25:26Z">2026-02-03 01:25 UTC</span> (<span id="regen-ago">just now</span> ago)</p>
 
 <h2>Changelog</h2>
 <ul class="changelog">
+<li>2026-02-02 756148d Regenerate comparison visuals</li>
 <li>2026-02-02 467e913 Merge layout-overhaul</li>
 <li>2026-02-02 0e14edf Redesign ER diagram tables (option A)</li>
 <li>2026-02-02 f3eab20 Automate comparison metadata and add ER design options</li>
@@ -34,7 +35,6 @@ h2 { border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-top: 40px; }
 <li>2026-02-02 e385d37 Improve flow routing and gantt rendering</li>
 <li>2026-02-02 349cd0a Refresh official comparison baselines</li>
 <li>2026-02-02 c27208b Tighten state spacing and improve gantt/pie labels</li>
-<li>2026-02-02 603f47f Redesign journey layout and refine ER tables</li>
 </ul>
 
 <h2>Flowchart</h2>
@@ -45,8 +45,8 @@ h2 { border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-top: 40px; }
   B -->|no| D[\\Skip\\]
   C --> E[[End]]
   D --> E</pre></div>
-<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/flowchart_mmdr.svg?v=10" alt="mmdr flowchart"></div>
-<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/flowchart_official.svg?v=10" alt="official flowchart"></div>
+<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/flowchart_mmdr.svg?v=11" alt="mmdr flowchart"></div>
+<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/flowchart_official.svg?v=11" alt="official flowchart"></div>
 </div>
 
 <h2>Sequence Diagram</h2>
@@ -56,8 +56,8 @@ h2 { border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-top: 40px; }
   participant Bob
   Alice->>Bob: Hello Bob
   Bob-->>Alice: Hi Alice</pre></div>
-<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/sequence_mmdr.svg?v=10" alt="mmdr sequence"></div>
-<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/sequence_official.svg?v=10" alt="official sequence"></div>
+<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/sequence_mmdr.svg?v=11" alt="mmdr sequence"></div>
+<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/sequence_official.svg?v=11" alt="official sequence"></div>
 </div>
 
 <h2>Class Diagram</h2>
@@ -69,8 +69,8 @@ class Animal {
 }
 class Dog
 Animal <|-- Dog : inherits</pre></div>
-<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/class_mmdr.svg?v=10" alt="mmdr class"></div>
-<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/class_official.svg?v=10" alt="official class"></div>
+<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/class_mmdr.svg?v=11" alt="mmdr class"></div>
+<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/class_official.svg?v=11" alt="official class"></div>
 </div>
 
 <h2>State Diagram</h2>
@@ -80,8 +80,8 @@ Animal <|-- Dog : inherits</pre></div>
 Idle --> Active : start
 state "Waiting" as Wait
 Wait --> Active</pre></div>
-<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/state_mmdr.svg?v=10" alt="mmdr state"></div>
-<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/state_official.svg?v=10" alt="official state"></div>
+<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/state_mmdr.svg?v=11" alt="mmdr state"></div>
+<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/state_official.svg?v=11" alt="official state"></div>
 </div>
 
 <h2>ER Diagram</h2>
@@ -96,8 +96,8 @@ ORDER {
   string id
   date created_at
 }</pre></div>
-<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/er_mmdr.svg?v=10" alt="mmdr ER"></div>
-<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/er_official.svg?v=10" alt="official ER"></div>
+<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/er_mmdr.svg?v=11" alt="mmdr ER"></div>
+<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/er_official.svg?v=11" alt="official ER"></div>
 </div>
 
 <h2>Pie Chart</h2>
@@ -106,8 +106,8 @@ ORDER {
   title Pets
   "Dogs" : 10
   Cats : 5</pre></div>
-<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/pie_mmdr.svg?v=10" alt="mmdr pie"></div>
-<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/pie_official.svg?v=10" alt="official pie"></div>
+<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/pie_mmdr.svg?v=11" alt="mmdr pie"></div>
+<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/pie_official.svg?v=11" alt="official pie"></div>
 </div>
 
 <h2>Gantt Chart</h2>
@@ -118,8 +118,8 @@ ORDER {
   section Alpha
   Task A : done, a1, 2026-01-01, 5d
   Task B : after a1, 3d</pre></div>
-<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/gantt_mmdr.svg?v=10" alt="mmdr gantt"></div>
-<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/gantt_official.svg?v=10" alt="official gantt"></div>
+<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/gantt_mmdr.svg?v=11" alt="mmdr gantt"></div>
+<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/gantt_official.svg?v=11" alt="official gantt"></div>
 </div>
 
 <h2>Mindmap</h2>
@@ -129,8 +129,8 @@ ORDER {
     Child A
     Child B
       Grandchild</pre></div>
-<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/mindmap_mmdr.svg?v=10" alt="mmdr mindmap"></div>
-<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/mindmap_official.svg?v=10" alt="official mindmap"></div>
+<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/mindmap_mmdr.svg?v=11" alt="mmdr mindmap"></div>
+<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/mindmap_official.svg?v=11" alt="official mindmap"></div>
 </div>
 
 <h2>Timeline</h2>
@@ -139,8 +139,8 @@ ORDER {
   title History
   2020 : Launch
   2021 : Growth</pre></div>
-<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/timeline_mmdr.svg?v=10" alt="mmdr timeline"></div>
-<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/timeline_official.svg?v=10" alt="official timeline"></div>
+<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/timeline_mmdr.svg?v=11" alt="mmdr timeline"></div>
+<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/timeline_official.svg?v=11" alt="official timeline"></div>
 </div>
 
 <h2>User Journey</h2>
@@ -150,8 +150,8 @@ ORDER {
   section Start
     Step one: 5: Alice
     Step two: 3: Alice, Bob</pre></div>
-<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/journey_mmdr.svg?v=10" alt="mmdr journey"></div>
-<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/journey_official.svg?v=10" alt="official journey"></div>
+<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/journey_mmdr.svg?v=11" alt="mmdr journey"></div>
+<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/journey_official.svg?v=11" alt="official journey"></div>
 </div>
 
 <h2>Git Graph</h2>
@@ -163,8 +163,8 @@ ORDER {
   commit id:"F1"
   checkout main
   merge feature</pre></div>
-<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/gitgraph_mmdr.svg?v=10" alt="mmdr gitgraph"></div>
-<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/gitgraph_official.svg?v=10" alt="official gitgraph"></div>
+<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/gitgraph_mmdr.svg?v=11" alt="mmdr gitgraph"></div>
+<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/gitgraph_official.svg?v=11" alt="official gitgraph"></div>
 </div>
 
 <h2>XY Chart</h2>
@@ -173,8 +173,8 @@ ORDER {
   x-axis [Q1, Q2]
   y-axis Units
   bar [10, 20]</pre></div>
-<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/xychart_mmdr.svg?v=10" alt="mmdr xychart"></div>
-<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/xychart_official.svg?v=10" alt="official xychart"></div>
+<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/xychart_mmdr.svg?v=11" alt="mmdr xychart"></div>
+<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/xychart_official.svg?v=11" alt="official xychart"></div>
 </div>
 
 <h2>Quadrant Chart</h2>
@@ -189,8 +189,8 @@ ORDER {
   quadrant-4 Re-evaluate
   A : [0.2, 0.8]
   B : [0.7, 0.3]</pre></div>
-<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/quadrant_mmdr.svg?v=10" alt="mmdr quadrant"></div>
-<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/quadrant_official.svg?v=10" alt="official quadrant"></div>
+<div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/quadrant_mmdr.svg?v=11" alt="mmdr quadrant"></div>
+<div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/quadrant_official.svg?v=11" alt="official quadrant"></div>
 </div>
 
 <script>
