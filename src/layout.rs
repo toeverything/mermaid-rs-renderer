@@ -4972,7 +4972,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         }
         apply_orthogonal_region_bands(graph, &mut nodes, config);
         if graph.kind != crate::ir::DiagramKind::State {
-            apply_subgraph_bands(graph, &mut nodes, &anchored_nodes, config);
+            apply_subgraph_bands(graph, &mut nodes, config);
         }
     }
 
@@ -6570,7 +6570,6 @@ fn median_position(
 fn apply_subgraph_bands(
     graph: &Graph,
     nodes: &mut BTreeMap<String, NodeLayout>,
-    anchored_nodes: &HashSet<String>,
     config: &LayoutConfig,
 ) {
     let mut group_nodes: Vec<Vec<String>> = Vec::new();
@@ -6578,12 +6577,6 @@ fn apply_subgraph_bands(
 
     // Group 0: nodes not in any subgraph.
     group_nodes.push(Vec::new());
-    for node_id in graph.nodes.keys() {
-        if anchored_nodes.contains(node_id) {
-            continue;
-        }
-        node_group.insert(node_id.clone(), 0);
-    }
 
     let top_level = top_level_subgraph_indices(graph);
     for (pos, idx) in top_level.iter().enumerate() {
@@ -6591,13 +6584,22 @@ fn apply_subgraph_bands(
         let sub = &graph.subgraphs[*idx];
         group_nodes.push(Vec::new());
         for node_id in &sub.nodes {
-            if anchored_nodes.contains(node_id) {
-                continue;
-            }
             if nodes.contains_key(node_id) {
                 node_group.insert(node_id.clone(), group_idx);
             }
         }
+        if let Some(anchor_id) = subgraph_anchor_id(sub, nodes) {
+            if nodes.contains_key(anchor_id) {
+                node_group.insert(anchor_id.to_string(), group_idx);
+            }
+        }
+    }
+
+    for node_id in graph.nodes.keys() {
+        if node_group.contains_key(node_id) {
+            continue;
+        }
+        node_group.insert(node_id.clone(), 0);
     }
 
     for (node_id, group_idx) in &node_group {
@@ -9380,7 +9382,7 @@ fn shape_size(
             let pad_x_scale = if has_divider_line(label) { 0.85 } else { 0.4 };
             (pad_x_scale, 0.8)
         }
-        crate::ir::DiagramKind::Er => (0.83, 1.07),
+        crate::ir::DiagramKind::Er => (1.05, 1.15),
         crate::ir::DiagramKind::Kanban => (2.3, 0.67),
         crate::ir::DiagramKind::Requirement => (0.1, 1.0),
         _ => (1.0, 1.0),
