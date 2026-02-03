@@ -16,8 +16,25 @@ def run(cmd: List[str]) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
 
+def mmdr_needs_rebuild(bin_path: Path) -> bool:
+    if not bin_path.exists():
+        return True
+    bin_mtime = bin_path.stat().st_mtime
+    candidates = [
+        ROOT / "Cargo.toml",
+        ROOT / "Cargo.lock",
+    ]
+    for path in candidates:
+        if path.exists() and path.stat().st_mtime > bin_mtime:
+            return True
+    for path in (ROOT / "src").rglob("*.rs"):
+        if path.stat().st_mtime > bin_mtime:
+            return True
+    return False
+
+
 def ensure_mmdr(bin_path: Path) -> None:
-    if bin_path.exists():
+    if not mmdr_needs_rebuild(bin_path):
         return
     res = run(["cargo", "build", "--release"])
     if res.returncode != 0:

@@ -827,12 +827,11 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             }
 
             if let Some((x, y, label)) = label_positions.get(&idx).and_then(|v| v.clone()) {
-                let (pad_x, pad_y, fill_opacity, stroke_opacity) =
-                    if layout.kind == crate::ir::DiagramKind::State {
-                        (3.0, 1.6, 0.7, 0.25)
-                    } else {
-                        (4.0, 2.0, 0.85, 0.35)
-                    };
+                let (pad_x, pad_y, fill_opacity, stroke_opacity) = match layout.kind {
+                    crate::ir::DiagramKind::State => (3.0, 1.6, 0.7, 0.25),
+                    crate::ir::DiagramKind::Flowchart => (4.5, 2.2, 0.95, 0.45),
+                    _ => (4.0, 2.0, 0.85, 0.35),
+                };
                 let label_scale = if layout.kind == crate::ir::DiagramKind::State {
                     (state_font_size / theme.font_size).min(1.0)
                 } else {
@@ -845,13 +844,15 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 let rect_w = label_w + pad_x * 2.0;
                 let rect_h = label_h + pad_y * 2.0;
                 let label_fill = theme.edge_label_background.as_str();
-                svg.push_str(&format!(
-                    "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"{:.2}\" stroke=\"{}\" stroke-opacity=\"{:.2}\" stroke-width=\"0.8\"/>",
-                    label_fill,
-                    fill_opacity,
-                    theme.primary_border_color,
-                    stroke_opacity
-                ));
+                if label_fill != "none" {
+                    svg.push_str(&format!(
+                        "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"{:.2}\" stroke=\"{}\" stroke-opacity=\"{:.2}\" stroke-width=\"0.8\"/>",
+                        label_fill,
+                        fill_opacity,
+                        theme.primary_border_color,
+                        stroke_opacity
+                    ));
+                }
                 if layout.kind == crate::ir::DiagramKind::State {
                     svg.push_str(&text_block_svg_with_font_size(
                         x,
@@ -877,7 +878,25 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 }
             }
 
-            let end_label_offset = (theme.font_size * 0.6).max(8.0);
+            let end_label_offset = match layout.kind {
+                crate::ir::DiagramKind::Class | crate::ir::DiagramKind::Flowchart => {
+                    (theme.font_size * 0.75).max(9.0)
+                }
+                _ => (theme.font_size * 0.6).max(8.0),
+            };
+            let endpoint_label_scale = if layout.kind == crate::ir::DiagramKind::State {
+                (state_font_size / theme.font_size).min(1.0)
+            } else {
+                1.0
+            };
+            let (endpoint_pad_x, endpoint_pad_y, endpoint_fill_opacity, endpoint_stroke_opacity) =
+                match layout.kind {
+                    crate::ir::DiagramKind::State => (2.6, 1.4, 0.7, 0.25),
+                    crate::ir::DiagramKind::Flowchart => (3.4, 1.8, 0.95, 0.45),
+                    crate::ir::DiagramKind::Class => (3.2, 1.6, 0.9, 0.4),
+                    _ => (3.0, 1.6, 0.85, 0.35),
+                };
+            let endpoint_label_fill = theme.edge_label_background.as_str();
             let label_color = edge
                 .override_style
                 .label_color
@@ -886,6 +905,21 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             if let Some(label) = edge.start_label.as_ref()
                 && let Some((x, y)) = edge_endpoint_label_position(edge, true, end_label_offset)
             {
+                if endpoint_label_fill != "none" {
+                    let label_w = label.width * endpoint_label_scale;
+                    let label_h = label.height * endpoint_label_scale;
+                    let rect_x = x - label_w / 2.0 - endpoint_pad_x;
+                    let rect_y = y - label_h / 2.0 - endpoint_pad_y;
+                    let rect_w = label_w + endpoint_pad_x * 2.0;
+                    let rect_h = label_h + endpoint_pad_y * 2.0;
+                    svg.push_str(&format!(
+                        "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"{:.2}\" stroke=\"{}\" stroke-opacity=\"{:.2}\" stroke-width=\"0.8\"/>",
+                        endpoint_label_fill,
+                        endpoint_fill_opacity,
+                        theme.primary_border_color,
+                        endpoint_stroke_opacity
+                    ));
+                }
                 if layout.kind == crate::ir::DiagramKind::State {
                     svg.push_str(&text_block_svg_with_font_size(
                         x,
@@ -913,6 +947,21 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             if let Some(label) = edge.end_label.as_ref()
                 && let Some((x, y)) = edge_endpoint_label_position(edge, false, end_label_offset)
             {
+                if endpoint_label_fill != "none" {
+                    let label_w = label.width * endpoint_label_scale;
+                    let label_h = label.height * endpoint_label_scale;
+                    let rect_x = x - label_w / 2.0 - endpoint_pad_x;
+                    let rect_y = y - label_h / 2.0 - endpoint_pad_y;
+                    let rect_w = label_w + endpoint_pad_x * 2.0;
+                    let rect_h = label_h + endpoint_pad_y * 2.0;
+                    svg.push_str(&format!(
+                        "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"{:.2}\" stroke=\"{}\" stroke-opacity=\"{:.2}\" stroke-width=\"0.8\"/>",
+                        endpoint_label_fill,
+                        endpoint_fill_opacity,
+                        theme.primary_border_color,
+                        endpoint_stroke_opacity
+                    ));
+                }
                 if layout.kind == crate::ir::DiagramKind::State {
                     svg.push_str(&text_block_svg_with_font_size(
                         x,
@@ -4739,31 +4788,56 @@ enum OffsetAxis {
 }
 
 fn edge_label_anchor(edge: &EdgeLayout) -> (f32, f32, OffsetAxis) {
-    if edge.points.len() >= 4 {
-        let p1 = edge.points[1];
-        let p2 = edge.points[2];
-        let dx = (p2.0 - p1.0).abs();
-        let dy = (p2.1 - p1.1).abs();
-        let axis = if dx > dy {
-            OffsetAxis::Y
-        } else {
-            OffsetAxis::X
-        };
-        return ((p1.0 + p2.0) / 2.0, (p1.1 + p2.1) / 2.0, axis);
+    if edge.points.len() < 2 {
+        return (0.0, 0.0, OffsetAxis::Y);
     }
-    if edge.points.len() >= 2 {
-        let p1 = edge.points[0];
-        let p2 = edge.points[edge.points.len() - 1];
-        let dx = (p2.0 - p1.0).abs();
-        let dy = (p2.1 - p1.1).abs();
-        let axis = if dx > dy {
-            OffsetAxis::Y
-        } else {
-            OffsetAxis::X
-        };
-        return ((p1.0 + p2.0) / 2.0, (p1.1 + p2.1) / 2.0, axis);
+    let segment_count = edge.points.len() - 1;
+    let mut best_idx: Option<usize> = None;
+    let mut best_len = 0.0;
+
+    let (start_idx, end_idx) = if segment_count >= 3 {
+        (1, segment_count - 1)
+    } else {
+        (0, segment_count)
+    };
+
+    for idx in start_idx..end_idx {
+        let p1 = edge.points[idx];
+        let p2 = edge.points[idx + 1];
+        let dx = p2.0 - p1.0;
+        let dy = p2.1 - p1.1;
+        let len = dx * dx + dy * dy;
+        if len > best_len {
+            best_len = len;
+            best_idx = Some(idx);
+        }
     }
-    (0.0, 0.0, OffsetAxis::Y)
+
+    if best_idx.is_none() {
+        for idx in 0..segment_count {
+            let p1 = edge.points[idx];
+            let p2 = edge.points[idx + 1];
+            let dx = p2.0 - p1.0;
+            let dy = p2.1 - p1.1;
+            let len = dx * dx + dy * dy;
+            if len > best_len {
+                best_len = len;
+                best_idx = Some(idx);
+            }
+        }
+    }
+
+    let idx = best_idx.unwrap_or(0);
+    let p1 = edge.points[idx];
+    let p2 = edge.points[idx + 1];
+    let dx = (p2.0 - p1.0).abs();
+    let dy = (p2.1 - p1.1).abs();
+    let axis = if dx > dy {
+        OffsetAxis::Y
+    } else {
+        OffsetAxis::X
+    };
+    ((p1.0 + p2.0) / 2.0, (p1.1 + p2.1) / 2.0, axis)
 }
 
 type Rect = (f32, f32, f32, f32);
