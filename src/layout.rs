@@ -11046,9 +11046,9 @@ fn shape_size(
             let pad_x_scale = if has_divider_line(label) { 0.85 } else { 0.4 };
             (pad_x_scale, 0.8)
         }
-        crate::ir::DiagramKind::Er => (0.95, 1.12),
-        crate::ir::DiagramKind::Kanban => (1.7, 0.6),
-        crate::ir::DiagramKind::Requirement => (0.1, 0.85),
+        crate::ir::DiagramKind::Er => (1.05, 1.15),
+        crate::ir::DiagramKind::Kanban => (2.3, 0.67),
+        crate::ir::DiagramKind::Requirement => (0.1, 1.0),
         _ => (1.0, 1.0),
     };
     let pad_x = config.node_padding_x * pad_x_factor * kind_pad_x_scale;

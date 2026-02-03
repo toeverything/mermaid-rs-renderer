@@ -15,11 +15,27 @@ h1 { text-align: center; }
 .panel pre { background: #f8f8f8; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 13px; margin: 0; white-space: pre-wrap; }
 h2 { border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-top: 40px; }
 .stats { text-align: center; color: #666; font-size: 14px; margin-bottom: 30px; }
+.changelog { background: white; padding: 12px 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 30px; }
+.changelog li { margin: 6px 0; font-size: 13px; color: #444; }
 </style>
 </head>
 <body>
 <h1>mmdr vs mermaid-cli Visual Comparison</h1>
-<p class="stats">Comparing output quality between mmdr (Rust) and mermaid-cli (Node.js + Chromium)</p>
+<p class="stats">Comparing output quality between mmdr (Rust) and mermaid-cli (Node.js + Chromium)<br>Last regenerated: <span id="regen-ts" data-regen="2026-02-02T23:58:24Z">2026-02-02 23:58 UTC</span> (<span id="regen-ago">just now</span> ago)</p>
+
+<h2>Changelog</h2>
+<ul class="changelog">
+<li>2026-02-02 80546eb Add comparison changelog and regen timestamp</li>
+<li>2026-02-01 8ec7721 Regenerate layout comparison report</li>
+<li>2026-02-01 5f69174 Refine layout ordering, routing gating, and modern theme</li>
+<li>2026-02-01 09ad026 Regenerate layout comparison report</li>
+<li>2026-02-01 5919b86 Add grid-based flowchart routing architecture</li>
+<li>2026-02-01 d659a8c Add flowchart auto-spacing tuning harness</li>
+<li>2026-02-01 40db493 Improve routing to reduce edge-node crossings</li>
+<li>2026-02-01 91fad86 Add layout quality benchmark metrics</li>
+<li>2026-02-01 3a914fa Optimize edge occupancy scoring for dense routing</li>
+<li>2026-01-31 604014f Expand edge detours when overlaps persist</li>
+</ul>
 
 <h2>Flowchart</h2>
 <div class="comparison">
@@ -177,5 +193,32 @@ ORDER {
 <div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/quadrant_official.svg?v=9" alt="official quadrant"></div>
 </div>
 
+<script>
+(() => {
+  const tsEl = document.getElementById("regen-ts");
+  const agoEl = document.getElementById("regen-ago");
+  if (!tsEl || !agoEl) return;
+  const ts = tsEl.getAttribute("data-regen");
+  if (!ts) return;
+  const then = new Date(ts);
+  if (Number.isNaN(then.getTime())) return;
+  const now = new Date();
+  const diffMs = Math.max(0, now - then);
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) {
+    agoEl.textContent = "just now";
+    return;
+  }
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  const parts = [];
+  if (days > 0) parts.push(`${days}d`);
+  const remHours = hours % 24;
+  if (remHours > 0 && parts.length < 2) parts.push(`${remHours}h`);
+  const remMinutes = minutes % 60;
+  if (remMinutes > 0 && parts.length < 2) parts.push(`${remMinutes}m`);
+  agoEl.textContent = parts.join(" ");
+})();
+</script>
 </body>
 </html>
