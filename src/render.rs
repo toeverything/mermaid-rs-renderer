@@ -2101,7 +2101,6 @@ fn render_pie(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
     }
 
     let pie_cfg = &config.pie;
-    let inner_radius = (radius * 0.55).max(1.0);
     let mut total: f32 = layout.pie_legend.iter().map(|s| s.value.max(0.0)).sum();
     if total <= 0.0 {
         total = layout.pie_slices.iter().map(|s| s.value.max(0.0)).sum();
@@ -2126,23 +2125,9 @@ fn render_pie(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
                 slice_stroke_width,
                 theme.pie_opacity
             ));
-            svg.push_str(&format!(
-                "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"{}\"/>",
-                cx,
-                cy,
-                inner_radius,
-                escape_xml(&theme.background)
-            ));
             continue;
         }
-        let path = pie_donut_path(
-            cx,
-            cy,
-            radius,
-            inner_radius,
-            slice.start_angle,
-            slice.end_angle,
-        );
+        let path = pie_slice_path(cx, cy, radius, slice.start_angle, slice.end_angle);
         svg.push_str(&format!(
             "<path d=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{:.3}\" opacity=\"{:.3}\"/>",
             escape_xml(&path),
@@ -2162,17 +2147,6 @@ fn render_pie(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
             outer_radius,
             escape_xml(&theme.pie_outer_stroke_color),
             theme.pie_outer_stroke_width
-        ));
-    }
-
-    if theme.pie_outer_stroke_width > 0.0 {
-        svg.push_str(&format!(
-            "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{:.3}\"/>",
-            cx,
-            cy,
-            inner_radius,
-            escape_xml(&theme.pie_outer_stroke_color),
-            (theme.pie_outer_stroke_width * 0.8).max(0.8)
         ));
     }
 
@@ -2218,7 +2192,7 @@ fn render_pie(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
         let (label_x, label_y) = if outside {
             (cx + (radius + bump) * mid_angle.cos(), cy + (radius + bump) * mid_angle.sin())
         } else {
-            let label_radius = inner_radius + (radius - inner_radius) * pie_cfg.text_position;
+            let label_radius = radius * pie_cfg.text_position;
             (cx + label_radius * mid_angle.cos(), cy + label_radius * mid_angle.sin())
         };
         labels.push(PieLabel {
@@ -2367,31 +2341,19 @@ fn render_pie(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
     svg
 }
 
-fn pie_donut_path(
-    cx: f32,
-    cy: f32,
-    outer_radius: f32,
-    inner_radius: f32,
-    start_angle: f32,
-    end_angle: f32,
-) -> String {
-    let sx = cx + outer_radius * start_angle.cos();
-    let sy = cy + outer_radius * start_angle.sin();
-    let ex = cx + outer_radius * end_angle.cos();
-    let ey = cy + outer_radius * end_angle.sin();
-    let isx = cx + inner_radius * end_angle.cos();
-    let isy = cy + inner_radius * end_angle.sin();
-    let iex = cx + inner_radius * start_angle.cos();
-    let iey = cy + inner_radius * start_angle.sin();
+fn pie_slice_path(cx: f32, cy: f32, radius: f32, start_angle: f32, end_angle: f32) -> String {
+    let sx = cx + radius * start_angle.cos();
+    let sy = cy + radius * start_angle.sin();
+    let ex = cx + radius * end_angle.cos();
+    let ey = cy + radius * end_angle.sin();
     let large_arc = if (end_angle - start_angle).abs() > std::f32::consts::PI {
         1
     } else {
         0
     };
-    let sweep_outer = 1;
-    let sweep_inner = 0;
+    let sweep = 1;
     format!(
-        "M {sx:.2} {sy:.2} A {outer_radius:.2} {outer_radius:.2} 0 {large_arc} {sweep_outer} {ex:.2} {ey:.2} L {isx:.2} {isy:.2} A {inner_radius:.2} {inner_radius:.2} 0 {large_arc} {sweep_inner} {iex:.2} {iey:.2} Z"
+        "M {cx:.2} {cy:.2} L {sx:.2} {sy:.2} A {radius:.2} {radius:.2} 0 {large_arc} {sweep} {ex:.2} {ey:.2} Z"
     )
 }
 

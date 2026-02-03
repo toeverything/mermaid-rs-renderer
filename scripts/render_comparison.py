@@ -1,0 +1,227 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import html
+import json
+import subprocess
+from pathlib import Path
+from typing import Dict, List
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def run(cmd: List[str]) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+
+def ensure_mmdr(bin_path: Path) -> None:
+    if bin_path.exists():
+        return
+    res = run(["cargo", "build", "--release"])
+    if res.returncode != 0:
+        raise RuntimeError(res.stderr.strip() or "cargo build failed")
+
+
+def render_mmdr(bin_path: Path, source: Path, out_svg: Path) -> None:
+    res = run(
+        [
+            str(bin_path),
+            "-i",
+            str(source),
+            "-o",
+            str(out_svg),
+            "-e",
+            "svg",
+        ]
+    )
+    if res.returncode != 0:
+        raise RuntimeError(res.stderr.strip() or f"mmdr render failed for {source}")
+
+
+def render_official(source: Path, out_svg: Path, puppeteer: Path | None) -> None:
+    cmd = [
+        "npx",
+        "-y",
+        "@mermaid-js/mermaid-cli",
+        "-i",
+        str(source),
+        "-o",
+        str(out_svg),
+    ]
+    if puppeteer and puppeteer.exists():
+        cmd.extend(["-p", str(puppeteer)])
+    res = run(cmd)
+    if res.returncode != 0:
+        raise RuntimeError(res.stderr.strip() or f"mmdc render failed for {source}")
+
+
+def load_manifest(path: Path) -> Dict:
+    return json.loads(path.read_text())
+
+
+def write_html(
+    manifest: Dict, sources: Dict[str, str], out_path: Path, cache_bust: str
+) -> None:
+    sections_html: List[str] = []
+    for section in manifest.get("sections", []):
+        title = section["title"]
+        sections_html.append(f"<h2>{html.escape(title)}</h2>")
+        for item in section["items"]:
+            item_id = item["id"]
+            label = item.get("label", item_id)
+            source_text = sources[item_id]
+            sections_html.append(
+                f"<h3 class=\"example-title\">{html.escape(label)}</h3>"
+            )
+            sections_html.append(
+                "<div class=\"comparison\">"
+                "<div class=\"panel code\"><h3>Source</h3>"
+                f"<pre>{html.escape(source_text)}</pre></div>"
+                f"<div class=\"panel mmdr\"><h3>mmdr</h3><img src=\"comparisons/{item_id}_mmdr.svg?{cache_bust}\" alt=\"mmdr {html.escape(item_id)}\"></div>"
+                f"<div class=\"panel official\"><h3>mermaid-cli</h3><img src=\"comparisons/{item_id}_official.svg?{cache_bust}\" alt=\"official {html.escape(item_id)}\"></div>"
+                "</div>"
+            )
+
+    html_doc = f"""<!DOCTYPE html>
+<html>
+<head>
+<title>mmdr vs mermaid-cli Comparison</title>
+<style>
+body {{ font-family: system-ui, sans-serif; max-width: 1600px; margin: 0 auto; padding: 20px; background: #f5f5f5; }}
+h1 {{ text-align: center; }}
+.comparison {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 40px; }}
+.panel {{ background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+.panel h3 {{ margin-top: 0; text-align: center; }}
+.panel.code h3 {{ color: #1565c0; }}
+.panel.mmdr h3 {{ color: #2e7d32; }}
+.panel.official h3 {{ color: #f57c00; }}
+.panel img {{ width: 100%; height: auto; }}
+.panel pre {{ background: #f8f8f8; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 13px; margin: 0; white-space: pre-wrap; }}
+h2 {{ border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-top: 40px; }}
+.example-title {{ font-size: 16px; margin: 24px 0 12px; color: #374151; }}
+.stats {{ text-align: center; color: #666; font-size: 14px; margin-bottom: 30px; }}
+.changelog {{ background: white; padding: 12px 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 30px; }}
+.changelog li {{ margin: 6px 0; font-size: 13px; color: #444; }}
+</style>
+</head>
+<body>
+<h1>mmdr vs mermaid-cli Visual Comparison</h1>
+<p class="stats">Comparing output quality between mmdr (Rust) and mermaid-cli (Node.js + Chromium)<br>Last regenerated: <span id="regen-ts" data-regen="1970-01-01T00:00:00Z">1970-01-01 00:00 UTC</span> (<span id="regen-ago">just now</span> ago)</p>
+
+<h2>Changelog</h2>
+<ul class="changelog">
+<li>Run scripts/update_comparison_meta.py to refresh.</li>
+</ul>
+
+{''.join(sections_html)}
+
+<script>
+(() => {{
+  const tsEl = document.getElementById("regen-ts");
+  const agoEl = document.getElementById("regen-ago");
+  if (!tsEl || !agoEl) return;
+  const ts = tsEl.getAttribute("data-regen");
+  if (!ts) return;
+  const then = new Date(ts);
+  if (Number.isNaN(then.getTime())) return;
+  const now = new Date();
+  const diffMs = Math.max(0, now - then);
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) {{
+    agoEl.textContent = "just now";
+    return;
+  }}
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  const parts = [];
+  if (days > 0) parts.push(`${{days}}d`);
+  const remHours = hours % 24;
+  if (remHours > 0 && parts.length < 2) parts.push(`${{remHours}}h`);
+  const remMinutes = minutes % 60;
+  if (remMinutes > 0 && parts.length < 2) parts.push(`${{remMinutes}}m`);
+  agoEl.textContent = parts.join(" ");
+}})();
+</script>
+</body>
+</html>
+"""
+    out_path.write_text(html_doc)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Render comparison page and assets.")
+    parser.add_argument(
+        "--manifest",
+        default=str(ROOT / "docs" / "comparison_manifest.json"),
+        help="Path to comparison manifest JSON.",
+    )
+    parser.add_argument(
+        "--sources-dir",
+        default=str(ROOT / "docs" / "comparison_sources"),
+        help="Directory containing .mmd sources.",
+    )
+    parser.add_argument(
+        "--out-html",
+        default=str(ROOT / "docs" / "comparison.html"),
+        help="Output HTML path.",
+    )
+    parser.add_argument(
+        "--out-dir",
+        default=str(ROOT / "docs" / "comparisons"),
+        help="Output directory for SVGs.",
+    )
+    parser.add_argument(
+        "--mmdr-bin",
+        default=str(ROOT / "target" / "release" / "mmdr"),
+        help="Path to mmdr binary.",
+    )
+    parser.add_argument(
+        "--puppeteer",
+        default=str(Path("/home/jeremy/jcode/tmp-puppeteer.json")),
+        help="Path to puppeteer config for mermaid-cli.",
+    )
+    parser.add_argument(
+        "--skip-official",
+        action="store_true",
+        help="Skip rendering mermaid-cli outputs.",
+    )
+    args = parser.parse_args()
+
+    manifest_path = Path(args.manifest)
+    manifest = load_manifest(manifest_path)
+
+    sources_dir = Path(args.sources_dir)
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    cache_bust = manifest.get("cache_bust", "v=1")
+    sources: Dict[str, str] = {}
+
+    for section in manifest.get("sections", []):
+        for item in section.get("items", []):
+            item_id = item["id"]
+            source_path = sources_dir / f"{item_id}.mmd"
+            if not source_path.exists():
+                raise RuntimeError(f"Missing source: {source_path}")
+            sources[item_id] = source_path.read_text().strip() + "\n"
+
+    out_html = Path(args.out_html)
+    write_html(manifest, sources, out_html, cache_bust)
+
+    bin_path = Path(args.mmdr_bin)
+    ensure_mmdr(bin_path)
+    for item_id in sources.keys():
+        source_path = sources_dir / f"{item_id}.mmd"
+        render_mmdr(bin_path, source_path, out_dir / f"{item_id}_mmdr.svg")
+        if not args.skip_official:
+            puppeteer = Path(args.puppeteer) if args.puppeteer else None
+            render_official(source_path, out_dir / f"{item_id}_official.svg", puppeteer)
+
+    print(f"Wrote {out_html} and rendered {len(sources)} examples.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

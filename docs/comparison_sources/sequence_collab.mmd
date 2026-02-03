@@ -1,0 +1,8 @@
+sequenceDiagram
+  participant User
+  participant Web
+  participant API
+  User->>Web: Open app
+  Web->>API: Fetch profile
+  API-->>Web: Profile data
+  Web-->>User: Render screen

@@ -1,0 +1,100 @@
+{
+  "cache_bust": "v=12",
+  "sections": [
+    {
+      "title": "Flowchart",
+      "items": [
+        {"id": "flowchart_basic", "label": "Basic"},
+        {"id": "flowchart_subgraph", "label": "Subgraph"},
+        {"id": "flowchart_ports", "label": "Branches"}
+      ]
+    },
+    {
+      "title": "Sequence Diagram",
+      "items": [
+        {"id": "sequence_basic", "label": "Basic"},
+        {"id": "sequence_frames", "label": "Frames"},
+        {"id": "sequence_collab", "label": "Collaboration"}
+      ]
+    },
+    {
+      "title": "Class Diagram",
+      "items": [
+        {"id": "class_basic", "label": "Basic"},
+        {"id": "class_multiplicity", "label": "Multiplicity"},
+        {"id": "class_relations", "label": "Relations"}
+      ]
+    },
+    {
+      "title": "State Diagram",
+      "items": [
+        {"id": "state_basic", "label": "Basic"},
+        {"id": "state_note", "label": "With Note"},
+        {"id": "state_parallel", "label": "Composite"}
+      ]
+    },
+    {
+      "title": "ER Diagram",
+      "items": [
+        {"id": "er_basic", "label": "Basic"},
+        {"id": "er_extended", "label": "Extended"}
+      ]
+    },
+    {
+      "title": "Pie Chart",
+      "items": [
+        {"id": "pie_basic", "label": "Basic"},
+        {"id": "pie_segments", "label": "Segments"}
+      ]
+    },
+    {
+      "title": "Gantt Chart",
+      "items": [
+        {"id": "gantt_basic", "label": "Basic"},
+        {"id": "gantt_release", "label": "Release Plan"}
+      ]
+    },
+    {
+      "title": "Mindmap",
+      "items": [
+        {"id": "mindmap_basic", "label": "Basic"},
+        {"id": "mindmap_deep", "label": "Deep"}
+      ]
+    },
+    {
+      "title": "Timeline",
+      "items": [
+        {"id": "timeline_basic", "label": "Basic"},
+        {"id": "timeline_release", "label": "Phases"}
+      ]
+    },
+    {
+      "title": "User Journey",
+      "items": [
+        {"id": "journey_basic", "label": "Basic"},
+        {"id": "journey_team", "label": "Team"}
+      ]
+    },
+    {
+      "title": "Git Graph",
+      "items": [
+        {"id": "gitgraph_basic", "label": "Basic"},
+        {"id": "gitgraph_branching", "label": "Branching"}
+      ]
+    },
+    {
+      "title": "XY Chart",
+      "items": [
+        {"id": "xychart_basic", "label": "Basic"},
+        {"id": "xychart_series", "label": "Series"}
+      ]
+    },
+    {
+      "title": "Quadrant Chart",
+      "items": [
+        {"id": "quadrant_basic", "label": "Basic"},
+        {"id": "quadrant_strategy", "label": "Strategy"}
+      ]
+    }
+  ]
+}

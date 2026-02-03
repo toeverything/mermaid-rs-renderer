@@ -1,0 +1,25 @@
+erDiagram
+USER ||--o{ POST : writes
+USER ||--o{ SESSION : has
+POST ||--o{ COMMENT : receives
+USER {
+  string id PK
+  string email UK
+  string name
+}
+POST {
+  string id PK
+  string user_id FK
+  string title
+  string status
+}
+COMMENT {
+  string id PK
+  string post_id FK
+  string body
+}
+SESSION {
+  string id PK
+  string user_id FK
+  date created_at
+}
