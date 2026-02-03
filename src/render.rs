@@ -2675,22 +2675,40 @@ fn render_gantt(
         layout.chart_y + layout.chart_height,
         theme.line_color
     ));
+    svg.push_str(&format!(
+        "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"#E2E8F0\" stroke-width=\"1\"/>",
+        chart_left,
+        layout.chart_y,
+        chart_left,
+        layout.chart_y + layout.chart_height
+    ));
 
     // Draw sections
     let section_font = theme.font_size * 0.9;
     let task_font = theme.font_size * 0.85;
     for section in &layout.sections {
+        let label_band_width = layout.chart_x;
         svg.push_str(&format!(
-            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" fill-opacity=\"0.18\" stroke=\"none\"/>",
+            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" fill-opacity=\"0.22\" stroke=\"none\"/>",
             0.0,
             section.y,
-            full_width,
+            label_band_width,
             section.height,
             theme.cluster_background
         ));
+        svg.push_str(&format!(
+            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" fill-opacity=\"0.12\" stroke=\"none\"/>",
+            layout.chart_x,
+            section.y,
+            layout.chart_width,
+            section.height,
+            theme.cluster_background
+        ));
+        let label_y = (section.y + layout.row_height * 0.55)
+            .min(section.y + section.height - layout.row_height * 0.45);
         svg.push_str(&text_block_svg_with_font_size(
             layout.section_label_x,
-            section.y + section.height / 2.0,
+            label_y,
             &section.label,
             theme,
             config,
