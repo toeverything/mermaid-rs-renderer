@@ -4326,6 +4326,7 @@ fn compute_architecture_layout(graph: &Graph, theme: &Theme, config: &LayoutConf
     const ICON_FILL: &str = "#087ebf";
 
     let mut nodes = BTreeMap::new();
+
     for node in graph.nodes.values() {
         let label = measure_label(&node.label, theme, config);
         let mut style = resolve_node_style(node.id.as_str(), graph);
@@ -5620,12 +5621,6 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     if graph.kind == crate::ir::DiagramKind::Requirement {
         effective_config.max_label_width_chars = effective_config.max_label_width_chars.max(32);
     }
-    if graph.kind == crate::ir::DiagramKind::State {
-        effective_config.node_spacing *= 1.25;
-        effective_config.rank_spacing *= 1.25;
-        effective_config.node_padding_x *= 1.1;
-        effective_config.node_padding_y *= 1.15;
-    }
     if graph.kind == crate::ir::DiagramKind::Flowchart {
         let node_count = graph.nodes.len();
         let edge_count = graph.edges.len() as f32;
@@ -5665,6 +5660,9 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     if graph.kind == crate::ir::DiagramKind::Class {
         label_config.label_line_height = label_config.class_label_line_height();
     }
+    let mut state_marker_ids: Vec<String> = Vec::new();
+    let mut state_height_total = 0.0f32;
+    let mut state_height_count = 0usize;
 
     for node in graph.nodes.values() {
         let label = measure_label_with_font_size(
@@ -5684,9 +5682,13 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
                 crate::ir::NodeShape::Circle | crate::ir::NodeShape::DoubleCircle
             )
         {
-            let size = (theme.font_size * 1.08).max(14.0);
+            let size = (theme.font_size * 0.75).max(10.0);
             width = size;
             height = size;
+            state_marker_ids.push(node.id.clone());
+        } else if graph.kind == crate::ir::DiagramKind::State {
+            state_height_total += height;
+            state_height_count += 1;
         }
         let style = resolve_node_style(node.id.as_str(), graph);
         nodes.insert(
@@ -5705,6 +5707,22 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
                 hidden: false,
             },
         );
+    }
+
+    if graph.kind == crate::ir::DiagramKind::State && !state_marker_ids.is_empty() {
+        let avg_height = if state_height_count > 0 {
+            state_height_total / state_height_count as f32
+        } else {
+            theme.font_size * 2.4
+        };
+        let marker_size =
+            (avg_height / 3.0).clamp(theme.font_size * 0.5, theme.font_size * 0.95);
+        for id in state_marker_ids {
+            if let Some(node) = nodes.get_mut(&id) {
+                node.width = marker_size;
+                node.height = marker_size;
+            }
+        }
     }
 
     let adaptive_node_spacing = adaptive_spacing_for_nodes(

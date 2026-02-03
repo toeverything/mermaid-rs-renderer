@@ -6,7 +6,7 @@ use crate::layout::{
     GitGraphLayout, JourneyLayout, Layout, SankeyLayout, TextBlock,
 };
 use crate::text_metrics;
-use crate::theme::{adjust_color, Theme};
+use crate::theme::{adjust_color, parse_color_to_hsl, Theme};
 use anyhow::Result;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -2811,6 +2811,18 @@ fn render_gantt(
         ));
     }
 
+    let gantt_label_color = |fill: &str| -> String {
+        if let Some((_, _, l)) = parse_color_to_hsl(fill) {
+            if l < 55.0 {
+                "#FFFFFF".to_string()
+            } else {
+                "#0F172A".to_string()
+            }
+        } else {
+            theme.primary_text_color.clone()
+        }
+    };
+
     // Draw tasks as bars
     for task in &layout.tasks {
         let row_center = task.y + layout.row_height / 2.0;
@@ -2844,6 +2856,36 @@ fn render_gantt(
                 task.color,
                 theme.primary_border_color
             ));
+            let label_text = task
+                .label
+                .lines
+                .iter()
+                .find(|line| !line.trim().is_empty())
+                .map(|s| s.as_str())
+                .unwrap_or("");
+            if !label_text.is_empty() {
+                let font_size = task_font * 0.95;
+                let text_width = text_metrics::measure_text_width(
+                    label_text,
+                    font_size,
+                    theme.font_family.as_str(),
+                )
+                .unwrap_or(label_text.chars().count() as f32 * font_size * 0.55);
+                let pad = (font_size * 0.6).max(6.0);
+                if task.width >= text_width + pad * 2.0 && bar_height >= font_size * 1.1 {
+                    let text_x = task.x + task.width / 2.0;
+                    let text_y = row_center;
+                    svg.push_str(&format!(
+                        "<text x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-family=\"{}\" font-size=\"{:.2}\" fill=\"{}\">{}</text>",
+                        text_x,
+                        text_y,
+                        escape_xml(&theme.font_family),
+                        font_size,
+                        escape_xml(&gantt_label_color(&task.color)),
+                        escape_xml(label_text)
+                    ));
+                }
+            }
         }
         // Task label
         svg.push_str(&text_block_svg_with_font_size(
