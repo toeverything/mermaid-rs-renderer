@@ -370,7 +370,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 let label_pad_x = (theme.font_size * 0.6).max(subgraph.label_block.height * 0.35);
                 let label_x = subgraph.x + label_pad_x;
                 let label_y = subgraph.y + header_h / 2.0;
-                svg.push_str(&text_block_svg_with_font_size(
+                svg.push_str(&text_block_svg_with_font_size_weight(
                     label_x,
                     label_y,
                     &subgraph.label_block,
@@ -379,6 +379,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     state_font_size,
                     "start",
                     subgraph.style.text_color.as_deref(),
+                    Some("600"),
                     false,
                 ));
             }
@@ -3586,6 +3587,57 @@ fn text_block_svg_with_font_size(
 
     text.push_str(&format!(
         "<text x=\"{x:.2}\" y=\"{start_y:.2}\" text-anchor=\"{anchor}\" font-family=\"{}\" font-size=\"{}\" fill=\"{}\">",
+        theme.font_family,
+        font_size,
+        fill
+    ));
+
+    let line_height = font_size * config.label_line_height;
+    for (idx, line) in label.lines.iter().enumerate() {
+        let dy = if idx == 0 { 0.0 } else { line_height };
+        let rendered = if is_divider_line(line) {
+            String::new()
+        } else {
+            escape_xml(line)
+        };
+        text.push_str(&format!(
+            "<tspan x=\"{x:.2}\" dy=\"{dy:.2}\">{}</tspan>",
+            rendered
+        ));
+    }
+
+    text.push_str("</text>");
+    text
+}
+
+fn text_block_svg_with_font_size_weight(
+    x: f32,
+    y: f32,
+    label: &TextBlock,
+    theme: &Theme,
+    config: &LayoutConfig,
+    font_size: f32,
+    anchor: &str,
+    override_color: Option<&str>,
+    font_weight: Option<&str>,
+    baseline: bool,
+) -> String {
+    let total_height = label.lines.len() as f32 * font_size * config.label_line_height;
+    let start_y = if baseline {
+        y
+    } else {
+        y - total_height / 2.0 + font_size
+    };
+    let mut text = String::new();
+    let default_fill = theme.primary_text_color.as_str();
+    let fill = override_color.unwrap_or(default_fill);
+    let weight_attr = font_weight
+        .filter(|w| !w.trim().is_empty())
+        .map(|w| format!(" font-weight=\"{}\"", w))
+        .unwrap_or_default();
+
+    text.push_str(&format!(
+        "<text x=\"{x:.2}\" y=\"{start_y:.2}\" text-anchor=\"{anchor}\" font-family=\"{}\" font-size=\"{}\" fill=\"{}\"{weight_attr}>",
         theme.font_family,
         font_size,
         fill
