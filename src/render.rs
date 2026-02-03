@@ -2677,7 +2677,7 @@ fn render_gantt(
     ));
 
     // Draw sections
-    let section_font = theme.font_size * 0.95;
+    let section_font = theme.font_size * 0.9;
     let task_font = theme.font_size * 0.85;
     for section in &layout.sections {
         svg.push_str(&format!(
@@ -2689,7 +2689,7 @@ fn render_gantt(
             theme.cluster_background
         ));
         svg.push_str(&text_block_svg_with_font_size(
-            layout.label_x,
+            layout.section_label_x,
             section.y + section.height / 2.0,
             &section.label,
             theme,
@@ -2705,6 +2705,7 @@ fn render_gantt(
     row_lines.push(layout.chart_y);
     for section in &layout.sections {
         row_lines.push(section.y);
+        row_lines.push(section.y + section.height);
     }
     for task in &layout.tasks {
         row_lines.push(task.y);
@@ -2755,7 +2756,7 @@ fn render_gantt(
         }
         // Task label
         svg.push_str(&text_block_svg_with_font_size(
-            layout.label_x,
+            layout.task_label_x,
             row_center,
             &task.label,
             theme,

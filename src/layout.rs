@@ -585,6 +585,10 @@ pub struct GanttLayout {
     pub row_height: f32,
     pub label_x: f32,
     pub label_width: f32,
+    pub section_label_x: f32,
+    pub section_label_width: f32,
+    pub task_label_x: f32,
+    pub task_label_width: f32,
     pub title_y: f32,
     pub ticks: Vec<GanttTick>,
 }
@@ -3569,18 +3573,27 @@ fn compute_gantt_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
         .map(|t| measure_label(t, theme, config));
     let title_height = title.as_ref().map(|t| t.height + padding).unwrap_or(0.0);
 
-    let mut label_width = 0.0_f32;
+    let mut task_label_width = 0.0_f32;
+    let mut section_label_width = 0.0_f32;
     for task in &graph.gantt_tasks {
         let label = measure_label(&task.label, theme, config);
-        label_width = label_width.max(label.width);
+        task_label_width = task_label_width.max(label.width);
         if let Some(section) = task.section.as_ref() {
             let section_label = measure_label(section, theme, config);
-            label_width = label_width.max(section_label.width);
+            section_label_width = section_label_width.max(section_label.width);
         }
     }
-    label_width = label_width.max(theme.font_size * 6.5);
+    task_label_width = task_label_width.max(theme.font_size * 6.5);
 
     let label_x = padding;
+    let section_task_gap = if section_label_width > 0.0 {
+        theme.font_size * 0.8
+    } else {
+        0.0
+    };
+    let label_width = section_label_width + section_task_gap + task_label_width;
+    let section_label_x = label_x;
+    let task_label_x = label_x + section_label_width + section_task_gap;
     let chart_x = padding + label_width + label_gap;
     let chart_y = title_height + padding;
     let chart_width = theme.font_size * 26.0;
@@ -3663,6 +3676,7 @@ fn compute_gantt_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
 
     let palette = gantt_palette(theme);
     let mut current_section: Option<String> = None;
+    let mut current_section_idx: Option<usize> = None;
     let mut sections: Vec<GanttSectionLayout> = Vec::new();
     let mut tasks: Vec<GanttTaskLayout> = Vec::new();
     let mut y = chart_y;
@@ -3670,12 +3684,20 @@ fn compute_gantt_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
     for (idx, (label, start, duration, status, section)) in computed.iter().enumerate() {
         if section != &current_section {
             if let Some(sec) = section.as_ref() {
+                if let Some(prev_idx) = current_section_idx {
+                    let height = (y - sections[prev_idx].y).max(row_height);
+                    sections[prev_idx].height = height;
+                }
                 sections.push(GanttSectionLayout {
                     label: measure_label(sec, theme, config),
                     y,
-                    height: row_height,
+                    height: 0.0,
                 });
-                y += row_height;
+                current_section_idx = Some(sections.len() - 1);
+            } else if let Some(prev_idx) = current_section_idx {
+                let height = (y - sections[prev_idx].y).max(row_height);
+                sections[prev_idx].height = height;
+                current_section_idx = None;
             }
             current_section = section.clone();
         }
@@ -3700,6 +3722,10 @@ fn compute_gantt_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
             status: *status,
         });
         y += row_height;
+    }
+    if let Some(prev_idx) = current_section_idx {
+        let height = (y - sections[prev_idx].y).max(row_height);
+        sections[prev_idx].height = height;
     }
 
     let axis_pad = row_height * 0.9 + theme.font_size;
@@ -3738,6 +3764,10 @@ fn compute_gantt_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
             row_height,
             label_x,
             label_width,
+            section_label_x,
+            section_label_width,
+            task_label_x,
+            task_label_width,
             title_y: chart_y - row_height * 0.6,
             ticks,
         }),
