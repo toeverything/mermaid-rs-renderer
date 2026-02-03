@@ -2827,6 +2827,7 @@ fn render_gantt(
     for task in &layout.tasks {
         let row_center = task.y + layout.row_height / 2.0;
         let bar_y = row_center - bar_height / 2.0;
+        let mut label_rendered_inside = false;
         if matches!(task.status, Some(crate::ir::GanttStatus::Milestone)) {
             let size = bar_height * 0.6;
             let cx = task.x;
@@ -2884,21 +2885,24 @@ fn render_gantt(
                         escape_xml(&gantt_label_color(&task.color)),
                         escape_xml(label_text)
                     ));
+                    label_rendered_inside = true;
                 }
             }
         }
         // Task label
-        svg.push_str(&text_block_svg_with_font_size(
-            layout.task_label_x,
-            row_center,
-            &task.label,
-            theme,
-            config,
-            task_font,
-            "start",
-            Some(theme.primary_text_color.as_str()),
-            false,
-        ));
+        if !label_rendered_inside {
+            svg.push_str(&text_block_svg_with_font_size(
+                layout.task_label_x,
+                row_center,
+                &task.label,
+                theme,
+                config,
+                task_font,
+                "start",
+                Some(theme.primary_text_color.as_str()),
+                false,
+            ));
+        }
     }
 
     svg
