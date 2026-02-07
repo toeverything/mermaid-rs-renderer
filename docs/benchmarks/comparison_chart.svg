@@ -11,51 +11,255 @@
 <text x="400.0" y="25" text-anchor="middle" class="title">Render Time Comparison (log scale)</text>
 <line x1="120" y1="320.0" x2="650" y2="320.0" stroke="#ddd" stroke-dasharray="2,2"/>
 <text x="110" y="324.0" text-anchor="end" class="tick-label">1 ms</text>
-<line x1="120" y1="243.55590986840508" x2="650" y2="243.55590986840508" stroke="#ddd" stroke-dasharray="2,2"/>
-<text x="110" y="247.55590986840508" text-anchor="end" class="tick-label">10 ms</text>
-<line x1="120" y1="167.11181973681016" x2="650" y2="167.11181973681016" stroke="#ddd" stroke-dasharray="2,2"/>
-<text x="110" y="171.11181973681016" text-anchor="end" class="tick-label">100 ms</text>
-<line x1="120" y1="90.66772960521521" x2="650" y2="90.66772960521521" stroke="#ddd" stroke-dasharray="2,2"/>
-<text x="110" y="94.66772960521521" text-anchor="end" class="tick-label">1000 ms</text>
-<rect x="127.22727272727272" y="237.29669904971325" width="16.863636363636363" height="82.70330095028676" class="bar-mmdr" rx="2"/>
-<text x="135.6590909090909" y="252.29669904971325" text-anchor="middle" class="bar-label">12.1</text>
-<text x="144.0909090909091" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 144.0909090909091 340)">flow small</text>
-<rect x="175.4090909090909" y="242.8541780182571" width="16.863636363636363" height="77.1458219817429" class="bar-mmdr" rx="2"/>
-<text x="183.8409090909091" y="257.85417801825713" text-anchor="middle" class="bar-label">10.2</text>
-<text x="192.27272727272728" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 192.27272727272728 340)">flow med</text>
-<rect x="223.5909090909091" y="169.8836945049762" width="16.863636363636363" height="150.1163054950238" class="bar-mmdr" rx="2"/>
-<text x="232.02272727272728" y="184.8836945049762" text-anchor="middle" class="bar-label">92.0</text>
-<text x="240.45454545454547" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 240.45454545454547 340)">flow large</text>
-<rect x="271.77272727272725" y="264.12396591146455" width="16.863636363636363" height="55.87603408853545" class="bar-mmdr" rx="2"/>
-<text x="280.20454545454544" y="279.12396591146455" text-anchor="middle" class="bar-label">5.4</text>
-<text x="288.6363636363636" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 288.6363636363636 340)">flowchart</text>
-<rect x="319.9545454545455" y="271.67636589937104" width="16.863636363636363" height="48.323634100628986" class="bar-mmdr" rx="2"/>
-<text x="328.3863636363637" y="286.67636589937104" text-anchor="middle" class="bar-label">4.3</text>
-<text x="336.81818181818187" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 336.81818181818187 340)">flow tiny</text>
-<rect x="368.1363636363636" y="274.47562133486105" width="16.863636363636363" height="45.524378665138975" class="bar-mmdr" rx="2"/>
-<text x="376.5681818181818" y="289.47562133486105" text-anchor="middle" class="bar-label">3.9</text>
-<text x="385.0" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 385.0 340)">class</text>
-<rect x="416.3181818181818" y="278.9388543502608" width="16.863636363636363" height="41.06114564973923" class="bar-mmdr" rx="2"/>
-<text x="424.75" y="293.9388543502608" text-anchor="middle" class="bar-label">3.4</text>
-<text x="433.1818181818182" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 433.1818181818182 340)">class tiny</text>
-<rect x="464.5" y="273.33231968179786" width="16.863636363636363" height="46.66768031820214" class="bar-mmdr" rx="2"/>
-<text x="472.9318181818182" y="288.33231968179786" text-anchor="middle" class="bar-label">4.1</text>
-<text x="481.3636363636364" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 481.3636363636364 340)">state</text>
-<rect x="512.6818181818181" y="287.7857515216778" width="16.863636363636363" height="32.21424847832218" class="bar-mmdr" rx="2"/>
-<text x="521.1136363636363" y="302.7857515216778" text-anchor="middle" class="bar-label">2.6</text>
-<rect x="534.5454545454545" y="54.17255638830716" width="16.863636363636363" height="265.82744361169284" class="bar-cli" rx="2"/>
-<text x="542.9772727272726" y="69.17255638830716" text-anchor="middle" class="bar-label">3002</text>
-<text x="529.5454545454545" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 529.5454545454545 340)">state tiny</text>
-<rect x="560.8636363636364" y="279.5384405442948" width="16.863636363636363" height="40.46155945570517" class="bar-mmdr" rx="2"/>
-<text x="569.2954545454545" y="294.5384405442948" text-anchor="middle" class="bar-label">3.4</text>
-<rect x="582.7272727272727" y="53.4611360786385" width="16.863636363636363" height="266.5388639213615" class="bar-cli" rx="2"/>
-<text x="591.1590909090909" y="68.4611360786385" text-anchor="middle" class="bar-label">3067</text>
-<text x="577.7272727272727" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 577.7272727272727 340)">sequence</text>
-<rect x="609.0454545454545" y="286.07420490365456" width="16.863636363636363" height="33.92579509634545" class="bar-mmdr" rx="2"/>
-<text x="617.4772727272726" y="301.07420490365456" text-anchor="middle" class="bar-label">2.8</text>
-<rect x="630.9090909090909" y="55.840151552930024" width="16.863636363636363" height="264.15984844707" class="bar-cli" rx="2"/>
-<text x="639.340909090909" y="70.84015155293002" text-anchor="middle" class="bar-label">2855</text>
-<text x="625.9090909090909" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 625.9090909090909 340)">sequence tiny</text>
+<line x1="120" y1="240.75409677692832" x2="650" y2="240.75409677692832" stroke="#ddd" stroke-dasharray="2,2"/>
+<text x="110" y="244.75409677692832" text-anchor="end" class="tick-label">10 ms</text>
+<line x1="120" y1="161.50819355385664" x2="650" y2="161.50819355385664" stroke="#ddd" stroke-dasharray="2,2"/>
+<text x="110" y="165.50819355385664" text-anchor="end" class="tick-label">100 ms</text>
+<line x1="120" y1="82.26229033078496" x2="650" y2="82.26229033078496" stroke="#ddd" stroke-dasharray="2,2"/>
+<text x="110" y="86.26229033078496" text-anchor="end" class="tick-label">1000 ms</text>
+<rect x="121.62244897959184" y="278.05935224072164" width="3.785714285714285" height="41.94064775927839" class="bar-mmdr" rx="2"/>
+<text x="123.51530612244898" y="293.05935224072164" text-anchor="middle" class="bar-label">3.4</text>
+<rect x="130.40816326530614" y="59.99133610426338" width="3.785714285714285" height="260.0086638957366" class="bar-cli" rx="2"/>
+<text x="132.30102040816328" y="74.99133610426338" text-anchor="middle" class="bar-label">1910</text>
+<text x="125.40816326530613" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 125.40816326530613 340)">flow small</text>
+<rect x="132.43877551020407" y="245.5197930098995" width="3.785714285714285" height="74.48020699010048" class="bar-mmdr" rx="2"/>
+<text x="134.3316326530612" y="260.5197930098995" text-anchor="middle" class="bar-label">8.7</text>
+<rect x="141.22448979591834" y="58.09222749377801" width="3.785714285714285" height="261.907772506222" class="bar-cli" rx="2"/>
+<text x="143.11734693877548" y="73.09222749377801" text-anchor="middle" class="bar-label">2018</text>
+<text x="136.22448979591834" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 136.22448979591834 340)">flow med</text>
+<rect x="143.25510204081633" y="187.49503980672344" width="3.785714285714285" height="132.50496019327656" class="bar-mmdr" rx="2"/>
+<text x="145.14795918367346" y="202.49503980672344" text-anchor="middle" class="bar-label">47.0</text>
+<rect x="152.0408163265306" y="53.954510873555364" width="3.785714285714285" height="266.04548912644464" class="bar-cli" rx="2"/>
+<text x="153.93367346938774" y="68.95451087355536" text-anchor="middle" class="bar-label">2276</text>
+<text x="147.0408163265306" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 147.0408163265306 340)">flow large</text>
+<rect x="154.07142857142858" y="281.5988106980773" width="3.785714285714285" height="38.401189301922706" class="bar-mmdr" rx="2"/>
+<text x="155.96428571428572" y="296.5988106980773" text-anchor="middle" class="bar-label">3.1</text>
+<rect x="162.85714285714286" y="59.61518575472917" width="3.785714285714285" height="260.38481424527083" class="bar-cli" rx="2"/>
+<text x="164.75" y="74.61518575472917" text-anchor="middle" class="bar-label">1931</text>
+<text x="157.85714285714286" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 157.85714285714286 340)">flow tiny</text>
+<rect x="164.8877551020408" y="189.4994263538919" width="3.785714285714285" height="130.5005736461081" class="bar-mmdr" rx="2"/>
+<text x="166.78061224489795" y="204.4994263538919" text-anchor="middle" class="bar-label">44.3</text>
+<rect x="173.6734693877551" y="58.897307408520305" width="3.785714285714285" height="261.1026925914797" class="bar-cli" rx="2"/>
+<text x="175.56632653061223" y="73.8973074085203" text-anchor="middle" class="bar-label">1972</text>
+<text x="168.6734693877551" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 168.6734693877551 340)">flow ports heavy</text>
+<rect x="175.70408163265304" y="221.59415144513042" width="3.785714285714285" height="98.40584855486956" class="bar-mmdr" rx="2"/>
+<text x="177.59693877551018" y="236.59415144513042" text-anchor="middle" class="bar-label">17.4</text>
+<rect x="184.48979591836732" y="58.73986472948303" width="3.785714285714285" height="261.26013527051697" class="bar-cli" rx="2"/>
+<text x="186.38265306122446" y="73.73986472948303" text-anchor="middle" class="bar-label">1981</text>
+<text x="179.48979591836732" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 179.48979591836732 340)">flow weave</text>
+<rect x="186.5204081632653" y="229.44209380492646" width="3.785714285714285" height="90.55790619507356" class="bar-mmdr" rx="2"/>
+<text x="188.41326530612244" y="244.44209380492646" text-anchor="middle" class="bar-label">13.9</text>
+<rect x="195.30612244897958" y="58.30719169394473" width="3.785714285714285" height="261.69280830605527" class="bar-cli" rx="2"/>
+<text x="197.19897959183672" y="73.30719169394473" text-anchor="middle" class="bar-label">2006</text>
+<text x="190.30612244897958" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 190.30612244897958 340)">flow backedges subgraphs</text>
+<rect x="197.33673469387756" y="245.45792439205718" width="3.785714285714285" height="74.54207560794282" class="bar-mmdr" rx="2"/>
+<text x="199.2295918367347" y="260.4579243920572" text-anchor="middle" class="bar-label">8.7</text>
+<rect x="206.12244897959184" y="58.356677552925305" width="3.785714285714285" height="261.6433224470747" class="bar-cli" rx="2"/>
+<text x="208.01530612244898" y="73.3566775529253" text-anchor="middle" class="bar-label">2003</text>
+<text x="201.12244897959184" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 201.12244897959184 340)">flow sparse components</text>
+<rect x="208.1530612244898" y="227.9196594212117" width="3.785714285714285" height="92.08034057878832" class="bar-mmdr" rx="2"/>
+<text x="210.04591836734693" y="242.9196594212117" text-anchor="middle" class="bar-label">14.5</text>
+<rect x="216.93877551020407" y="56.881021025578036" width="3.785714285714285" height="263.11897897442196" class="bar-cli" rx="2"/>
+<text x="218.8316326530612" y="71.88102102557804" text-anchor="middle" class="bar-label">2091</text>
+<text x="211.93877551020407" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 211.93877551020407 340)">flow lanes crossfeed</text>
+<rect x="218.96938775510202" y="233.9671981610736" width="3.785714285714285" height="86.03280183892639" class="bar-mmdr" rx="2"/>
+<text x="220.86224489795916" y="248.9671981610736" text-anchor="middle" class="bar-label">12.2</text>
+<rect x="227.7551020408163" y="58.26841059437044" width="3.785714285714285" height="261.73158940562956" class="bar-cli" rx="2"/>
+<text x="229.64795918367344" y="73.26841059437044" text-anchor="middle" class="bar-label">2008</text>
+<text x="222.7551020408163" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 222.7551020408163 340)">flow grid feedback</text>
+<rect x="229.78571428571428" y="219.43829315640673" width="3.785714285714285" height="100.56170684359327" class="bar-mmdr" rx="2"/>
+<text x="231.67857142857142" y="234.43829315640673" text-anchor="middle" class="bar-label">18.6</text>
+<rect x="238.57142857142856" y="59.2217115314383" width="3.785714285714285" height="260.7782884685617" class="bar-cli" rx="2"/>
+<text x="240.4642857142857" y="74.2217115314383" text-anchor="middle" class="bar-label">1953</text>
+<text x="233.57142857142856" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 233.57142857142856 340)">flow fanout returns</text>
+<rect x="240.60204081632654" y="226.3479057944767" width="3.785714285714285" height="93.6520942055233" class="bar-mmdr" rx="2"/>
+<text x="242.49489795918367" y="241.3479057944767" text-anchor="middle" class="bar-label">15.2</text>
+<rect x="249.3877551020408" y="59.16623742327363" width="3.785714285714285" height="260.8337625767264" class="bar-cli" rx="2"/>
+<text x="251.28061224489795" y="74.16623742327363" text-anchor="middle" class="bar-label">1956</text>
+<text x="244.3877551020408" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 244.3877551020408 340)">flow label collision</text>
+<rect x="251.41836734693877" y="249.86767846125844" width="3.785714285714285" height="70.13232153874155" class="bar-mmdr" rx="2"/>
+<text x="253.3112244897959" y="264.86767846125844" text-anchor="middle" class="bar-label">7.7</text>
+<rect x="260.204081632653" y="59.21217936962296" width="3.785714285714285" height="260.78782063037704" class="bar-cli" rx="2"/>
+<text x="262.0969387755102" y="74.21217936962296" text-anchor="middle" class="bar-label">1954</text>
+<text x="255.20408163265304" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 255.20408163265304 340)">flow nested clusters</text>
+<rect x="262.23469387755097" y="266.77955705725867" width="3.785714285714285" height="53.22044294274134" class="bar-mmdr" rx="2"/>
+<text x="264.12755102040813" y="281.77955705725867" text-anchor="middle" class="bar-label">4.7</text>
+<rect x="271.02040816326524" y="59.045631330050924" width="3.785714285714285" height="260.9543686699491" class="bar-cli" rx="2"/>
+<text x="272.9132653061224" y="74.04563133005092" text-anchor="middle" class="bar-label">1963</text>
+<text x="266.02040816326524" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 266.02040816326524 340)">flow asymmetric components</text>
+<rect x="273.05102040816325" y="242.1827330852123" width="3.785714285714285" height="77.8172669147877" class="bar-mmdr" rx="2"/>
+<text x="274.9438775510204" y="257.1827330852123" text-anchor="middle" class="bar-label">9.6</text>
+<rect x="281.83673469387753" y="59.79117809719679" width="3.785714285714285" height="260.2088219028032" class="bar-cli" rx="2"/>
+<text x="283.7295918367347" y="74.79117809719679" text-anchor="middle" class="bar-label">1921</text>
+<text x="276.83673469387753" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 276.83673469387753 340)">flow parallel merges</text>
+<rect x="283.8673469387755" y="248.59761218588795" width="3.785714285714285" height="71.40238781411206" class="bar-mmdr" rx="2"/>
+<text x="285.76020408163265" y="263.59761218588795" text-anchor="middle" class="bar-label">8.0</text>
+<rect x="292.65306122448976" y="58.9267021609744" width="3.785714285714285" height="261.0732978390256" class="bar-cli" rx="2"/>
+<text x="294.5459183673469" y="73.9267021609744" text-anchor="middle" class="bar-label">1970</text>
+<text x="287.65306122448976" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 287.65306122448976 340)">flow long edge labels</text>
+<rect x="294.6836734693877" y="243.7207377857528" width="3.785714285714285" height="76.27926221424721" class="bar-mmdr" rx="2"/>
+<text x="296.5765306122449" y="258.7207377857528" text-anchor="middle" class="bar-label">9.2</text>
+<rect x="303.469387755102" y="59.04074943952304" width="3.785714285714285" height="260.95925056047696" class="bar-cli" rx="2"/>
+<text x="305.36224489795916" y="74.04074943952304" text-anchor="middle" class="bar-label">1964</text>
+<text x="298.469387755102" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 298.469387755102 340)">flow selfloop bidi</text>
+<rect x="305.49999999999994" y="255.57089789976408" width="3.785714285714285" height="64.42910210023594" class="bar-mmdr" rx="2"/>
+<text x="307.3928571428571" y="270.5708978997641" text-anchor="middle" class="bar-label">6.5</text>
+<rect x="314.2857142857142" y="58.695378686524066" width="3.785714285714285" height="261.30462131347593" class="bar-cli" rx="2"/>
+<text x="316.1785714285714" y="73.69537868652407" text-anchor="middle" class="bar-label">1983</text>
+<text x="309.2857142857142" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 309.2857142857142 340)">flow component packing</text>
+<rect x="316.3163265306122" y="235.37471939168523" width="3.785714285714285" height="84.62528060831475" class="bar-mmdr" rx="2"/>
+<text x="318.20918367346934" y="250.37471939168523" text-anchor="middle" class="bar-label">11.7</text>
+<rect x="325.10204081632645" y="59.14707614252541" width="3.785714285714285" height="260.8529238574746" class="bar-cli" rx="2"/>
+<text x="326.9948979591836" y="74.1470761425254" text-anchor="middle" class="bar-label">1957</text>
+<text x="320.10204081632645" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 320.10204081632645 340)">flow direction conflict</text>
+<rect x="327.13265306122446" y="257.41781061419533" width="3.785714285714285" height="62.582189385804696" class="bar-mmdr" rx="2"/>
+<text x="329.0255102040816" y="272.41781061419533" text-anchor="middle" class="bar-label">6.2</text>
+<rect x="335.91836734693874" y="59.172609643609405" width="3.785714285714285" height="260.8273903563906" class="bar-cli" rx="2"/>
+<text x="337.8112244897959" y="74.1726096436094" text-anchor="middle" class="bar-label">1956</text>
+<text x="330.91836734693874" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 330.91836734693874 340)">flow parallel label stack</text>
+<rect x="337.9489795918367" y="275.7993651050533" width="3.785714285714285" height="44.20063489494672" class="bar-mmdr" rx="2"/>
+<text x="339.84183673469386" y="290.7993651050533" text-anchor="middle" class="bar-label">3.6</text>
+<rect x="346.73469387755097" y="58.40588284829289" width="3.785714285714285" height="261.5941171517071" class="bar-cli" rx="2"/>
+<text x="348.62755102040813" y="73.40588284829289" text-anchor="middle" class="bar-label">2000</text>
+<text x="341.73469387755097" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 341.73469387755097 340)">class med</text>
+<rect x="348.7653061224489" y="264.24679281054495" width="3.785714285714285" height="55.753207189455075" class="bar-mmdr" rx="2"/>
+<text x="350.6581632653061" y="279.24679281054495" text-anchor="middle" class="bar-label">5.1</text>
+<rect x="357.5510204081632" y="54.69981038524463" width="3.785714285714285" height="265.30018961475537" class="bar-cli" rx="2"/>
+<text x="359.44387755102036" y="69.69981038524463" text-anchor="middle" class="bar-label">2227</text>
+<text x="352.5510204081632" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 352.5510204081632 340)">state med</text>
+<rect x="359.5816326530612" y="271.68782707268394" width="3.785714285714285" height="48.31217292731606" class="bar-mmdr" rx="2"/>
+<text x="361.4744897959184" y="286.68782707268394" text-anchor="middle" class="bar-label">4.1</text>
+<rect x="368.3673469387755" y="58.942219523732774" width="3.785714285714285" height="261.0577804762672" class="bar-cli" rx="2"/>
+<text x="370.26020408163265" y="73.94221952373277" text-anchor="middle" class="bar-label">1969</text>
+<text x="363.3673469387755" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 363.3673469387755 340)">sequence med</text>
+<rect x="370.39795918367344" y="259.25403506721915" width="3.785714285714285" height="60.74596493278085" class="bar-mmdr" rx="2"/>
+<text x="372.2908163265306" y="274.25403506721915" text-anchor="middle" class="bar-label">5.8</text>
+<rect x="379.1836734693877" y="58.19546682335613" width="3.785714285714285" height="261.8045331766439" class="bar-cli" rx="2"/>
+<text x="381.0765306122449" y="73.19546682335613" text-anchor="middle" class="bar-label">2012</text>
+<text x="374.1836734693877" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 374.1836734693877 340)">er med</text>
+<rect x="381.21428571428567" y="268.12943032272955" width="3.785714285714285" height="51.87056967727044" class="bar-mmdr" rx="2"/>
+<text x="383.10714285714283" y="283.12943032272955" text-anchor="middle" class="bar-label">4.5</text>
+<rect x="389.99999999999994" y="59.236721555906286" width="3.785714285714285" height="260.7632784440937" class="bar-cli" rx="2"/>
+<text x="391.8928571428571" y="74.23672155590629" text-anchor="middle" class="bar-label">1952</text>
+<text x="384.99999999999994" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 384.99999999999994 340)">pie med</text>
+<rect x="392.0306122448979" y="270.6434796383589" width="3.785714285714285" height="49.3565203616411" class="bar-mmdr" rx="2"/>
+<text x="393.92346938775506" y="285.6434796383589" text-anchor="middle" class="bar-label">4.2</text>
+<rect x="400.8163265306122" y="59.29158446525804" width="3.785714285714285" height="260.70841553474196" class="bar-cli" rx="2"/>
+<text x="402.70918367346934" y="74.29158446525804" text-anchor="middle" class="bar-label">1949</text>
+<text x="395.8163265306122" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 395.8163265306122 340)">mindmap med</text>
+<rect x="402.8469387755101" y="265.0824523966455" width="3.785714285714285" height="54.9175476033545" class="bar-mmdr" rx="2"/>
+<text x="404.7397959183673" y="280.0824523966455" text-anchor="middle" class="bar-label">4.9</text>
+<rect x="411.6326530612244" y="59.433877855398066" width="3.785714285714285" height="260.56612214460193" class="bar-cli" rx="2"/>
+<text x="413.52551020408157" y="74.43387785539807" text-anchor="middle" class="bar-label">1941</text>
+<text x="406.6326530612244" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 406.6326530612244 340)">journey med</text>
+<rect x="413.6632653061224" y="279.14947879421305" width="3.785714285714285" height="40.850521205786926" class="bar-mmdr" rx="2"/>
+<text x="415.5561224489796" y="294.14947879421305" text-anchor="middle" class="bar-label">3.3</text>
+<rect x="422.4489795918367" y="59.21116837399006" width="3.785714285714285" height="260.78883162600994" class="bar-cli" rx="2"/>
+<text x="424.34183673469386" y="74.21116837399006" text-anchor="middle" class="bar-label">1954</text>
+<text x="417.4489795918367" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 417.4489795918367 340)">timeline med</text>
+<rect x="424.47959183673464" y="272.03483049091835" width="3.785714285714285" height="47.96516950908164" class="bar-mmdr" rx="2"/>
+<text x="426.3724489795918" y="287.03483049091835" text-anchor="middle" class="bar-label">4.0</text>
+<rect x="433.2653061224489" y="59.23920418349201" width="3.785714285714285" height="260.760795816508" class="bar-cli" rx="2"/>
+<text x="435.1581632653061" y="74.239204183492" text-anchor="middle" class="bar-label">1952</text>
+<text x="428.2653061224489" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 428.2653061224489 340)">gantt med</text>
+<rect x="435.29591836734687" y="272.2260071074341" width="3.785714285714285" height="47.773992892565914" class="bar-mmdr" rx="2"/>
+<text x="437.18877551020404" y="287.2260071074341" text-anchor="middle" class="bar-label">4.0</text>
+<rect x="444.08163265306115" y="58.670448909754896" width="3.785714285714285" height="261.3295510902451" class="bar-cli" rx="2"/>
+<text x="445.9744897959183" y="73.6704489097549" text-anchor="middle" class="bar-label">1985</text>
+<text x="439.08163265306115" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 439.08163265306115 340)">requirement med</text>
+<rect x="446.11224489795916" y="261.7939650353388" width="3.785714285714285" height="58.206034964661235" class="bar-mmdr" rx="2"/>
+<text x="448.0051020408163" y="276.7939650353388" text-anchor="middle" class="bar-label">5.4</text>
+<rect x="454.89795918367344" y="59.61399772939859" width="3.785714285714285" height="260.3860022706014" class="bar-cli" rx="2"/>
+<text x="456.7908163265306" y="74.61399772939859" text-anchor="middle" class="bar-label">1931</text>
+<text x="449.89795918367344" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 449.89795918367344 340)">gitgraph med</text>
+<rect x="456.9285714285714" y="270.3265550566016" width="3.785714285714285" height="49.673444943398394" class="bar-mmdr" rx="2"/>
+<text x="458.82142857142856" y="285.3265550566016" text-anchor="middle" class="bar-label">4.2</text>
+<rect x="465.71428571428567" y="56.5721337735456" width="3.785714285714285" height="263.4278662264544" class="bar-cli" rx="2"/>
+<text x="467.60714285714283" y="71.5721337735456" text-anchor="middle" class="bar-label">2110</text>
+<text x="460.71428571428567" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 460.71428571428567 340)">c4 med</text>
+<rect x="467.7448979591836" y="264.04797631678235" width="3.785714285714285" height="55.95202368321763" class="bar-mmdr" rx="2"/>
+<text x="469.6377551020408" y="279.04797631678235" text-anchor="middle" class="bar-label">5.1</text>
+<rect x="476.5306122448979" y="59.3928282514367" width="3.785714285714285" height="260.6071717485633" class="bar-cli" rx="2"/>
+<text x="478.42346938775506" y="74.3928282514367" text-anchor="middle" class="bar-label">1944</text>
+<text x="471.5306122448979" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 471.5306122448979 340)">sankey med</text>
+<rect x="478.56122448979585" y="259.3554734700782" width="3.785714285714285" height="60.64452652992181" class="bar-mmdr" rx="2"/>
+<text x="480.454081632653" y="274.3554734700782" text-anchor="middle" class="bar-label">5.8</text>
+<rect x="487.3469387755101" y="59.91730139094983" width="3.785714285714285" height="260.08269860905017" class="bar-cli" rx="2"/>
+<text x="489.2397959183673" y="74.91730139094983" text-anchor="middle" class="bar-label">1914</text>
+<text x="482.3469387755101" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 482.3469387755101 340)">quadrant med</text>
+<rect x="489.3775510204081" y="256.52721125013437" width="3.785714285714285" height="63.47278874986561" class="bar-mmdr" rx="2"/>
+<text x="491.27040816326524" y="271.52721125013437" text-anchor="middle" class="bar-label">6.3</text>
+<rect x="498.16326530612236" y="57.92002514472881" width="3.785714285714285" height="262.0799748552712" class="bar-cli" rx="2"/>
+<text x="500.0561224489795" y="72.92002514472881" text-anchor="middle" class="bar-label">2028</text>
+<text x="493.16326530612236" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 493.16326530612236 340)">zenuml med</text>
+<rect x="500.19387755102036" y="255.70007899248037" width="3.785714285714285" height="64.29992100751963" class="bar-mmdr" rx="2"/>
+<text x="502.08673469387753" y="270.70007899248037" text-anchor="middle" class="bar-label">6.5</text>
+<rect x="508.97959183673464" y="60.045371204003516" width="3.785714285714285" height="259.9546287959965" class="bar-cli" rx="2"/>
+<text x="510.8724489795918" y="75.04537120400352" text-anchor="middle" class="bar-label">1907</text>
+<text x="503.97959183673464" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 503.97959183673464 340)">block med</text>
+<rect x="511.0102040816326" y="286.52421273711946" width="3.785714285714285" height="33.47578726288057" class="bar-mmdr" rx="2"/>
+<text x="512.9030612244898" y="301.52421273711946" text-anchor="middle" class="bar-label">2.6</text>
+<rect x="519.7959183673469" y="59.5257664048151" width="3.785714285714285" height="260.4742335951849" class="bar-cli" rx="2"/>
+<text x="521.688775510204" y="74.5257664048151" text-anchor="middle" class="bar-label">1936</text>
+<text x="514.7959183673469" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 514.7959183673469 340)">packet med</text>
+<rect x="521.8265306122448" y="295.4463798451886" width="3.785714285714285" height="24.553620154811448" class="bar-mmdr" rx="2"/>
+<text x="523.7193877551019" y="310.4463798451886" text-anchor="middle" class="bar-label">2.0</text>
+<rect x="530.6122448979592" y="58.661640411128474" width="3.785714285714285" height="261.3383595888715" class="bar-cli" rx="2"/>
+<text x="532.5051020408163" y="73.66164041112847" text-anchor="middle" class="bar-label">1985</text>
+<text x="525.6122448979592" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 525.6122448979592 340)">kanban med</text>
+<rect x="532.6428571428571" y="283.8493680423547" width="3.785714285714285" height="36.15063195764534" class="bar-mmdr" rx="2"/>
+<text x="534.5357142857142" y="298.8493680423547" text-anchor="middle" class="bar-label">2.9</text>
+<rect x="541.4285714285714" y="58.98546485551009" width="3.785714285714285" height="261.0145351444899" class="bar-cli" rx="2"/>
+<text x="543.3214285714286" y="73.98546485551009" text-anchor="middle" class="bar-label">1967</text>
+<text x="536.4285714285714" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 536.4285714285714 340)">architecture med</text>
+<rect x="543.4591836734694" y="296.4417275484267" width="3.785714285714285" height="23.558272451573313" class="bar-mmdr" rx="2"/>
+<text x="545.3520408163265" y="311.4417275484267" text-anchor="middle" class="bar-label">2.0</text>
+<rect x="552.2448979591837" y="59.82477491243242" width="3.785714285714285" height="260.1752250875676" class="bar-cli" rx="2"/>
+<text x="554.1377551020408" y="74.82477491243242" text-anchor="middle" class="bar-label">1919</text>
+<text x="547.2448979591837" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 547.2448979591837 340)">radar med</text>
+<rect x="554.2755102040816" y="272.06086691722567" width="3.785714285714285" height="47.93913308277435" class="bar-mmdr" rx="2"/>
+<text x="556.1683673469387" y="287.06086691722567" text-anchor="middle" class="bar-label">4.0</text>
+<rect x="563.0612244897959" y="59.45121710437945" width="3.785714285714285" height="260.54878289562055" class="bar-cli" rx="2"/>
+<text x="564.954081632653" y="74.45121710437945" text-anchor="middle" class="bar-label">1940</text>
+<text x="558.0612244897959" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 558.0612244897959 340)">treemap med</text>
+<rect x="565.0918367346937" y="271.3519310475902" width="3.785714285714285" height="48.64806895240978" class="bar-mmdr" rx="2"/>
+<text x="566.9846938775509" y="286.3519310475902" text-anchor="middle" class="bar-label">4.1</text>
+<text x="568.8775510204081" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 568.8775510204081 340)">xychart med</text>
+<rect x="575.908163265306" y="268.3290867965543" width="3.785714285714285" height="51.67091320344573" class="bar-mmdr" rx="2"/>
+<text x="577.8010204081631" y="283.3290867965543" text-anchor="middle" class="bar-label">4.5</text>
+<rect x="584.6938775510204" y="58.90756693197932" width="3.785714285714285" height="261.0924330680207" class="bar-cli" rx="2"/>
+<text x="586.5867346938775" y="73.90756693197932" text-anchor="middle" class="bar-label">1971</text>
+<text x="579.6938775510204" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 579.6938775510204 340)">flowchart</text>
+<rect x="586.7244897959183" y="285.7186716296761" width="3.785714285714285" height="34.28132837032389" class="bar-mmdr" rx="2"/>
+<text x="588.6173469387754" y="300.7186716296761" text-anchor="middle" class="bar-label">2.7</text>
+<rect x="595.5102040816327" y="60.06973633400719" width="3.785714285714285" height="259.9302636659928" class="bar-cli" rx="2"/>
+<text x="597.4030612244898" y="75.06973633400719" text-anchor="middle" class="bar-label">1906</text>
+<text x="590.5102040816327" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 590.5102040816327 340)">sequence</text>
+<rect x="597.5408163265306" y="266.950815005966" width="3.785714285714285" height="53.04918499403405" class="bar-mmdr" rx="2"/>
+<text x="599.4336734693877" y="281.950815005966" text-anchor="middle" class="bar-label">4.7</text>
+<rect x="606.3265306122449" y="60.04460302955823" width="3.785714285714285" height="259.95539697044177" class="bar-cli" rx="2"/>
+<text x="608.219387755102" y="75.04460302955823" text-anchor="middle" class="bar-label">1907</text>
+<text x="601.3265306122449" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 601.3265306122449 340)">class</text>
+<rect x="608.3571428571428" y="272.5864226323503" width="3.785714285714285" height="47.413577367649665" class="bar-mmdr" rx="2"/>
+<text x="610.2499999999999" y="287.5864226323503" text-anchor="middle" class="bar-label">4.0</text>
+<rect x="617.1428571428571" y="58.957997199624685" width="3.785714285714285" height="261.0420028003753" class="bar-cli" rx="2"/>
+<text x="619.0357142857142" y="73.95799719962469" text-anchor="middle" class="bar-label">1968</text>
+<text x="612.1428571428571" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 612.1428571428571 340)">state</text>
+<rect x="619.1734693877551" y="271.2793103923065" width="3.785714285714285" height="48.72068960769349" class="bar-mmdr" rx="2"/>
+<text x="621.0663265306122" y="286.2793103923065" text-anchor="middle" class="bar-label">4.1</text>
+<rect x="627.9591836734694" y="59.2966249269229" width="3.785714285714285" height="260.7033750730771" class="bar-cli" rx="2"/>
+<text x="629.8520408163265" y="74.2966249269229" text-anchor="middle" class="bar-label">1949</text>
+<text x="622.9591836734694" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 622.9591836734694 340)">class tiny</text>
+<rect x="629.9897959183672" y="266.1605446378314" width="3.785714285714285" height="53.83945536216863" class="bar-mmdr" rx="2"/>
+<text x="631.8826530612243" y="281.1605446378314" text-anchor="middle" class="bar-label">4.8</text>
+<rect x="638.7755102040816" y="59.24117007575251" width="3.785714285714285" height="260.7588299242475" class="bar-cli" rx="2"/>
+<text x="640.6683673469387" y="74.2411700757525" text-anchor="middle" class="bar-label">1952</text>
+<text x="633.7755102040816" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 633.7755102040816 340)">state tiny</text>
+<rect x="640.8061224489795" y="271.54057891149705" width="3.785714285714285" height="48.459421088502964" class="bar-mmdr" rx="2"/>
+<text x="642.6989795918366" y="286.54057891149705" text-anchor="middle" class="bar-label">4.1</text>
+<rect x="649.5918367346939" y="59.956005305261954" width="3.785714285714285" height="260.04399469473805" class="bar-cli" rx="2"/>
+<text x="651.484693877551" y="74.95600530526195" text-anchor="middle" class="bar-label">1912</text>
+<text x="644.5918367346939" y="340" text-anchor="middle" class="tick-label" transform="rotate(-30 644.5918367346939 340)">sequence tiny</text>
 <rect x="670" y="60" width="15" height="15" class="bar-mmdr"/>
 <text x="690" y="72" class="legend">mmdr</text>
 <rect x="670" y="85" width="15" height="15" class="bar-cli"/>

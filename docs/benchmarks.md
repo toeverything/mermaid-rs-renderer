@@ -1,52 +1,50 @@
 # Benchmarks
 
-Date: February 2, 2026
-
-## Render target
-- Input: `docs/diagrams/architecture.mmd`
-- Output: PNG
+Date: February 7, 2026 (v0.2.0)
 
 ## Environment
-- Rust: `rustc 1.92.0 (ded5c06cf 2025-12-08) (Arch Linux rust 1:1.92.0-1)`
+- Rust: `rustc 1.93.0 (254b59607 2026-01-19)`
 - Node: `v25.2.1`
-- Mermaid CLI: `npx -y @mermaid-js/mermaid-cli`
-- Headless Chromium: `chrome-headless-shell` via Puppeteer cache
+- Mermaid CLI: `mermaid-cli 11.4.2 via Puppeteer/Chromium`
+- CPU: Intel Core Ultra 7 265V
 
-## Results (seconds)
+## Core diagram speedups
 
-Rust renderer (this project):
-- runs: 0.025, 0.024, 0.021, 0.020, 0.020
-- mean: 0.0222
-- p50: 0.0211
-- min/max: 0.0201 / 0.0253
+| Diagram | mmdr | mermaid-cli | Speedup |
+|:--------|-----:|------------:|--------:|
+| Flowchart | 4.49 ms | 1,971 ms | **439x** |
+| Class | 4.67 ms | 1,907 ms | **408x** |
+| State | 3.97 ms | 1,968 ms | **496x** |
+| Sequence | 2.71 ms | 1,906 ms | **704x** |
 
-Mermaid CLI (mmdc + Puppeteer):
-- runs: 2.398, 2.280, 2.602, 2.115, 2.090
-- mean: 2.2970
-- p50: 2.2802
-- min/max: 2.0903 / 2.6017
+## All diagram types
 
-## Font cache (warm)
-
-After the font cache is populated (default behavior), tiny/common diagrams reach 500–900×:
-
-| Diagram | mmdr (warm cache) | mermaid-cli | Speedup |
-|:--|--:|--:|--:|
-| Flowchart (tiny) | 2.96 ms | 2,259 ms | 764× |
-| Class (tiny) | 2.55 ms | 2,347 ms | 919× |
-| State (tiny) | 2.67 ms | 2,111 ms | 789× |
-| Sequence (tiny) | 3.75 ms | 2,010 ms | 536× |
-
-## Fast text metrics (tiny diagrams)
-
-Using `mmdr --fastText` on tiny/common diagrams (measured Feb 2, 2026):
-
-| Diagram | mmdr `--fastText` | mermaid-cli | Speedup |
-|:--|--:|--:|--:|
-| Flowchart (tiny) | 1.32 ms | 2,116 ms | 1,601× |
-| Class (tiny) | 1.23 ms | 2,314 ms | 1,880× |
-| State (tiny) | 1.09 ms | 2,258 ms | 2,069× |
-| Sequence (tiny) | 1.16 ms | 2,158 ms | 1,868× |
+| Diagram | mmdr | mermaid-cli | Speedup |
+|:--------|-----:|------------:|--------:|
+| Flowchart (small) | 3.38 ms | 1,910 ms | 565x |
+| Flowchart (medium) | 8.71 ms | 2,018 ms | 232x |
+| Flowchart (large) | 47.00 ms | 2,276 ms | 48x |
+| Class | 3.61 ms | 2,000 ms | 554x |
+| State | 5.05 ms | 2,227 ms | 441x |
+| Sequence | 4.07 ms | 1,969 ms | 484x |
+| ER | 5.84 ms | 2,012 ms | 344x |
+| Pie | 4.51 ms | 1,952 ms | 433x |
+| Gantt | 4.03 ms | 1,952 ms | 484x |
+| Mindmap | 4.20 ms | 1,949 ms | 465x |
+| Journey | 4.93 ms | 1,941 ms | 394x |
+| Timeline | 3.28 ms | 1,954 ms | 596x |
+| Git Graph | 5.43 ms | 1,931 ms | 356x |
+| Quadrant | 5.82 ms | 1,914 ms | 329x |
+| Requirement | 4.01 ms | 1,985 ms | 495x |
+| C4 | 4.23 ms | 2,110 ms | 498x |
+| Sankey | 5.08 ms | 1,944 ms | 382x |
+| ZenUML | 6.32 ms | 2,028 ms | 321x |
+| Block | 6.48 ms | 1,907 ms | 294x |
+| Packet | 2.65 ms | 1,936 ms | 732x |
+| Kanban | 2.04 ms | 1,985 ms | 973x |
+| Architecture | 2.86 ms | 1,967 ms | 688x |
+| Radar | 1.98 ms | 1,919 ms | 968x |
+| Treemap | 4.03 ms | 1,940 ms | 482x |
 
 ## Notes
 - These runs include process startup and file I/O.

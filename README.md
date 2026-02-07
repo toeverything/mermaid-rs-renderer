@@ -21,12 +21,12 @@ With the built-in font cache (warm after first run), tiny diagrams reach **500â€
 
 | Diagram | mmdr | mermaid-cli | Speedup |
 |:--------|-----:|------------:|--------:|
-| Flowchart | 4.54 ms | 2,449 ms | **540x** |
-| Class Diagram | 6.51 ms | 2,417 ms | **371x** |
-| State Diagram | 5.99 ms | 2,778 ms | **464x** |
-| Sequence Diagram | 5.71 ms | 2,297 ms | **402x** |
+| Flowchart | 4.49 ms | 1,971 ms | **439x** |
+| Class Diagram | 4.67 ms | 1,907 ms | **408x** |
+| State Diagram | 3.97 ms | 1,968 ms | **496x** |
+| Sequence Diagram | 2.71 ms | 1,906 ms | **704x** |
 
-<sub>Tested on Intel Core Ultra 7 265V, Linux 6.18.2 | mermaid-cli 11.4.2 via Puppeteer/Chromium</sub>
+<sub>Tested on Intel Core Ultra 7 265V, Linux 6.18.7 | mermaid-cli 11.4.2 via Puppeteer/Chromium</sub>
 
 </div>
 
@@ -92,9 +92,9 @@ Performance on larger diagrams:
 
 | Diagram | Nodes | mmdr | mermaid-cli | Speedup |
 |:--------|------:|-----:|------------:|--------:|
-| flowchart (small) | 10 | 7.04 ms | 2,135 ms | 303x |
-| flowchart (medium) | 50 | 5.20 ms | 2,197 ms | 422x |
-| flowchart (large) | 200 | 21.84 ms | 2,612 ms | 120x |
+| flowchart (small) | 10 | 3.38 ms | 1,910 ms | 565x |
+| flowchart (medium) | 50 | 8.71 ms | 2,018 ms | 232x |
+| flowchart (large) | 200 | 47.00 ms | 2,276 ms | 48x |
 
 The speedup advantage decreases for very large diagrams as actual layout computation becomes more significant relative to browser startup overhead. Still, mmdr remains **100x+ faster** even for 200-node diagrams.
 
@@ -144,14 +144,15 @@ mmdr -i README.md -o ./diagrams/ -e svg
 
 ## Diagram Types
 
-mmdr supports **13 Mermaid diagram types**:
+mmdr supports **23 Mermaid diagram types**:
 
 | Category | Diagrams |
 |:---------|:---------|
 | **Core** | Flowchart, Sequence, Class, State |
-| **Data** | ER Diagram, Pie Chart, XY Chart, Quadrant Chart |
-| **Planning** | Gantt, Timeline, Journey |
-| **Other** | Mindmap, Git Graph |
+| **Data** | ER Diagram, Pie Chart, XY Chart, Quadrant Chart, Sankey |
+| **Planning** | Gantt, Timeline, Journey, Kanban |
+| **Architecture** | C4, Block, Architecture, Requirement |
+| **Other** | Mindmap, Git Graph, ZenUML, Packet, Radar, Treemap |
 
 <table>
 <tr>
@@ -283,7 +284,7 @@ Supported:
 
 ## Features
 
-**Diagram types:** `flowchart` / `graph` | `sequenceDiagram` | `classDiagram` | `stateDiagram-v2` | `erDiagram` | `pie` | `gantt` | `journey` | `timeline` | `mindmap` | `gitGraph` | `xychart-beta` | `quadrantChart`
+**Diagram types:** `flowchart` / `graph` | `sequenceDiagram` | `classDiagram` | `stateDiagram-v2` | `erDiagram` | `pie` | `gantt` | `journey` | `timeline` | `mindmap` | `gitGraph` | `xychart-beta` | `quadrantChart` | `sankey-beta` | `kanban` | `C4Context` | `block-beta` | `architecture-beta` | `requirementDiagram` | `zenuml` | `packet-beta` | `radar-beta` | `treemap`
 
 **Node shapes:** rectangle, round-rect, stadium, circle, double-circle, diamond, hexagon, cylinder, subroutine, trapezoid, parallelogram, asymmetric
 
@@ -357,7 +358,7 @@ Use mmdr as a Rust library in your project:
 
 ```toml
 [dependencies]
-mermaid-rs-renderer = { git = "https://github.com/1jehuang/mermaid-rs-renderer" }
+mermaid-rs-renderer = { git = "https://github.com/1jehuang/mermaid-rs-renderer", tag = "v0.2.0" }
 ```
 
 <details>
@@ -367,7 +368,7 @@ For tools like Zola that only need SVG rendering, disable default features to av
 
 ```toml
 [dependencies]
-mermaid-rs-renderer = { git = "https://github.com/1jehuang/mermaid-rs-renderer", default-features = false }
+mermaid-rs-renderer = { git = "https://github.com/1jehuang/mermaid-rs-renderer", tag = "v0.2.0", default-features = false }
 ```
 
 | Feature | Default | Description |
