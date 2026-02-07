@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 300">
+  <rect width="520" height="300" fill="#FFFFFF"/>
   <style>
     .title { font: bold 18px system-ui, sans-serif; fill: #000; }
     .label { font: bold 13px system-ui, sans-serif; fill: #000; }
@@ -17,45 +18,47 @@
   <rect x="310" y="46" width="14" height="14" rx="2" fill="#8b5cf6"/>
   <text x="328" y="58" class="legend">Render</text>
 
+  <!-- Grid lines for 0.0 to 2.8ms -->
   <line x1="50" y1="260.0" x2="500" y2="260.0" stroke="#d1d5db" stroke-width="1"/>
   <text x="44" y="264.0" text-anchor="end" class="axis">0.0</text>
   <line x1="50" y1="205.0" x2="500" y2="205.0" stroke="#d1d5db" stroke-width="1"/>
-  <text x="44" y="209.0" text-anchor="end" class="axis">0.9</text>
+  <text x="44" y="209.0" text-anchor="end" class="axis">0.7</text>
   <line x1="50" y1="150.0" x2="500" y2="150.0" stroke="#d1d5db" stroke-width="1"/>
-  <text x="44" y="154.0" text-anchor="end" class="axis">1.8</text>
+  <text x="44" y="154.0" text-anchor="end" class="axis">1.4</text>
   <line x1="50" y1="95.0" x2="500" y2="95.0" stroke="#d1d5db" stroke-width="1"/>
-  <text x="44" y="99.0" text-anchor="end" class="axis">2.8</text>
+  <text x="44" y="99.0" text-anchor="end" class="axis">2.1</text>
   <line x1="50" y1="40.0" x2="500" y2="40.0" stroke="#d1d5db" stroke-width="1"/>
-  <text x="44" y="44.0" text-anchor="end" class="axis">3.7</text>
-  <!-- Flowchart (3.7ms) -->
-  <rect x="72.5" y="120.9" width="67.5" height="139.1" fill="#10b981"/>
-  <text x="106.25" y="194.4" text-anchor="middle" class="value">2.3</text>
-  <rect x="72.5" y="53.5" width="67.5" height="67.4" fill="#3b82f6"/>
-  <text x="106.25" y="91.2" text-anchor="middle" class="value">1.1</text>
-  <rect x="72.5" y="40.0" width="67.5" height="13.5" rx="3 3 0 0" fill="#8b5cf6"/>
+  <text x="44" y="44.0" text-anchor="end" class="axis">2.8</text>
+
+  <!-- Flowchart (2.63ms): parse=1.68 layout=0.74 render=0.22 -->
+  <rect x="72.5" y="128.0" width="67.5" height="132.0" fill="#10b981"/>
+  <text x="106.25" y="198.0" text-anchor="middle" class="value">1.68</text>
+  <rect x="72.5" y="70.0" width="67.5" height="58.0" fill="#3b82f6"/>
+  <text x="106.25" y="103.0" text-anchor="middle" class="value">0.74</text>
+  <rect x="72.5" y="53.0" width="67.5" height="17.0" rx="3 3 0 0" fill="#8b5cf6"/>
   <text x="106.25" y="278" text-anchor="middle" class="label">Flowchart</text>
 
-  <!-- Class (0.9ms) -->
-  <rect x="185.0" y="229.5" width="67.5" height="30.5" fill="#10b981"/>
-  <text x="218.75" y="248.7" text-anchor="middle" class="value">0.5</text>
-  <rect x="185.0" y="213.8" width="67.5" height="15.7" fill="#3b82f6"/>
-  <text x="218.75" y="225.7" text-anchor="middle" class="value">0.3</text>
-  <rect x="185.0" y="207.3" width="67.5" height="6.5" rx="3 3 0 0" fill="#8b5cf6"/>
+  <!-- Class (1.23ms): parse=0.70 layout=0.37 render=0.16 -->
+  <rect x="185.0" y="205.0" width="67.5" height="55.0" fill="#10b981"/>
+  <text x="218.75" y="236.0" text-anchor="middle" class="value">0.70</text>
+  <rect x="185.0" y="176.0" width="67.5" height="29.0" fill="#3b82f6"/>
+  <text x="218.75" y="194.0" text-anchor="middle" class="value">0.37</text>
+  <rect x="185.0" y="163.0" width="67.5" height="13.0" rx="3 3 0 0" fill="#8b5cf6"/>
   <text x="218.75" y="278" text-anchor="middle" class="label">Class</text>
 
-  <!-- State (1.4ms) -->
-  <rect x="297.5" y="227.9" width="67.5" height="32.1" fill="#10b981"/>
-  <text x="331.25" y="247.9" text-anchor="middle" class="value">0.5</text>
-  <rect x="297.5" y="184.3" width="67.5" height="43.6" fill="#3b82f6"/>
-  <text x="331.25" y="210.1" text-anchor="middle" class="value">0.7</text>
-  <rect x="297.5" y="175.0" width="67.5" height="9.4" rx="3 3 0 0" fill="#8b5cf6"/>
+  <!-- State (1.62ms): parse=0.44 layout=0.77 render=0.41 -->
+  <rect x="297.5" y="225.0" width="67.5" height="35.0" fill="#10b981"/>
+  <text x="331.25" y="246.0" text-anchor="middle" class="value">0.44</text>
+  <rect x="297.5" y="164.0" width="67.5" height="61.0" fill="#3b82f6"/>
+  <text x="331.25" y="198.0" text-anchor="middle" class="value">0.77</text>
+  <rect x="297.5" y="132.0" width="67.5" height="32.0" rx="3 3 0 0" fill="#8b5cf6"/>
   <text x="331.25" y="278" text-anchor="middle" class="label">State</text>
 
-  <!-- Sequence (0.7ms) -->
-  <rect x="410.0" y="232.3" width="67.5" height="27.7" fill="#10b981"/>
-  <text x="443.75" y="250.1" text-anchor="middle" class="value">0.5</text>
-  <rect x="410.0" y="221.8" width="67.5" height="10.5" fill="#3b82f6"/>
-  <text x="443.75" y="231.1" text-anchor="middle" class="value">0.2</text>
-  <rect x="410.0" y="217.3" width="67.5" height="4.5" rx="3 3 0 0" fill="#8b5cf6"/>
+  <!-- Sequence (0.61ms): parse=0.40 layout=0.15 render=0.07 -->
+  <rect x="410.0" y="228.0" width="67.5" height="32.0" fill="#10b981"/>
+  <text x="443.75" y="248.0" text-anchor="middle" class="value">0.40</text>
+  <rect x="410.0" y="216.0" width="67.5" height="12.0" fill="#3b82f6"/>
+  <text x="443.75" y="226.0" text-anchor="middle" class="value">0.15</text>
+  <rect x="410.0" y="210.0" width="67.5" height="6.0" rx="3 3 0 0" fill="#8b5cf6"/>
   <text x="443.75" y="278" text-anchor="middle" class="label">Sequence</text>
 </svg>

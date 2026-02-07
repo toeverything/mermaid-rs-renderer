@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 320">
+  <rect width="600" height="320" fill="#FFFFFF"/>
   <style>
     .title { font: bold 18px system-ui, sans-serif; fill: #000; }
     .label { font: bold 14px system-ui, sans-serif; fill: #000; }
@@ -15,35 +16,35 @@
   <rect x="290" y="45" width="14" height="14" rx="2" fill="#f97316"/>
   <text x="308" y="57" class="legend">mermaid-cli</text>
 
-  <!-- Flowchart -->
+  <!-- Flowchart: 4.49ms vs 1971ms = 439x -->
   <text x="105" y="95" text-anchor="middle" class="label">Flowchart</text>
   <rect x="55" y="267" width="50" height="18" rx="4" fill="#10b981"/>
-  <text x="80.0" y="281" text-anchor="middle" class="value">7.2</text>
-  <rect x="115" y="108.13935776156512" width="50" height="176.86064223843488" rx="4" fill="#f97316"/>
-  <text x="140.0" y="128.13935776156512" text-anchor="middle" class="value">2386</text>
-  <text x="105" y="305" text-anchor="middle" class="speedup">329×</text>
+  <text x="80.0" y="281" text-anchor="middle" class="value">4.5</text>
+  <rect x="115" y="113" width="50" height="172" rx="4" fill="#f97316"/>
+  <text x="140.0" y="133" text-anchor="middle" class="value">1971</text>
+  <text x="105" y="305" text-anchor="middle" class="speedup">439x</text>
 
-  <!-- Class -->
+  <!-- Class: 4.67ms vs 1907ms = 408x -->
   <text x="230" y="95" text-anchor="middle" class="label">Class</text>
   <rect x="180" y="267" width="50" height="18" rx="4" fill="#10b981"/>
   <text x="205.0" y="281" text-anchor="middle" class="value">4.7</text>
-  <rect x="240" y="105.0" width="50" height="180.0" rx="4" fill="#f97316"/>
-  <text x="265.0" y="125.0" text-anchor="middle" class="value">2428</text>
-  <text x="230" y="305" text-anchor="middle" class="speedup">516×</text>
+  <rect x="240" y="119" width="50" height="166" rx="4" fill="#f97316"/>
+  <text x="265.0" y="139" text-anchor="middle" class="value">1907</text>
+  <text x="230" y="305" text-anchor="middle" class="speedup">408x</text>
 
-  <!-- State -->
+  <!-- State: 3.97ms vs 1968ms = 496x -->
   <text x="355" y="95" text-anchor="middle" class="label">State</text>
   <rect x="305" y="267" width="50" height="18" rx="4" fill="#10b981"/>
-  <text x="330.0" y="281" text-anchor="middle" class="value">4.6</text>
-  <rect x="365" y="106.90871072950262" width="50" height="178.09128927049738" rx="4" fill="#f97316"/>
-  <text x="390.0" y="126.90871072950262" text-anchor="middle" class="value">2402</text>
-  <text x="355" y="305" text-anchor="middle" class="speedup">526×</text>
+  <text x="330.0" y="281" text-anchor="middle" class="value">4.0</text>
+  <rect x="365" y="114" width="50" height="171" rx="4" fill="#f97316"/>
+  <text x="390.0" y="134" text-anchor="middle" class="value">1968</text>
+  <text x="355" y="305" text-anchor="middle" class="speedup">496x</text>
 
-  <!-- Sequence -->
+  <!-- Sequence: 2.71ms vs 1906ms = 704x -->
   <text x="480" y="95" text-anchor="middle" class="label">Sequence</text>
   <rect x="430" y="267" width="50" height="18" rx="4" fill="#10b981"/>
-  <text x="455.0" y="281" text-anchor="middle" class="value">4.1</text>
-  <rect x="490" y="113.04570488287715" width="50" height="171.95429511712285" rx="4" fill="#f97316"/>
-  <text x="515.0" y="133.04570488287715" text-anchor="middle" class="value">2319</text>
-  <text x="480" y="305" text-anchor="middle" class="speedup">562×</text>
+  <text x="455.0" y="281" text-anchor="middle" class="value">2.7</text>
+  <rect x="490" y="120" width="50" height="165" rx="4" fill="#f97316"/>
+  <text x="515.0" y="140" text-anchor="middle" class="value">1906</text>
+  <text x="480" y="305" text-anchor="middle" class="speedup">704x</text>
 </svg>

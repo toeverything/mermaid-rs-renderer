@@ -313,6 +313,7 @@ def generate_svg_chart(results: dict, output_path: Path):
     # Create SVG
     svg_lines = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}">',
+        f'<rect width="{width}" height="{height}" fill="#FFFFFF"/>',
         '<style>',
         '  .title { font: bold 16px sans-serif; }',
         '  .axis-label { font: 12px sans-serif; }',
@@ -413,6 +414,7 @@ def generate_breakdown_chart(results: dict, output_path: Path):
 
     svg_lines = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}">',
+        f'<rect width="{width}" height="{height}" fill="#FFFFFF"/>',
         '<style>',
         '  .title { font: bold 14px sans-serif; }',
         '  .tick-label { font: 10px sans-serif; }',
