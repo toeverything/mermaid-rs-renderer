@@ -11750,12 +11750,10 @@ fn apply_visual_objectives(
     rebalance_top_level_subgraphs_aspect(graph, nodes, config);
     let overlap_pass_enabled = match graph.kind {
         crate::ir::DiagramKind::Class => true,
-        crate::ir::DiagramKind::Flowchart => {
-            graph.nodes.len() <= 10
-                && graph.edges.len() <= 16
-                && graph_has_directed_cycle(graph)
-                && has_visible_node_overlap(nodes)
-        }
+        crate::ir::DiagramKind::Flowchart
+        | crate::ir::DiagramKind::State
+        | crate::ir::DiagramKind::Er
+        | crate::ir::DiagramKind::Requirement => has_visible_node_overlap(nodes),
         _ => false,
     };
     if overlap_pass_enabled {
@@ -11802,8 +11800,16 @@ fn relax_edge_span_constraints(
     theme: &Theme,
     config: &LayoutConfig,
 ) {
-    if layout_edges.is_empty() || graph.kind != crate::ir::DiagramKind::Class {
+    if layout_edges.is_empty() {
         return;
+    }
+    match graph.kind {
+        crate::ir::DiagramKind::Class
+        | crate::ir::DiagramKind::Flowchart
+        | crate::ir::DiagramKind::State
+        | crate::ir::DiagramKind::Er
+        | crate::ir::DiagramKind::Requirement => {}
+        _ => return,
     }
     let horizontal = is_horizontal(graph.direction);
     let objective = &config.flowchart.objective;

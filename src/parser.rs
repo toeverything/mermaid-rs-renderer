@@ -21,6 +21,12 @@ static PIPE_LABEL_RE: Lazy<Regex> = Lazy::new(|| {
     )
     .unwrap()
 });
+static QUOTED_LABEL_ARROW_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r#"^(?P<left>.+?)\s*(?P<start><)?(?P<dash1>[-.=ox]*[-=]+[-.=ox]*)\s+"(?P<label>[^"]+)"\s+(?P<dash2>[-.=ox]*[-=]+[-.=ox]*)(?P<end>>)?\s*(?P<right>.+)$"#,
+    )
+    .unwrap()
+});
 static LABEL_ARROW_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
         r"^(?P<left>.+?)\s*(?P<start><)?(?P<dash1>[-.=ox]*[-=]+[-.=ox]*)\s+(?P<label>[^<>=]+?)\s+(?P<dash2>[-.=ox]*[-=]+[-.=ox]*)(?P<end>>)?\s*(?P<right>.+)$",
@@ -5044,6 +5050,7 @@ fn mask_bracket_content(line: &str) -> String {
 fn split_edge_chain(line: &str) -> Option<Vec<String>> {
     let masked = mask_bracket_content(line);
     if PIPE_LABEL_RE.is_match(&masked)
+        || QUOTED_LABEL_ARROW_RE.is_match(line)
         || LABEL_ARROW_RE.is_match(&masked)
         || COMPACT_DOTTED_LABEL_ARROW_RE.is_match(&masked)
     {
@@ -5113,6 +5120,28 @@ fn parse_edge_line(line: &str) -> Option<(String, Option<String>, String, EdgeMe
         if !label_clean.is_empty() && !left.is_empty() && !right.is_empty() {
             let arrow = extract(arrow_match).trim();
             let edge_meta = parse_edge_meta(arrow);
+            return Some((
+                left.to_string(),
+                Some(label_clean.to_string()),
+                right.to_string(),
+                edge_meta,
+            ));
+        }
+    }
+
+    // Quoted label syntax: -- "text" --> (match on original line, not masked,
+    // because mask_bracket_content blanks quoted content).
+    if let Some(caps) = QUOTED_LABEL_ARROW_RE.captures(line) {
+        let left = caps.name("left")?.as_str().trim();
+        let right = caps.name("right")?.as_str().trim();
+        let label_clean = caps.name("label")?.as_str().trim();
+        if !label_clean.is_empty() && !left.is_empty() && !right.is_empty() {
+            let start = caps.name("start").map(|m| m.as_str()).unwrap_or("");
+            let dash1 = caps.name("dash1")?.as_str();
+            let dash2 = caps.name("dash2")?.as_str();
+            let end = caps.name("end").map(|m| m.as_str()).unwrap_or("");
+            let arrow = format!("{}{}{}{}", start, dash1, dash2, end);
+            let edge_meta = parse_edge_meta(&arrow);
             return Some((
                 left.to_string(),
                 Some(label_clean.to_string()),
@@ -5888,6 +5917,19 @@ mod tests {
         assert!(parsed.graph.nodes.contains_key("D2"));
         assert!(!parsed.graph.nodes.contains_key("risk"));
         assert!(!parsed.graph.nodes.contains_key("|high"));
+    }
+
+    #[test]
+    fn parse_quoted_inline_edge_label() {
+        let input = "flowchart LR\n  A[Node 1] -- \"Some text\" --> B[Node 2]";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.edges.len(), 1);
+        assert_eq!(
+            parsed.graph.edges[0].label.as_deref(),
+            Some("Some text")
+        );
+        assert!(parsed.graph.nodes.contains_key("A"));
+        assert!(parsed.graph.nodes.contains_key("B"));
     }
 
     #[test]

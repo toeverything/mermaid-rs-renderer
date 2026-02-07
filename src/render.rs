@@ -4596,8 +4596,8 @@ fn compute_edge_label_positions(
                 }
             }
         }
-        let normal_steps = [0.0, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0];
-        let tangent_steps = [0.0, 0.6, -0.6, 1.2, -1.2];
+        let normal_steps = [0.0, 0.15, -0.15, 0.35, -0.35, 0.6, -0.6, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0];
+        let tangent_steps = [0.0, 0.2, -0.2, 0.6, -0.6, 1.2, -1.2];
         let mut best_pos = (anchors[0].0, anchors[0].1);
         let mut best_penalty = (f32::INFINITY, f32::INFINITY);
         let evaluate_candidates = |anchor: (f32, f32, f32, f32),
