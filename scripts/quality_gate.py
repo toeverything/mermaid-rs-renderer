@@ -15,14 +15,41 @@ STRICT_METRICS = {
     "edge_crossings",
     "edge_node_crossings",
     "node_overlap_count",
+    "label_overlap_count",
+    "label_edge_overlap_count",
+    "label_out_of_bounds_count",
 }
 
 RELATIVE_METRICS = {
     "total_edge_length",
+    "edge_length_per_node",
     "edge_bends",
+    "crossing_angle_penalty",
+    "angular_resolution_penalty",
     "port_congestion",
     "edge_overlap_length",
+    "edge_node_near_miss_count",
+    "node_spacing_violation_count",
+    "node_spacing_violation_severity",
+    "avg_edge_detour_ratio",
+    "edge_detour_penalty",
     "layout_area",
+    "layout_area_per_node",
+    "layout_area_per_edge",
+    "content_fill_ratio",
+    "wasted_space_ratio",
+    "space_efficiency_penalty",
+    "content_center_offset_ratio",
+    "content_overflow_ratio",
+    "content_aspect_elongation",
+    "component_gap_ratio",
+    "component_balance_penalty",
+    "margin_imbalance_ratio",
+    "label_overlap_area",
+    "label_edge_overlap_pairs",
+    "label_total_area",
+    "label_out_of_bounds_area",
+    "label_out_of_bounds_ratio",
     "node_overlap_area",
     "score",
 }
@@ -31,6 +58,14 @@ RELATIVE_METRICS = {
 def load_layout_score():
     module_path = ROOT / "scripts" / "layout_score.py"
     spec = importlib.util.spec_from_file_location("layout_score", module_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # type: ignore[call-arg]
+    return module
+
+
+def load_quality_bench():
+    module_path = ROOT / "scripts" / "quality_bench.py"
+    spec = importlib.util.spec_from_file_location("quality_bench", module_path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)  # type: ignore[call-arg]
     return module
@@ -82,6 +117,7 @@ def collect_fixtures(fixtures, limit, patterns):
 
 def compute_metrics(files, bin_path, config_path, out_dir):
     layout_score = load_layout_score()
+    quality_bench = load_quality_bench()
     out_dir.mkdir(parents=True, exist_ok=True)
     config_args = ["-c", str(config_path)] if config_path.exists() else []
     results = {}
@@ -110,6 +146,7 @@ def compute_metrics(files, bin_path, config_path, out_dir):
         data, nodes, edges = layout_score.load_layout(layout_path)
         metrics = layout_score.compute_metrics(data, nodes, edges)
         metrics["score"] = layout_score.weighted_score(metrics)
+        metrics.update(quality_bench.compute_label_metrics(svg_path, nodes, edges))
         results[str(file)] = metrics
     return results
 

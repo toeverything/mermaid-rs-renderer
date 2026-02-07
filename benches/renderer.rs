@@ -51,6 +51,70 @@ fn fixture(name: &str) -> &'static str {
             env!("CARGO_MANIFEST_DIR"),
             "/benches/fixtures/flowchart_tiny.mmd"
         )),
+        "flowchart_ports_heavy" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_ports_heavy.mmd"
+        )),
+        "flowchart_weave" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_weave.mmd"
+        )),
+        "flowchart_backedges_subgraphs" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_backedges_subgraphs.mmd"
+        )),
+        "flowchart_sparse_components" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_sparse_components.mmd"
+        )),
+        "flowchart_lanes_crossfeed" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_lanes_crossfeed.mmd"
+        )),
+        "flowchart_grid_feedback" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_grid_feedback.mmd"
+        )),
+        "flowchart_fanout_returns" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_fanout_returns.mmd"
+        )),
+        "flowchart_label_collision" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_label_collision.mmd"
+        )),
+        "flowchart_nested_clusters" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_nested_clusters.mmd"
+        )),
+        "flowchart_asymmetric_components" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_asymmetric_components.mmd"
+        )),
+        "flowchart_parallel_merges" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_parallel_merges.mmd"
+        )),
+        "flowchart_long_edge_labels" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_long_edge_labels.mmd"
+        )),
+        "flowchart_selfloop_bidi" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_selfloop_bidi.mmd"
+        )),
+        "flowchart_component_packing" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_component_packing.mmd"
+        )),
+        "flowchart_direction_conflict" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_direction_conflict.mmd"
+        )),
+        "flowchart_parallel_label_stack" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_parallel_label_stack.mmd"
+        )),
         "class_tiny" => include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/benches/fixtures/class_tiny.mmd"
@@ -162,6 +226,22 @@ fn bench_parse(c: &mut Criterion) {
         "flowchart_medium",
         "flowchart_large",
         "flowchart_tiny",
+        "flowchart_ports_heavy",
+        "flowchart_weave",
+        "flowchart_backedges_subgraphs",
+        "flowchart_sparse_components",
+        "flowchart_lanes_crossfeed",
+        "flowchart_grid_feedback",
+        "flowchart_fanout_returns",
+        "flowchart_label_collision",
+        "flowchart_nested_clusters",
+        "flowchart_asymmetric_components",
+        "flowchart_parallel_merges",
+        "flowchart_long_edge_labels",
+        "flowchart_selfloop_bidi",
+        "flowchart_component_packing",
+        "flowchart_direction_conflict",
+        "flowchart_parallel_label_stack",
         "class_tiny",
         "state_tiny",
         "sequence_tiny",
@@ -207,6 +287,22 @@ fn bench_layout(c: &mut Criterion) {
         "flowchart_tiny",
         "flowchart_medium",
         "flowchart_large",
+        "flowchart_ports_heavy",
+        "flowchart_weave",
+        "flowchart_backedges_subgraphs",
+        "flowchart_sparse_components",
+        "flowchart_lanes_crossfeed",
+        "flowchart_grid_feedback",
+        "flowchart_fanout_returns",
+        "flowchart_label_collision",
+        "flowchart_nested_clusters",
+        "flowchart_asymmetric_components",
+        "flowchart_parallel_merges",
+        "flowchart_long_edge_labels",
+        "flowchart_selfloop_bidi",
+        "flowchart_component_packing",
+        "flowchart_direction_conflict",
+        "flowchart_parallel_label_stack",
         "class_tiny",
         "class_medium",
         "state_tiny",
@@ -314,6 +410,22 @@ fn bench_render(c: &mut Criterion) {
         "flowchart_tiny",
         "flowchart_medium",
         "flowchart_large",
+        "flowchart_ports_heavy",
+        "flowchart_weave",
+        "flowchart_backedges_subgraphs",
+        "flowchart_sparse_components",
+        "flowchart_lanes_crossfeed",
+        "flowchart_grid_feedback",
+        "flowchart_fanout_returns",
+        "flowchart_label_collision",
+        "flowchart_nested_clusters",
+        "flowchart_asymmetric_components",
+        "flowchart_parallel_merges",
+        "flowchart_long_edge_labels",
+        "flowchart_selfloop_bidi",
+        "flowchart_component_packing",
+        "flowchart_direction_conflict",
+        "flowchart_parallel_label_stack",
         "class_tiny",
         "class_medium",
         "state_tiny",
@@ -360,6 +472,22 @@ fn bench_end_to_end(c: &mut Criterion) {
         "flowchart_tiny",
         "flowchart_small",
         "flowchart_medium",
+        "flowchart_ports_heavy",
+        "flowchart_weave",
+        "flowchart_backedges_subgraphs",
+        "flowchart_sparse_components",
+        "flowchart_lanes_crossfeed",
+        "flowchart_grid_feedback",
+        "flowchart_fanout_returns",
+        "flowchart_label_collision",
+        "flowchart_nested_clusters",
+        "flowchart_asymmetric_components",
+        "flowchart_parallel_merges",
+        "flowchart_long_edge_labels",
+        "flowchart_selfloop_bidi",
+        "flowchart_component_packing",
+        "flowchart_direction_conflict",
+        "flowchart_parallel_label_stack",
         "class_tiny",
         "class_medium",
         "state_tiny",

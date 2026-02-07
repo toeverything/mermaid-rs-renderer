@@ -52,3 +52,62 @@ Using `mmdr --fastText` on tiny/common diagrams (measured Feb 2, 2026):
 - These runs include process startup and file I/O.
 - Mermaid CLI time includes headless Chromium launch.
 - Numbers are local measurements; expect variation across machines.
+
+## Improvement Prioritization Benchmark
+
+Use `scripts/priority_bench.py` to rank where layout work should focus next by combining
+quality pain (crossings, node-edge intersections, bends, port congestion, overlaps,
+edge detour, and whitespace efficiency) with layout time.
+Priority weights are derived automatically from the fixture corpus by default
+(`--weight-mode auto`) to reduce hand-tuned bias.
+
+```bash
+# Full suite (tests + benches)
+python3 scripts/priority_bench.py --runs 3 --warmup 1
+
+# Focus flowchart family first
+python3 scripts/priority_bench.py --pattern flowchart --top 15
+
+# Use fixed fallback weights only if needed
+python3 scripts/priority_bench.py --pattern flowchart --weight-mode manual
+```
+
+The script writes a machine-readable report to `target/priority-bench.json` and prints:
+- top fixtures by quality pain
+- top quick wins by pain-per-layout-millisecond
+- top fixtures by space inefficiency (wasted space, component gap, center offset)
+
+Recent stress fixtures for visual quality include:
+- `benches/fixtures/flowchart_ports_heavy.mmd`
+- `benches/fixtures/flowchart_weave.mmd`
+- `benches/fixtures/flowchart_backedges_subgraphs.mmd`
+- `benches/fixtures/flowchart_sparse_components.mmd`
+- `benches/fixtures/flowchart_lanes_crossfeed.mmd`
+- `benches/fixtures/flowchart_grid_feedback.mmd`
+- `benches/fixtures/flowchart_fanout_returns.mmd`
+- `benches/fixtures/flowchart_label_collision.mmd`
+- `benches/fixtures/flowchart_nested_clusters.mmd`
+- `benches/fixtures/flowchart_asymmetric_components.mmd`
+- `benches/fixtures/flowchart_parallel_merges.mmd`
+- `benches/fixtures/flowchart_long_edge_labels.mmd`
+- `benches/fixtures/flowchart_selfloop_bidi.mmd`
+- `benches/fixtures/flowchart_component_packing.mmd`
+- `benches/fixtures/flowchart_direction_conflict.mmd`
+- `benches/fixtures/flowchart_parallel_label_stack.mmd`
+
+Latest flowchart quality compare (`scripts/quality_bench.py --engine both --pattern flowchart`, February 6, 2026):
+- `mmdr`: 30 fixtures, average weighted score `435.06`
+- `mermaid-cli`: 30 fixtures, average weighted score `1140.45`
+- `mmdr avg wasted space ratio`: `0.177`
+- `mmdr avg edge detour ratio`: `1.253`
+- `mmdr avg component gap ratio`: `0.086`
+- `mmdr avg label out-of-bounds count`: `0.000`
+
+Recent layout/readability fixes validated by these runs:
+- Fixed flowchart parsing of hyphenated pipe labels (no phantom nodes from labels like `|high-risk order|`).
+- Edge-label placement now clamps to canvas bounds and optimizes overlap first, removing suite-level label clipping.
+- Added multi-anchor edge-label search (longest-segment + path-fraction anchors) and priority-aware edge routing order on larger graphs, reducing crossings on heavy backedge fixtures.
+- Added an objective stage between placement and routing:
+  - class multiplicity edge-span relaxation (removed multiplicity label-label overlap in `tests/fixtures/class/multiplicity.mmd`)
+  - tiny-cycle overlap resolution (removed node overlap and label overlap in `tests/fixtures/flowchart/cycles.mmd`)
+  - chain-aware top-level subgraph wrapping for very large flowcharts (`benches/fixtures/flowchart_large.mmd` aspect elongation `153.63 -> 1.71`, wasted space `0.286 -> 0.071`).

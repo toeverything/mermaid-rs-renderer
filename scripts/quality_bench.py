@@ -99,6 +99,21 @@ def parse_svg_number(value: str) -> float:
     return float(match.group(0)) if match else 0.0
 
 
+def parse_style_map(style: str):
+    result = {}
+    if not style:
+        return result
+    for part in style.split(";"):
+        if ":" not in part:
+            continue
+        key, value = part.split(":", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if key:
+            result[key] = value
+    return result
+
+
 def cubic_point(p0, p1, p2, p3, t: float):
     it = 1.0 - t
     x = (
@@ -416,6 +431,303 @@ def svg_size(root):
     return width, height
 
 
+def text_anchor(elem, style):
+    anchor = elem.attrib.get("text-anchor")
+    if not anchor:
+        anchor = style.get("text-anchor", "")
+    anchor = anchor.strip().lower()
+    if anchor in {"middle", "end"}:
+        return anchor
+    return "start"
+
+
+def text_font_size(elem, style):
+    size = parse_svg_number(elem.attrib.get("font-size", ""))
+    if size <= 0.0:
+        size = parse_svg_number(style.get("font-size", ""))
+    return size if size > 0.0 else 16.0
+
+
+def first_attr_number(elem, attr):
+    raw = elem.attrib.get(attr, "")
+    if not raw:
+        return None
+    parts = [p for p in raw.replace(",", " ").split() if p]
+    if not parts:
+        return None
+    return parse_svg_number(parts[0])
+
+
+def extract_text_lines(text_elem):
+    lines = []
+    has_tspan = False
+    for node in text_elem.iter():
+        if strip_ns(node.tag) != "tspan":
+            continue
+        has_tspan = True
+        raw = "".join(node.itertext()).strip()
+        if raw:
+            lines.append(raw)
+    if has_tspan:
+        return lines
+    raw = "".join(text_elem.itertext()).strip()
+    return [raw] if raw else []
+
+
+def parse_text_boxes(svg_path: Path):
+    root = ET.fromstring(svg_path.read_text())
+    boxes = []
+
+    def visit(elem, acc_tx, acc_ty):
+        tag = strip_ns(elem.tag)
+        if tag in {"defs", "style", "script"}:
+            return
+        tx, ty = parse_transform(elem.attrib.get("transform", ""))
+        cur_tx = acc_tx + tx
+        cur_ty = acc_ty + ty
+
+        if tag == "foreignObject":
+            width = parse_svg_number(elem.attrib.get("width", ""))
+            height = parse_svg_number(elem.attrib.get("height", ""))
+            if width > 0.0 and height > 0.0:
+                x = parse_svg_number(elem.attrib.get("x", "")) + cur_tx
+                y = parse_svg_number(elem.attrib.get("y", "")) + cur_ty
+                boxes.append(
+                    {
+                        "x": x,
+                        "y": y,
+                        "width": width,
+                        "height": height,
+                    }
+                )
+
+        if tag == "text":
+            style = parse_style_map(elem.attrib.get("style", ""))
+            lines = extract_text_lines(elem)
+            if lines:
+                x = first_attr_number(elem, "x")
+                y = first_attr_number(elem, "y")
+                if x is None or y is None:
+                    for node in elem.iter():
+                        if strip_ns(node.tag) != "tspan":
+                            continue
+                        if x is None:
+                            x = first_attr_number(node, "x")
+                        if y is None:
+                            y = first_attr_number(node, "y")
+                        if x is not None and y is not None:
+                            break
+                if x is None:
+                    x = 0.0
+                if y is None:
+                    y = 0.0
+                x += cur_tx
+                y += cur_ty
+                font_size = text_font_size(elem, style)
+                line_height = font_size * 1.2
+                width = max(len(line) for line in lines) * font_size * 0.6
+                height = max(font_size, len(lines) * line_height)
+                anchor = text_anchor(elem, style)
+                if anchor == "middle":
+                    x -= width / 2.0
+                elif anchor == "end":
+                    x -= width
+                # SVG y is text baseline; approximate top from baseline.
+                y -= font_size * 0.8
+                boxes.append(
+                    {
+                        "x": x,
+                        "y": y,
+                        "width": width,
+                        "height": height,
+                    }
+                )
+
+        for child in list(elem):
+            visit(child, cur_tx, cur_ty)
+
+    visit(root, 0.0, 0.0)
+    return boxes
+
+
+def rect_overlap_area(a, b):
+    ax1 = a["x"]
+    ay1 = a["y"]
+    ax2 = ax1 + a["width"]
+    ay2 = ay1 + a["height"]
+    bx1 = b["x"]
+    by1 = b["y"]
+    bx2 = bx1 + b["width"]
+    by2 = by1 + b["height"]
+    ix1 = max(ax1, bx1)
+    iy1 = max(ay1, by1)
+    ix2 = min(ax2, bx2)
+    iy2 = min(ay2, by2)
+    if ix2 <= ix1 or iy2 <= iy1:
+        return 0.0
+    return (ix2 - ix1) * (iy2 - iy1)
+
+
+def orient(a, b, c):
+    return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+
+def on_segment(a, b, c, eps):
+    return (
+        min(a[0], b[0]) - eps <= c[0] <= max(a[0], b[0]) + eps
+        and min(a[1], b[1]) - eps <= c[1] <= max(a[1], b[1]) + eps
+    )
+
+
+def segments_intersect(a, b, c, d, eps=1e-6):
+    o1 = orient(a, b, c)
+    o2 = orient(a, b, d)
+    o3 = orient(c, d, a)
+    o4 = orient(c, d, b)
+
+    if abs(o1) < eps and abs(o2) < eps and abs(o3) < eps and abs(o4) < eps:
+        return False
+    if o1 * o2 < 0 and o3 * o4 < 0:
+        return True
+    if abs(o1) < eps and on_segment(a, b, c, eps):
+        return True
+    if abs(o2) < eps and on_segment(a, b, d, eps):
+        return True
+    if abs(o3) < eps and on_segment(c, d, a, eps):
+        return True
+    if abs(o4) < eps and on_segment(c, d, b, eps):
+        return True
+    return False
+
+
+def segment_intersects_rect(a, b, rect, eps=1e-6):
+    x = rect["x"]
+    y = rect["y"]
+    w = rect["width"]
+    h = rect["height"]
+    x1, y1 = a
+    x2, y2 = b
+    min_x = min(x1, x2)
+    max_x = max(x1, x2)
+    min_y = min(y1, y2)
+    max_y = max(y1, y2)
+    if max_x < x - eps or min_x > x + w + eps or max_y < y - eps or min_y > y + h + eps:
+        return False
+    if x - eps <= x1 <= x + w + eps and y - eps <= y1 <= y + h + eps:
+        return True
+    if x - eps <= x2 <= x + w + eps and y - eps <= y2 <= y + h + eps:
+        return True
+    corners = [
+        (x, y),
+        (x + w, y),
+        (x + w, y + h),
+        (x, y + h),
+    ]
+    edges = [
+        (corners[0], corners[1]),
+        (corners[1], corners[2]),
+        (corners[2], corners[3]),
+        (corners[3], corners[0]),
+    ]
+    for c, d in edges:
+        if segments_intersect(a, b, c, d):
+            return True
+    return False
+
+
+def infer_label_owner(label, nodes):
+    cx = label["x"] + label["width"] / 2.0
+    cy = label["y"] + label["height"] / 2.0
+    best_id = None
+    best_area = None
+    for node_id, node in nodes.items():
+        x = node.get("x", 0.0)
+        y = node.get("y", 0.0)
+        w = node.get("width", 0.0)
+        h = node.get("height", 0.0)
+        if w <= 0.0 or h <= 0.0:
+            continue
+        if cx < x or cx > x + w or cy < y or cy > y + h:
+            continue
+        area = w * h
+        if best_area is None or area < best_area:
+            best_area = area
+            best_id = node_id
+    return best_id
+
+
+def compute_label_metrics(svg_path: Path, nodes, edges):
+    labels = parse_text_boxes(svg_path)
+    root = ET.fromstring(svg_path.read_text())
+    canvas_width, canvas_height = svg_size(root)
+    canvas_rect = {
+        "x": 0.0,
+        "y": 0.0,
+        "width": max(0.0, canvas_width),
+        "height": max(0.0, canvas_height),
+    }
+    for label in labels:
+        label["owner"] = infer_label_owner(label, nodes)
+
+    overlap_count = 0
+    overlap_area = 0.0
+    for i in range(len(labels)):
+        for j in range(i + 1, len(labels)):
+            area = rect_overlap_area(labels[i], labels[j])
+            if area > 0.0:
+                overlap_count += 1
+                overlap_area += area
+
+    label_edge_pairs = 0
+    labels_touching_edges = 0
+    for label in labels:
+        touched = False
+        owner = label.get("owner")
+        for edge in edges:
+            if owner and (edge.get("from") == owner or edge.get("to") == owner):
+                continue
+            points = [tuple(p) for p in edge.get("points", [])]
+            if len(points) < 2:
+                continue
+            edge_hit = False
+            for a, b in zip(points, points[1:]):
+                if segment_intersects_rect(a, b, label):
+                    edge_hit = True
+                    touched = True
+                    break
+            if edge_hit:
+                label_edge_pairs += 1
+        if touched:
+            labels_touching_edges += 1
+
+    label_total_area = 0.0
+    label_out_of_bounds_count = 0
+    label_out_of_bounds_area = 0.0
+    if canvas_rect["width"] > 0.0 and canvas_rect["height"] > 0.0:
+        for label in labels:
+            area = max(0.0, label["width"]) * max(0.0, label["height"])
+            label_total_area += area
+            visible = rect_overlap_area(label, canvas_rect)
+            clipped = max(0.0, area - visible)
+            if clipped > 1e-3:
+                label_out_of_bounds_count += 1
+                label_out_of_bounds_area += clipped
+
+    return {
+        "label_count": len(labels),
+        "label_overlap_count": overlap_count,
+        "label_overlap_area": overlap_area,
+        "label_edge_overlap_count": labels_touching_edges,
+        "label_edge_overlap_pairs": label_edge_pairs,
+        "label_total_area": label_total_area,
+        "label_out_of_bounds_count": label_out_of_bounds_count,
+        "label_out_of_bounds_area": label_out_of_bounds_area,
+        "label_out_of_bounds_ratio": (
+            label_out_of_bounds_area / label_total_area if label_total_area > 1e-9 else 0.0
+        ),
+    }
+
+
 def match_endpoint(point, node_list):
     px, py = point
     best_id = None
@@ -511,6 +823,7 @@ def compute_mmdr_metrics(files, bin_path, config_path, out_dir):
         data, nodes, edges = layout_score.load_layout(layout_path)
         metrics = layout_score.compute_metrics(data, nodes, edges)
         metrics["score"] = layout_score.weighted_score(metrics)
+        metrics.update(compute_label_metrics(svg_path, nodes, edges))
         results[str(file)] = metrics
     return results
 
@@ -531,6 +844,7 @@ def compute_mmdc_metrics(files, cli_cmd, config_path, out_dir):
         data, nodes, edges = load_mermaid_svg_graph(svg_path)
         metrics = layout_score.compute_metrics(data, nodes, edges)
         metrics["score"] = layout_score.weighted_score(metrics)
+        metrics.update(compute_label_metrics(svg_path, nodes, edges))
         results[str(file)] = metrics
     return results
 
@@ -541,6 +855,13 @@ def summarize_scores(results):
         return 0.0, 0
     avg = sum(scored) / len(scored)
     return avg, len(scored)
+
+
+def summarize_metric(results, key):
+    values = [v[key] for v in results.values() if isinstance(v, dict) and key in v]
+    if not values:
+        return None, 0
+    return sum(values) / len(values), len(values)
 
 
 def main():
@@ -644,6 +965,36 @@ def main():
             print(f"mmdr: {mmdr_count} fixtures  Avg score: {mmdr_avg:.2f}")
         if mmdc_count:
             print(f"mermaid-cli: {mmdc_count} fixtures  Avg score: {mmdc_avg:.2f}")
+        mmdr_waste, mmdr_waste_count = summarize_metric(results.get("mmdr", {}), "wasted_space_ratio")
+        mmdc_waste, mmdc_waste_count = summarize_metric(results.get("mermaid_cli", {}), "wasted_space_ratio")
+        if mmdr_waste_count:
+            print(f"mmdr: avg wasted space ratio: {mmdr_waste:.3f}")
+        if mmdc_waste_count:
+            print(f"mermaid-cli: avg wasted space ratio: {mmdc_waste:.3f}")
+        mmdr_detour, mmdr_detour_count = summarize_metric(results.get("mmdr", {}), "avg_edge_detour_ratio")
+        mmdc_detour, mmdc_detour_count = summarize_metric(results.get("mermaid_cli", {}), "avg_edge_detour_ratio")
+        if mmdr_detour_count:
+            print(f"mmdr: avg edge detour ratio: {mmdr_detour:.3f}")
+        if mmdc_detour_count:
+            print(f"mermaid-cli: avg edge detour ratio: {mmdc_detour:.3f}")
+        mmdr_comp_gap, mmdr_comp_gap_count = summarize_metric(results.get("mmdr", {}), "component_gap_ratio")
+        mmdc_comp_gap, mmdc_comp_gap_count = summarize_metric(
+            results.get("mermaid_cli", {}), "component_gap_ratio"
+        )
+        if mmdr_comp_gap_count:
+            print(f"mmdr: avg component gap ratio: {mmdr_comp_gap:.3f}")
+        if mmdc_comp_gap_count:
+            print(f"mermaid-cli: avg component gap ratio: {mmdc_comp_gap:.3f}")
+        mmdr_label_oob, mmdr_label_oob_count = summarize_metric(
+            results.get("mmdr", {}), "label_out_of_bounds_count"
+        )
+        mmdc_label_oob, mmdc_label_oob_count = summarize_metric(
+            results.get("mermaid_cli", {}), "label_out_of_bounds_count"
+        )
+        if mmdr_label_oob_count:
+            print(f"mmdr: avg label out-of-bounds count: {mmdr_label_oob:.3f}")
+        if mmdc_label_oob_count:
+            print(f"mermaid-cli: avg label out-of-bounds count: {mmdc_label_oob:.3f}")
     else:
         scored = [(k, v) for k, v in payload.items() if isinstance(v, dict) and "score" in v]
         if scored:
@@ -654,6 +1005,39 @@ def main():
             print("Worst 5 by score:")
             for name, metrics in top:
                 print(f"  {name}: {metrics['score']:.2f}")
+            by_space = sorted(
+                scored,
+                key=lambda kv: kv[1].get("space_efficiency_penalty", 0.0),
+                reverse=True,
+            )[:5]
+            print("Worst 5 by wasted-space penalty:")
+            for name, metrics in by_space:
+                print(
+                    "  "
+                    f"{name}: penalty={metrics.get('space_efficiency_penalty', 0.0):.3f} "
+                    f"(wasted={metrics.get('wasted_space_ratio', 0.0):.2f}, "
+                    f"fill={metrics.get('content_fill_ratio', 0.0):.2f})"
+                )
+            by_detour = sorted(
+                scored,
+                key=lambda kv: kv[1].get("avg_edge_detour_ratio", 1.0),
+                reverse=True,
+            )[:5]
+            print("Worst 5 by edge detour ratio:")
+            for name, metrics in by_detour:
+                print(f"  {name}: detour={metrics.get('avg_edge_detour_ratio', 1.0):.2f}")
+            by_label_oob = sorted(
+                scored,
+                key=lambda kv: kv[1].get("label_out_of_bounds_count", 0.0),
+                reverse=True,
+            )[:5]
+            print("Worst 5 by label out-of-bounds:")
+            for name, metrics in by_label_oob:
+                print(
+                    "  "
+                    f"{name}: count={metrics.get('label_out_of_bounds_count', 0)}, "
+                    f"ratio={metrics.get('label_out_of_bounds_ratio', 0.0):.3f}"
+                )
 
 
 if __name__ == "__main__":
