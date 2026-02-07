@@ -790,6 +790,7 @@ pub struct FlowchartLayoutConfig {
     pub port_side_bias: f32,
     pub auto_spacing: FlowchartAutoSpacingConfig,
     pub routing: FlowchartRoutingConfig,
+    pub objective: FlowchartObjectiveConfig,
 }
 
 impl Default for FlowchartLayoutConfig {
@@ -802,6 +803,39 @@ impl Default for FlowchartLayoutConfig {
             port_side_bias: 0.0,
             auto_spacing: FlowchartAutoSpacingConfig::default(),
             routing: FlowchartRoutingConfig::default(),
+            objective: FlowchartObjectiveConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlowchartObjectiveConfig {
+    pub enabled: bool,
+    pub max_aspect_ratio: f32,
+    pub wrap_min_groups: usize,
+    pub wrap_main_gap_scale: f32,
+    pub wrap_cross_gap_scale: f32,
+    pub edge_relax_passes: usize,
+    pub edge_gap_floor_ratio: f32,
+    pub edge_label_weight: f32,
+    pub endpoint_label_weight: f32,
+    pub backedge_cross_weight: f32,
+}
+
+impl Default for FlowchartObjectiveConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_aspect_ratio: 9.0,
+            wrap_min_groups: 4,
+            wrap_main_gap_scale: 1.15,
+            wrap_cross_gap_scale: 1.35,
+            edge_relax_passes: 6,
+            edge_gap_floor_ratio: 0.55,
+            edge_label_weight: 0.9,
+            endpoint_label_weight: 0.75,
+            backedge_cross_weight: 0.65,
         }
     }
 }
@@ -1031,6 +1065,7 @@ struct FlowchartConfig {
     port_side_bias: Option<f32>,
     auto_spacing: Option<FlowchartAutoSpacingConfigFile>,
     routing: Option<FlowchartRoutingConfigFile>,
+    objective: Option<FlowchartObjectiveConfigFile>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1052,6 +1087,21 @@ struct FlowchartRoutingConfigFile {
     occupancy_weight: Option<f32>,
     max_steps: Option<usize>,
     snap_ports_to_grid: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FlowchartObjectiveConfigFile {
+    enabled: Option<bool>,
+    max_aspect_ratio: Option<f32>,
+    wrap_min_groups: Option<usize>,
+    wrap_main_gap_scale: Option<f32>,
+    wrap_cross_gap_scale: Option<f32>,
+    edge_relax_passes: Option<usize>,
+    edge_gap_floor_ratio: Option<f32>,
+    edge_label_weight: Option<f32>,
+    endpoint_label_weight: Option<f32>,
+    backedge_cross_weight: Option<f32>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -1714,6 +1764,38 @@ pub fn load_config(path: Option<&Path>) -> anyhow::Result<Config> {
             }
             if let Some(v) = routing.snap_ports_to_grid {
                 config.layout.flowchart.routing.snap_ports_to_grid = v;
+            }
+        }
+        if let Some(objective) = flow.objective {
+            if let Some(v) = objective.enabled {
+                config.layout.flowchart.objective.enabled = v;
+            }
+            if let Some(v) = objective.max_aspect_ratio {
+                config.layout.flowchart.objective.max_aspect_ratio = v;
+            }
+            if let Some(v) = objective.wrap_min_groups {
+                config.layout.flowchart.objective.wrap_min_groups = v;
+            }
+            if let Some(v) = objective.wrap_main_gap_scale {
+                config.layout.flowchart.objective.wrap_main_gap_scale = v;
+            }
+            if let Some(v) = objective.wrap_cross_gap_scale {
+                config.layout.flowchart.objective.wrap_cross_gap_scale = v;
+            }
+            if let Some(v) = objective.edge_relax_passes {
+                config.layout.flowchart.objective.edge_relax_passes = v;
+            }
+            if let Some(v) = objective.edge_gap_floor_ratio {
+                config.layout.flowchart.objective.edge_gap_floor_ratio = v;
+            }
+            if let Some(v) = objective.edge_label_weight {
+                config.layout.flowchart.objective.edge_label_weight = v;
+            }
+            if let Some(v) = objective.endpoint_label_weight {
+                config.layout.flowchart.objective.endpoint_label_weight = v;
+            }
+            if let Some(v) = objective.backedge_cross_weight {
+                config.layout.flowchart.objective.backedge_cross_weight = v;
             }
         }
     }

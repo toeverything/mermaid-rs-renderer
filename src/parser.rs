@@ -27,6 +27,12 @@ static LABEL_ARROW_RE: Lazy<Regex> = Lazy::new(|| {
     )
     .unwrap()
 });
+static COMPACT_DOTTED_LABEL_ARROW_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"^(?P<left>.+?)\s*(?P<start><)?(?P<dash1>[-=ox]*[-=]+[-=ox]*)\.(?P<label>[^<>=|].*?)\.(?P<dash2>[-.=ox]*[-=]+[-.=ox]*)(?P<end>>)?\s*(?P<right>.+)$",
+    )
+    .unwrap()
+});
 static ARROW_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
         r"^(?P<left>.+?)\s*(?P<arrow><[-.=ox]*[-=]+[-.=ox]*>|<[-.=ox]*[-=]+|[-.=ox]*[-=]+>|[-.=ox]*[-=]+)\s*(?P<right>.+)$",
@@ -5037,7 +5043,10 @@ fn mask_bracket_content(line: &str) -> String {
 
 fn split_edge_chain(line: &str) -> Option<Vec<String>> {
     let masked = mask_bracket_content(line);
-    if LABEL_ARROW_RE.is_match(&masked) {
+    if PIPE_LABEL_RE.is_match(&masked)
+        || LABEL_ARROW_RE.is_match(&masked)
+        || COMPACT_DOTTED_LABEL_ARROW_RE.is_match(&masked)
+    {
         return None;
     }
 
@@ -5127,6 +5136,29 @@ fn parse_edge_line(line: &str) -> Option<(String, Option<String>, String, EdgeMe
             let dash2 = caps.name("dash2")?.as_str();
             let end = caps.name("end").map(|m| m.as_str()).unwrap_or("");
             let arrow = format!("{}{}{}{}", start, dash1, dash2, end);
+            let edge_meta = parse_edge_meta(&arrow);
+            return Some((
+                left.to_string(),
+                Some(label_clean.to_string()),
+                right.to_string(),
+                edge_meta,
+            ));
+        }
+    }
+
+    if let Some(caps) = COMPACT_DOTTED_LABEL_ARROW_RE.captures(&masked) {
+        let left_match = caps.name("left")?;
+        let right_match = caps.name("right")?;
+        let label_match = caps.name("label")?;
+        let left = extract(left_match).trim();
+        let right = extract(right_match).trim();
+        let label_clean = extract(label_match).trim().trim_matches('.');
+        if !label_clean.is_empty() && !left.is_empty() && !right.is_empty() {
+            let start = caps.name("start").map(|m| m.as_str()).unwrap_or("");
+            let dash1 = caps.name("dash1")?.as_str();
+            let dash2 = caps.name("dash2")?.as_str();
+            let end = caps.name("end").map(|m| m.as_str()).unwrap_or("");
+            let arrow = format!("{}{}.{}{}", start, dash1, dash2, end);
             let edge_meta = parse_edge_meta(&arrow);
             return Some((
                 left.to_string(),
@@ -5812,11 +5844,50 @@ mod tests {
     }
 
     #[test]
+    fn parse_compact_dotted_edge_label_without_spaces() {
+        let input = "flowchart LR\nN01 -.audit.-> N16";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.edges.len(), 1);
+        assert_eq!(parsed.graph.edges[0].label.as_deref(), Some("audit"));
+        assert_eq!(parsed.graph.edges[0].style, crate::ir::EdgeStyle::Dotted);
+        assert!(parsed.graph.edges[0].arrow_end);
+        assert!(parsed.graph.nodes.contains_key("N01"));
+        assert!(parsed.graph.nodes.contains_key("N16"));
+        assert!(!parsed.graph.nodes.contains_key(".audit"));
+    }
+
+    #[test]
+    fn parse_compact_dotted_edge_label_with_dotted_ids() {
+        let input = "flowchart LR\nsvc.api -.db-sync.-> db.main";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.edges.len(), 1);
+        assert_eq!(parsed.graph.edges[0].label.as_deref(), Some("db-sync"));
+        assert!(parsed.graph.nodes.contains_key("svc.api"));
+        assert!(parsed.graph.nodes.contains_key("db.main"));
+        assert!(!parsed.graph.nodes.contains_key(".db-sync"));
+    }
+
+    #[test]
     fn parse_pipe_edge_label() {
         let input = "flowchart LR\nA -->|yes| B";
         let parsed = parse_mermaid(input).unwrap();
         assert_eq!(parsed.graph.edges.len(), 1);
         assert_eq!(parsed.graph.edges[0].label.as_deref(), Some("yes"));
+    }
+
+    #[test]
+    fn parse_pipe_edge_label_with_hyphen_does_not_create_phantom_nodes() {
+        let input = "flowchart LR\nC3 -->|high-risk order| D2";
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.edges.len(), 1);
+        assert_eq!(
+            parsed.graph.edges[0].label.as_deref(),
+            Some("high-risk order")
+        );
+        assert!(parsed.graph.nodes.contains_key("C3"));
+        assert!(parsed.graph.nodes.contains_key("D2"));
+        assert!(!parsed.graph.nodes.contains_key("risk"));
+        assert!(!parsed.graph.nodes.contains_key("|high"));
     }
 
     #[test]

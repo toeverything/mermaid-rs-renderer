@@ -6,7 +6,7 @@ use crate::layout::{
     GitGraphLayout, JourneyLayout, Layout, SankeyLayout, TextBlock,
 };
 use crate::text_metrics;
-use crate::theme::{adjust_color, parse_color_to_hsl, Theme};
+use crate::theme::{Theme, adjust_color, parse_color_to_hsl};
 use anyhow::Result;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -312,8 +312,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             let header_h = if label_empty {
                 0.0
             } else {
-                (subgraph.label_block.height + theme.font_size * 0.75)
-                    .max(theme.font_size * 1.4)
+                (subgraph.label_block.height + theme.font_size * 0.75).max(theme.font_size * 1.4)
             };
             let header_fill = if sub_fill.as_str() == "none" {
                 "none".to_string()
@@ -2328,10 +2327,16 @@ fn render_pie(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
         let edge_y = cy + radius * mid_angle.sin();
         let bump = (font_size * 1.6).max(radius * 0.18);
         let (label_x, label_y) = if outside {
-            (cx + (radius + bump) * mid_angle.cos(), cy + (radius + bump) * mid_angle.sin())
+            (
+                cx + (radius + bump) * mid_angle.cos(),
+                cy + (radius + bump) * mid_angle.sin(),
+            )
         } else {
             let label_radius = radius * pie_cfg.text_position;
-            (cx + label_radius * mid_angle.cos(), cy + label_radius * mid_angle.sin())
+            (
+                cx + label_radius * mid_angle.cos(),
+                cy + label_radius * mid_angle.sin(),
+            )
         };
         labels.push(PieLabel {
             text: label_text,
@@ -4577,59 +4582,106 @@ fn compute_edge_label_positions(
             positions.insert(idx, None);
             continue;
         };
-        let (anchor_x, anchor_y, dir_x, dir_y) = edge_label_anchor(edge);
-        let normal_x = -dir_y;
-        let normal_y = dir_x;
-        let step_n = if normal_x.abs() > normal_y.abs() {
-            label.width + 10.0
-        } else {
-            label.height + 8.0
-        };
-        let step_t = if dir_x.abs() > dir_y.abs() {
-            label.width + 12.0
-        } else {
-            label.height + 10.0
-        };
-        let normal_steps = [0.0, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0];
-        let tangent_steps = [0.0, 0.6, -0.6, 1.2, -1.2];
-        let mut best_pos = (anchor_x, anchor_y);
-        let mut best_cost = f32::INFINITY;
-        for t in tangent_steps {
-            let base_x = anchor_x + dir_x * step_t * t;
-            let base_y = anchor_y + dir_y * step_t * t;
-            for n in normal_steps {
-                let x = base_x + normal_x * step_n * n;
-                let y = base_y + normal_y * step_n * n;
-                let rect = (
-                    x - label.width / 2.0 - 6.0,
-                    y - label.height / 2.0 - 4.0,
-                    label.width + 12.0,
-                    label.height + 8.0,
-                );
-                let cost = label_cost(
-                    rect,
-                    (anchor_x, anchor_y),
-                    label.width,
-                    label.height,
-                    &occupied,
-                    &edge_obstacles,
-                    idx,
-                    bounds,
-                );
-                if cost < best_cost {
-                    best_cost = cost;
-                    best_pos = (x, y);
+        let mut anchors: Vec<(f32, f32, f32, f32)> = vec![edge_label_anchor(edge)];
+        for frac in [0.35f32, 0.5f32, 0.65f32] {
+            if let Some(candidate) = edge_label_anchor_at_fraction(edge, frac) {
+                let duplicate = anchors.iter().any(|anchor| {
+                    (anchor.0 - candidate.0).abs() <= 1.0
+                        && (anchor.1 - candidate.1).abs() <= 1.0
+                        && (anchor.2 - candidate.2).abs() <= 0.02
+                        && (anchor.3 - candidate.3).abs() <= 0.02
+                });
+                if !duplicate {
+                    anchors.push(candidate);
                 }
             }
         }
+        let normal_steps = [0.0, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0];
+        let tangent_steps = [0.0, 0.6, -0.6, 1.2, -1.2];
+        let mut best_pos = (anchors[0].0, anchors[0].1);
+        let mut best_penalty = (f32::INFINITY, f32::INFINITY);
+        let evaluate_candidates = |anchor: (f32, f32, f32, f32),
+                                   tangents: &[f32],
+                                   normals: &[f32],
+                                   best_penalty: &mut (f32, f32),
+                                   best_pos: &mut (f32, f32)| {
+            let (anchor_x, anchor_y, dir_x, dir_y) = anchor;
+            let normal_x = -dir_y;
+            let normal_y = dir_x;
+            let step_n = if normal_x.abs() > normal_y.abs() {
+                label.width + 10.0
+            } else {
+                label.height + 8.0
+            };
+            let step_t = if dir_x.abs() > dir_y.abs() {
+                label.width + 12.0
+            } else {
+                label.height + 10.0
+            };
+            for t in tangents {
+                let base_x = anchor_x + dir_x * step_t * *t;
+                let base_y = anchor_y + dir_y * step_t * *t;
+                for n in normals {
+                    let x = base_x + normal_x * step_n * *n;
+                    let y = base_y + normal_y * step_n * *n;
+                    let rect = (
+                        x - label.width / 2.0 - 6.0,
+                        y - label.height / 2.0 - 4.0,
+                        label.width + 12.0,
+                        label.height + 8.0,
+                    );
+                    let penalty = label_penalties(
+                        rect,
+                        (anchor_x, anchor_y),
+                        label.width,
+                        label.height,
+                        &occupied,
+                        &edge_obstacles,
+                        idx,
+                        bounds,
+                    );
+                    if candidate_better(penalty, *best_penalty) {
+                        *best_penalty = penalty;
+                        *best_pos = (x, y);
+                    }
+                }
+            }
+        };
+        for anchor in &anchors {
+            evaluate_candidates(
+                *anchor,
+                &tangent_steps,
+                &normal_steps,
+                &mut best_penalty,
+                &mut best_pos,
+            );
+        }
+        if best_penalty.0 > 1e-4 {
+            let normal_steps_wide = [0.0, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0, 4.0, -4.0, 5.0, -5.0];
+            let tangent_steps_wide = [0.0, 0.6, -0.6, 1.2, -1.2, 1.8, -1.8, 2.4, -2.4];
+            for anchor in &anchors {
+                evaluate_candidates(
+                    *anchor,
+                    &tangent_steps_wide,
+                    &normal_steps_wide,
+                    &mut best_penalty,
+                    &mut best_pos,
+                );
+            }
+        }
+        let clamped_pos = if let Some(bound) = bounds {
+            clamp_label_center_to_bounds(best_pos, label.width, label.height, 6.0, 4.0, bound)
+        } else {
+            best_pos
+        };
         let rect = (
-            best_pos.0 - label.width / 2.0 - 6.0,
-            best_pos.1 - label.height / 2.0 - 4.0,
+            clamped_pos.0 - label.width / 2.0 - 6.0,
+            clamped_pos.1 - label.height / 2.0 - 4.0,
             label.width + 12.0,
             label.height + 8.0,
         );
         occupied.push(rect);
-        let placed = Some((best_pos.0, best_pos.1, label.clone()));
+        let placed = Some((clamped_pos.0, clamped_pos.1, label.clone()));
 
         positions.insert(idx, placed);
     }
@@ -4670,11 +4722,7 @@ fn is_divider_line(line: &str) -> bool {
     line.trim() == "---"
 }
 
-fn divider_lines_svg(
-    node: &crate::layout::NodeLayout,
-    theme: &Theme,
-    line_height: f32,
-) -> String {
+fn divider_lines_svg(node: &crate::layout::NodeLayout, theme: &Theme, line_height: f32) -> String {
     if !node.label.lines.iter().any(|line| is_divider_line(line)) {
         return String::new();
     }
@@ -4712,7 +4760,10 @@ struct ErAttribute {
 }
 
 fn parse_er_attributes(lines: &[String]) -> (String, Vec<ErAttribute>) {
-    let mut title = lines.first().map(|s| s.trim().to_string()).unwrap_or_default();
+    let mut title = lines
+        .first()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
     let mut attrs = Vec::new();
     let mut in_body = false;
     for line in lines.iter().skip(1) {
@@ -4815,7 +4866,9 @@ fn render_er_node(
     let header_height = if attrs.is_empty() {
         node.height
     } else {
-        (line_height + font_size * 0.6).min(node.height * 0.5).max(line_height + 6.0)
+        (line_height + font_size * 0.6)
+            .min(node.height * 0.5)
+            .max(line_height + 6.0)
     };
 
     let border = node
@@ -4823,11 +4876,7 @@ fn render_er_node(
         .stroke
         .as_ref()
         .unwrap_or(&theme.primary_border_color);
-    let body_fill = node
-        .style
-        .fill
-        .as_ref()
-        .unwrap_or(&theme.background);
+    let body_fill = node.style.fill.as_ref().unwrap_or(&theme.background);
     let header_fill = theme.cluster_background.as_str();
     let grid_color = theme.cluster_border.as_str();
     let header_text_color = theme.primary_text_color.as_str();
@@ -4905,12 +4954,9 @@ fn render_er_node(
         if !attr.keys.is_empty() {
             let mut row_badge_width = 0.0f32;
             for key in attr.keys.iter().take(2) {
-                let text_width = text_metrics::measure_text_width(
-                    key,
-                    font_size * 0.72,
-                    &theme.font_family,
-                )
-                .unwrap_or(font_size * 0.9);
+                let text_width =
+                    text_metrics::measure_text_width(key, font_size * 0.72, &theme.font_family)
+                        .unwrap_or(font_size * 0.9);
                 let badge_width = text_width + (font_size * 0.45).max(4.0) * 2.0;
                 row_badge_width += badge_width + font_size * 0.4;
             }
@@ -5089,9 +5135,60 @@ fn edge_label_anchor(edge: &EdgeLayout) -> (f32, f32, f32, f32) {
     let dx = p2.0 - p1.0;
     let dy = p2.1 - p1.1;
     let len = (dx * dx + dy * dy).sqrt().max(1e-3);
-    let dir_x = dx / len;
-    let dir_y = dy / len;
-    ((p1.0 + p2.0) / 2.0, (p1.1 + p2.1) / 2.0, dir_x, dir_y)
+    ((p1.0 + p2.0) / 2.0, (p1.1 + p2.1) / 2.0, dx / len, dy / len)
+}
+
+fn edge_label_anchor_at_fraction(edge: &EdgeLayout, t: f32) -> Option<(f32, f32, f32, f32)> {
+    if edge.points.len() < 2 {
+        return None;
+    }
+    let segment_count = edge.points.len() - 1;
+    let (mut start_idx, mut end_idx) = if segment_count >= 3 {
+        (1, segment_count - 1)
+    } else {
+        (0, segment_count)
+    };
+    if start_idx >= end_idx {
+        start_idx = 0;
+        end_idx = segment_count;
+    }
+
+    let mut total_len = 0.0f32;
+    for idx in start_idx..end_idx {
+        let p1 = edge.points[idx];
+        let p2 = edge.points[idx + 1];
+        let dx = p2.0 - p1.0;
+        let dy = p2.1 - p1.1;
+        total_len += (dx * dx + dy * dy).sqrt();
+    }
+
+    if total_len <= 1e-3 {
+        return Some(edge_label_anchor(edge));
+    }
+
+    let mut remaining = total_len * t.clamp(0.0, 1.0);
+    for idx in start_idx..end_idx {
+        let p1 = edge.points[idx];
+        let p2 = edge.points[idx + 1];
+        let dx = p2.0 - p1.0;
+        let dy = p2.1 - p1.1;
+        let seg_len = (dx * dx + dy * dy).sqrt();
+        if seg_len <= 1e-6 {
+            continue;
+        }
+        if remaining <= seg_len {
+            let alpha = (remaining / seg_len).clamp(0.0, 1.0);
+            return Some((
+                p1.0 + dx * alpha,
+                p1.1 + dy * alpha,
+                dx / seg_len,
+                dy / seg_len,
+            ));
+        }
+        remaining -= seg_len;
+    }
+
+    Some(edge_label_anchor(edge))
 }
 
 type Rect = (f32, f32, f32, f32);
@@ -5122,7 +5219,37 @@ fn outside_area(rect: &Rect, bounds: (f32, f32)) -> f32 {
     rect_area - inside_w * inside_h
 }
 
-fn label_cost(
+fn clamp_label_center_to_bounds(
+    center: (f32, f32),
+    label_w: f32,
+    label_h: f32,
+    pad_x: f32,
+    pad_y: f32,
+    bounds: (f32, f32),
+) -> (f32, f32) {
+    let (w, h) = bounds;
+    if w <= 0.0 || h <= 0.0 {
+        return center;
+    }
+    let min_x = label_w * 0.5 + pad_x;
+    let min_y = label_h * 0.5 + pad_y;
+    let max_x = w - label_w * 0.5 - pad_x;
+    let max_y = h - label_h * 0.5 - pad_y;
+
+    let x = if max_x < min_x {
+        w * 0.5
+    } else {
+        center.0.clamp(min_x, max_x)
+    };
+    let y = if max_y < min_y {
+        h * 0.5
+    } else {
+        center.1.clamp(min_y, max_y)
+    };
+    (x, y)
+}
+
+fn label_penalties(
     rect: Rect,
     anchor: (f32, f32),
     label_w: f32,
@@ -5131,7 +5258,7 @@ fn label_cost(
     edge_obstacles: &[EdgeObstacle],
     edge_idx: usize,
     bounds: Option<(f32, f32)>,
-) -> f32 {
+) -> (f32, f32) {
     let area = (label_w * label_h).max(1.0);
     let mut overlap = 0.0;
     for occ in occupied {
@@ -5149,7 +5276,14 @@ fn label_cost(
     let dx = (rect.0 + rect.2 * 0.5) - anchor.0;
     let dy = (rect.1 + rect.3 * 0.5) - anchor.1;
     let dist = (dx * dx + dy * dy).sqrt();
-    overlap / area + dist / (label_w + label_h + 1.0)
+    (overlap / area, dist / (label_w + label_h + 1.0))
+}
+
+fn candidate_better(candidate: (f32, f32), best: (f32, f32)) -> bool {
+    if candidate.0 + 1e-6 < best.0 {
+        return true;
+    }
+    (candidate.0 - best.0).abs() <= 1e-6 && candidate.1 + 1e-6 < best.1
 }
 
 fn build_edge_obstacles(edges: &[EdgeLayout], pad: f32) -> Vec<EdgeObstacle> {
@@ -5419,7 +5553,7 @@ fn edge_endpoint_label_position_with_avoid(
         1.0, -1.0, 1.7, -1.7, 2.4, -2.4, 3.2, -3.2, 3.9, -3.9, 4.6, -4.6,
     ];
     let mut best_pos = (anchor_x, anchor_y);
-    let mut best_cost = f32::INFINITY;
+    let mut best_penalty = (f32::INFINITY, f32::INFINITY);
     for along in along_steps {
         let base_x = p0.0 + dir_x * offset * (1.4 + along);
         let base_y = p0.1 + dir_y * offset * (1.4 + along);
@@ -5432,7 +5566,7 @@ fn edge_endpoint_label_position_with_avoid(
                 label_w + 8.0,
                 label_h + 6.0,
             );
-            let cost = label_cost(
+            let penalty = label_penalties(
                 rect,
                 (anchor_x, anchor_y),
                 label_w,
@@ -5442,11 +5576,15 @@ fn edge_endpoint_label_position_with_avoid(
                 edge_idx,
                 bounds,
             );
-            if cost < best_cost {
-                best_cost = cost;
+            if candidate_better(penalty, best_penalty) {
+                best_penalty = penalty;
                 best_pos = (x, y);
             }
         }
+    }
+    if let Some(bound) = bounds {
+        let clamped = clamp_label_center_to_bounds(best_pos, label_w, label_h, 4.0, 3.0, bound);
+        return Some(clamped);
     }
     Some(best_pos)
 }
