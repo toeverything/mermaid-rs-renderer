@@ -3488,16 +3488,11 @@ fn compute_pie_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
     let mut legend_width: f32 = 0.0;
     let mut legend_items: Vec<(TextBlock, String)> = Vec::new();
     for slice in &graph.pie_slices {
-        let percent = if total > 0.0 {
-            slice.value.max(0.0) / total * 100.0
-        } else {
-            0.0
-        };
         let value_text = format_pie_value(slice.value);
         let label_text = if graph.pie_show_data {
-            format!("{} — {} ({:.0}%)", slice.label, value_text, percent)
+            format!("{} [{}]", slice.label, value_text)
         } else {
-            format!("{} ({:.0}%)", slice.label, percent)
+            slice.label.clone()
         };
         let label = measure_label_with_font_size(
             &label_text,
@@ -6024,6 +6019,11 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     align_disconnected_top_level_subgraphs(graph, &mut nodes);
     align_disconnected_components(graph, &mut nodes, config);
     apply_visual_objectives(graph, &layout_edges, &mut nodes, theme, &effective_config);
+
+    // For state diagrams, push non-member nodes outside subgraph bounds
+    if graph.kind == crate::ir::DiagramKind::State && !graph.subgraphs.is_empty() {
+        push_non_members_out_of_subgraphs(graph, &mut nodes, theme, config);
+    }
 
     let mut subgraphs = build_subgraph_layouts(graph, &nodes, theme, config);
     apply_subgraph_anchors(graph, &subgraphs, &mut nodes);
@@ -8823,7 +8823,47 @@ fn apply_state_subgraph_layouts(
     config: &LayoutConfig,
     skip_indices: &HashSet<usize>,
 ) {
-    for (idx, sub) in graph.subgraphs.iter().enumerate() {
+    // Build nesting hierarchy: for each subgraph, find which other subgraphs are direct children
+    let sub_count = graph.subgraphs.len();
+    let mut depth: Vec<usize> = vec![0; sub_count];
+    let mut parent_of: Vec<Option<usize>> = vec![None; sub_count];
+
+    // A subgraph B is nested in subgraph A if A's nodes list contains B's ID/label
+    for (i, sub_a) in graph.subgraphs.iter().enumerate() {
+        for (j, sub_b) in graph.subgraphs.iter().enumerate() {
+            if i == j {
+                continue;
+            }
+            let b_id = sub_b.id.as_deref().unwrap_or("");
+            if sub_a.nodes.iter().any(|n| n == b_id) || sub_a.nodes.iter().any(|n| n == &sub_b.label) {
+                if parent_of[j].is_none() {
+                    parent_of[j] = Some(i);
+                }
+            }
+        }
+    }
+
+    // Compute depth: walk from each subgraph up to root
+    for i in 0..sub_count {
+        let mut d = 0;
+        let mut cur = i;
+        while let Some(p) = parent_of[cur] {
+            d += 1;
+            cur = p;
+            if d > sub_count { break; }
+        }
+        depth[i] = d;
+    }
+
+    // Process from deepest (innermost) to shallowest (outermost)
+    let mut order: Vec<usize> = (0..sub_count).collect();
+    order.sort_by(|a, b| depth[*b].cmp(&depth[*a]));
+
+    // Track computed inner subgraph boxes (idx -> (x, y, width, height))
+    let mut inner_boxes: HashMap<usize, (f32, f32, f32, f32)> = HashMap::new();
+
+    for idx in order {
+        let sub = &graph.subgraphs[idx];
         if skip_indices.contains(&idx) {
             continue;
         }
@@ -8841,6 +8881,27 @@ fn apply_state_subgraph_layouts(
         if min_x == f32::MAX {
             continue;
         }
+
+        // For nodes in this subgraph that are also inner subgraph anchors,
+        // temporarily set their size to the inner subgraph's box size
+        let mut saved_sizes: Vec<(String, f32, f32)> = Vec::new();
+        for node_id in &sub.nodes {
+            for (j, inner_sub) in graph.subgraphs.iter().enumerate() {
+                if let Some((_, _, w, h)) = inner_boxes.get(&j) {
+                    let inner_id = inner_sub.id.as_deref().unwrap_or("");
+                    if node_id == inner_id || node_id == &inner_sub.label {
+                        if let Some(node) = nodes.get(node_id) {
+                            saved_sizes.push((node_id.clone(), node.width, node.height));
+                        }
+                        if let Some(node) = nodes.get_mut(node_id) {
+                            node.width = *w;
+                            node.height = *h;
+                        }
+                    }
+                }
+            }
+        }
+
         let ranks = compute_ranks_subset(&sub.nodes, &graph.edges, &graph.node_order);
         assign_positions(
             &sub.nodes,
@@ -8851,6 +8912,77 @@ fn apply_state_subgraph_layouts(
             min_x,
             min_y,
         );
+
+        // Restore original sizes for anchor nodes
+        for (id, w, h) in saved_sizes {
+            if let Some(node) = nodes.get_mut(&id) {
+                node.width = w;
+                node.height = h;
+            }
+        }
+
+        // After positioning, re-position inner subgraph contents to match their anchor position
+        for (j, inner_sub) in graph.subgraphs.iter().enumerate() {
+            if let Some(&(old_x, old_y, _, _)) = inner_boxes.get(&j) {
+                let inner_id = inner_sub.id.as_deref().unwrap_or("");
+                if !sub.nodes.iter().any(|n| n == inner_id || n == &inner_sub.label) {
+                    continue;
+                }
+                // Find the anchor node's new position
+                let anchor_id = if sub.nodes.iter().any(|n| n == inner_id) {
+                    inner_id
+                } else {
+                    inner_sub.label.as_str()
+                };
+                if let Some(anchor) = nodes.get(anchor_id) {
+                    let dx = anchor.x - old_x;
+                    let dy = anchor.y - old_y;
+                    if dx.abs() > 0.01 || dy.abs() > 0.01 {
+                        for inner_node_id in &inner_sub.nodes {
+                            if let Some(inner_node) = nodes.get_mut(inner_node_id) {
+                                inner_node.x += dx;
+                                inner_node.y += dy;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Compute and save this subgraph's box
+        let mut bmin_x = f32::MAX;
+        let mut bmin_y = f32::MAX;
+        let mut bmax_x = f32::MIN;
+        let mut bmax_y = f32::MIN;
+        for node_id in &sub.nodes {
+            if let Some(node) = nodes.get(node_id) {
+                bmin_x = bmin_x.min(node.x);
+                bmin_y = bmin_y.min(node.y);
+                bmax_x = bmax_x.max(node.x + node.width);
+                bmax_y = bmax_y.max(node.y + node.height);
+            }
+        }
+        // Also include inner subgraph boxes
+        for (j, inner_sub) in graph.subgraphs.iter().enumerate() {
+            if let Some(&(_, _, _, _)) = inner_boxes.get(&j) {
+                let inner_id = inner_sub.id.as_deref().unwrap_or("");
+                if sub.nodes.iter().any(|n| n == inner_id || n == &inner_sub.label) {
+                    // Use inner node positions
+                    for inner_node_id in &inner_sub.nodes {
+                        if let Some(node) = nodes.get(inner_node_id) {
+                            bmin_x = bmin_x.min(node.x);
+                            bmin_y = bmin_y.min(node.y);
+                            bmax_x = bmax_x.max(node.x + node.width);
+                            bmax_y = bmax_y.max(node.y + node.height);
+                        }
+                    }
+                }
+            }
+        }
+        let padding = config.node_spacing;
+        if bmin_x < f32::MAX {
+            inner_boxes.insert(idx, (bmin_x, bmin_y, bmax_x - bmin_x + padding, bmax_y - bmin_y + padding));
+        }
     }
 }
 
@@ -11442,6 +11574,97 @@ fn enforce_top_level_subgraph_gap(
         }
 
         prev_max_main = Some(max_main);
+    }
+}
+
+/// For state diagrams, push nodes that are not members of any subgraph
+/// outside the subgraph bounds so they don't visually appear inside composites.
+fn push_non_members_out_of_subgraphs(
+    graph: &Graph,
+    nodes: &mut BTreeMap<String, NodeLayout>,
+    theme: &Theme,
+    config: &LayoutConfig,
+) {
+    if graph.subgraphs.is_empty() {
+        return;
+    }
+
+    // Collect which nodes belong to which subgraphs
+    let mut node_subgraphs: HashSet<String> = HashSet::new();
+    for sub in &graph.subgraphs {
+        for node_id in &sub.nodes {
+            node_subgraphs.insert(node_id.clone());
+        }
+    }
+
+    // Also treat subgraph IDs/labels as "member" since they're anchor nodes
+    let mut subgraph_ids: HashSet<String> = HashSet::new();
+    for sub in &graph.subgraphs {
+        if let Some(ref id) = sub.id {
+            subgraph_ids.insert(id.clone());
+        }
+        if !sub.label.is_empty() {
+            subgraph_ids.insert(sub.label.clone());
+        }
+    }
+
+    let gap = config.node_spacing * 0.5;
+
+    // Compute subgraph bounds from their member nodes
+    let mut sub_bounds: Vec<(f32, f32, f32, f32)> = Vec::new();
+    for sub in &graph.subgraphs {
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+        for node_id in &sub.nodes {
+            if let Some(node) = nodes.get(node_id) {
+                min_x = min_x.min(node.x);
+                min_y = min_y.min(node.y);
+                max_x = max_x.max(node.x + node.width);
+                max_y = max_y.max(node.y + node.height);
+            }
+        }
+        let (pad_x, pad_y, top_pad) =
+            subgraph_padding_from_label(graph, sub, theme, &measure_label(&sub.label, theme, config));
+        if min_x < f32::MAX {
+            sub_bounds.push((
+                min_x - pad_x,
+                min_y - top_pad,
+                max_x + pad_x,
+                max_y + pad_y,
+            ));
+        } else {
+            sub_bounds.push((0.0, 0.0, 0.0, 0.0));
+        }
+    }
+
+    // For each non-member node, check if it overlaps with any subgraph bounds
+    let node_ids: Vec<String> = nodes.keys().cloned().collect();
+    for node_id in &node_ids {
+        if node_subgraphs.contains(node_id) || subgraph_ids.contains(node_id) {
+            continue;
+        }
+        let node = match nodes.get(node_id) {
+            Some(n) => n,
+            None => continue,
+        };
+        let nx = node.x;
+        let ny = node.y;
+        let nw = node.width;
+        let nh = node.height;
+
+        for (sx, sy, sx2, sy2) in &sub_bounds {
+            // Check if node rectangle overlaps with subgraph rectangle
+            if nx + nw > *sx && nx < *sx2 && ny + nh > *sy && ny < *sy2 {
+                // Push node below the subgraph
+                let new_y = *sy2 + gap;
+                if let Some(node_mut) = nodes.get_mut(node_id) {
+                    node_mut.y = new_y;
+                }
+                break;
+            }
+        }
     }
 }
 
