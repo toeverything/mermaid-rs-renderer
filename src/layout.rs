@@ -12649,9 +12649,7 @@ fn shape_size(
 
     if kind == crate::ir::DiagramKind::Requirement {
         let min_width = theme.font_size * 9.5;
-        let min_height = theme.font_size * 10.5;
         width = width.max(min_width);
-        height = height.max(min_height);
     }
 
     if kind == crate::ir::DiagramKind::Kanban {
