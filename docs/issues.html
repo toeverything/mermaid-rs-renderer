@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>mmdr Rendering Issues</title>
+<style>
+body { font-family: system-ui, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
+h1 { text-align: center; }
+h2 { border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-top: 40px; }
+.stats { text-align: center; color: #666; font-size: 14px; margin-bottom: 30px; }
+.summary { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 30px; }
+.summary-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; }
+.summary-card .count { font-size: 36px; font-weight: bold; }
+.summary-card.critical .count { color: #d32f2f; }
+.summary-card.moderate .count { color: #f57c00; }
+.summary-card.minor .count { color: #2e7d32; }
+.summary-card .label { color: #666; font-size: 14px; }
+.issue-section { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+.issue-section h3 { margin-top: 0; display: flex; align-items: center; gap: 10px; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; color: white; }
+.badge.critical { background: #d32f2f; }
+.badge.moderate { background: #f57c00; }
+.badge.minor { background: #4caf50; }
+.badge.fixed { background: #1565c0; }
+.issue { margin: 10px 0; padding: 10px; border-left: 3px solid #ddd; background: #fafafa; border-radius: 0 4px 4px 0; }
+.issue.critical { border-left-color: #d32f2f; }
+.issue.moderate { border-left-color: #f57c00; }
+.issue.minor { border-left-color: #4caf50; }
+.issue .title { font-weight: 600; margin-bottom: 4px; }
+.issue .desc { color: #555; font-size: 14px; }
+.fixed-list { margin: 20px 0; }
+.fixed-list li { margin: 8px 0; }
+.type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 800px) { .type-grid { grid-template-columns: 1fr; } .summary { grid-template-columns: 1fr; } }
+table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #eee; }
+th { background: #f8f8f8; font-weight: 600; }
+.status-good { color: #2e7d32; }
+.status-issues { color: #f57c00; }
+.status-poor { color: #d32f2f; }
+</style>
+</head>
+<body>
+<h1>mmdr Rendering Issues Tracker</h1>
+<p class="stats">Remaining differences between mmdr and official mermaid-cli output<br>
+22 diagram types &bull; 77 comparison examples &bull; Last updated: 2026-02-07</p>
+
+<div class="summary">
+  <div class="summary-card critical">
+    <div class="count">0</div>
+    <div class="label">Critical Issues</div>
+  </div>
+  <div class="summary-card moderate">
+    <div class="count">8</div>
+    <div class="label">Moderate Issues</div>
+  </div>
+  <div class="summary-card minor">
+    <div class="count">11</div>
+    <div class="label">Minor / Cosmetic</div>
+  </div>
+</div>
+
+<h2>Recently Fixed</h2>
+<div class="issue-section">
+<ul class="fixed-list">
+  <li><span class="badge fixed">Fixed</span> <strong>Sequence diagrams</strong> &mdash; Participant alias parsing was swapped, causing duplicate lifelines in 5 of 8 sequence diagrams</li>
+  <li><span class="badge fixed">Fixed</span> <strong>Architecture diagrams</strong> &mdash; Service icons showed "?" placeholders instead of globe/server/database/cloud icons; edge port parsing created phantom nodes from port identifiers</li>
+  <li><span class="badge fixed">Fixed</span> <strong>Block diagrams</strong> &mdash; Nodes were oversized (54px vs official 26px); reduced padding for more compact layout</li>
+  <li><span class="badge fixed">Fixed</span> <strong>Gantt charts</strong> &mdash; Row height and bar height were too large; made charts more compact</li>
+  <li><span class="badge fixed">Fixed</span> <strong>Requirement diagrams</strong> &mdash; Element nodes forced to minimum height of Requirement nodes (168px vs needed 102px)</li>
+</ul>
+</div>
+
+<h2>Diagram Type Status</h2>
+<div class="issue-section">
+<table>
+<tr><th>Type</th><th>Examples</th><th>Status</th><th>Notes</th></tr>
+<tr><td>Flowchart</td><td>14</td><td class="status-good">Good</td><td>Minor edge routing differences</td></tr>
+<tr><td>Sequence</td><td>8</td><td class="status-good">Good</td><td>Alias bug fixed; minor activation box differences</td></tr>
+<tr><td>Class</td><td>6</td><td class="status-good">Good</td><td>Working correctly</td></tr>
+<tr><td>State</td><td>7</td><td class="status-good">Good</td><td>Minor fork/join rendering differences</td></tr>
+<tr><td>ER</td><td>4</td><td class="status-good">Good</td><td>Cardinality markers functional</td></tr>
+<tr><td>Pie</td><td>2</td><td class="status-good">Good</td><td>Working correctly</td></tr>
+<tr><td>Mindmap</td><td>4</td><td class="status-good">Good</td><td>Working correctly</td></tr>
+<tr><td>Journey</td><td>3</td><td class="status-issues">Issues</td><td>Missing emotion circles for some actors</td></tr>
+<tr><td>Timeline</td><td>3</td><td class="status-issues">Issues</td><td>Simplified rendering, fewer decorative elements</td></tr>
+<tr><td>Gantt</td><td>5</td><td class="status-good">Good</td><td>Compact layout; missing weekend exclusion markers</td></tr>
+<tr><td>Requirement</td><td>1</td><td class="status-good">Good</td><td>Element sizing fixed</td></tr>
+<tr><td>GitGraph</td><td>4</td><td class="status-good">Good</td><td>Working correctly</td></tr>
+<tr><td>Quadrant</td><td>3</td><td class="status-issues">Issues</td><td>Missing some grid lines</td></tr>
+<tr><td>XY Chart</td><td>4</td><td class="status-issues">Issues</td><td>Simplified data visualization</td></tr>
+<tr><td>ZenUML</td><td>1</td><td class="status-issues">Issues</td><td>Unsupported diagram type</td></tr>
+<tr><td>Block</td><td>1</td><td class="status-good">Good</td><td>Compact layout after fix</td></tr>
+<tr><td>Architecture</td><td>1</td><td class="status-good">Good</td><td>Icons and port parsing fixed</td></tr>
+<tr><td>C4</td><td>2</td><td class="status-issues">Issues</td><td>Basic support only</td></tr>
+<tr><td>Sankey</td><td>1</td><td class="status-good">Good</td><td>Working correctly</td></tr>
+<tr><td>Packet</td><td>1</td><td class="status-issues">Issues</td><td>Basic support</td></tr>
+<tr><td>Kanban</td><td>1</td><td class="status-good">Good</td><td>Working correctly</td></tr>
+<tr><td>Radar</td><td>1</td><td class="status-issues">Issues</td><td>Basic support</td></tr>
+</table>
+</div>
+
+<h2>Remaining Issues by Type</h2>
+
+<div class="type-grid">
+
+<div class="issue-section">
+<h3>Flowchart <span class="badge minor">Minor</span></h3>
+<div class="issue minor">
+  <div class="title">Edge curves less smooth than official</div>
+  <div class="desc">mmdr uses Bezier curves but with less optimized control points than the official D3-based renderer. Edges are functional but slightly more angular.</div>
+</div>
+<div class="issue minor">
+  <div class="title">Multi-edge convergence spacing</div>
+  <div class="desc">When multiple edges converge on the same node, they don't separate as cleanly as the official output.</div>
+</div>
+</div>
+
+<div class="issue-section">
+<h3>Sequence <span class="badge minor">Minor</span></h3>
+<div class="issue minor">
+  <div class="title">Activation boxes simplified</div>
+  <div class="desc">mmdr renders activation boxes but with slightly different sizing/positioning compared to official.</div>
+</div>
+</div>
+
+<div class="issue-section">
+<h3>State <span class="badge minor">Minor</span></h3>
+<div class="issue minor">
+  <div class="title">Fork/join node rendering</div>
+  <div class="desc">Fork/join nodes use a slightly different visual approach (more circle elements) compared to official.</div>
+</div>
+</div>
+
+<div class="issue-section">
+<h3>Journey <span class="badge moderate">Moderate</span></h3>
+<div class="issue moderate">
+  <div class="title">Missing emotion circles for some actors</div>
+  <div class="desc">In multi-actor journeys, some emotion indicator circles may be missing. The shopping journey shows ~28 circles vs official's ~48.</div>
+</div>
+<div class="issue minor">
+  <div class="title">Fewer connecting lines</div>
+  <div class="desc">Journey diagrams have fewer decorative lines compared to official (1 vs 4-14).</div>
+</div>
+</div>
+
+<div class="issue-section">
+<h3>Timeline <span class="badge moderate">Moderate</span></h3>
+<div class="issue moderate">
+  <div class="title">Simplified visual rendering</div>
+  <div class="desc">Timeline diagrams use fewer visual elements (paths, lines) than the official output, resulting in a more simplified appearance.</div>
+</div>
+</div>
+
+<div class="issue-section">
+<h3>Gantt <span class="badge minor">Minor</span></h3>
+<div class="issue minor">
+  <div class="title">Missing weekend exclusion markers</div>
+  <div class="desc">Official renderer shows gray background for weekends/holidays; mmdr does not render these exclude ranges.</div>
+</div>
+<div class="issue minor">
+  <div class="title">Grid density</div>
+  <div class="desc">mmdr shows ticks every 2-3 days vs official's every-day ticks.</div>
+</div>
+</div>
+
+<div class="issue-section">
+<h3>Quadrant Chart <span class="badge moderate">Moderate</span></h3>
+<div class="issue moderate">
+  <div class="title">Missing grid lines</div>
+  <div class="desc">mmdr renders 2 grid lines vs official's 6, missing some quadrant divider lines.</div>
+</div>
+</div>
+
+<div class="issue-section">
+<h3>XY Chart <span class="badge moderate">Moderate</span></h3>
+<div class="issue moderate">
+  <div class="title">Simplified data visualization</div>
+  <div class="desc">XY charts have fewer path elements for data series (2-3 vs 15-26), suggesting simplified line/bar rendering.</div>
+</div>
+<div class="issue moderate">
+  <div class="title">Missing axis labels</div>
+  <div class="desc">Some axis labels or data labels may be missing compared to official output.</div>
+</div>
+</div>
+
+<div class="issue-section">
+<h3>C4 Diagram <span class="badge moderate">Moderate</span></h3>
+<div class="issue moderate">
+  <div class="title">Basic support only</div>
+  <div class="desc">C4 diagrams render with basic functionality but may lack some C4-specific visual conventions (relationship labels, container boundaries).</div>
+</div>
+</div>
+
+<div class="issue-section">
+<h3>ZenUML <span class="badge moderate">Moderate</span></h3>
+<div class="issue moderate">
+  <div class="title">Unsupported diagram type</div>
+  <div class="desc">ZenUML diagrams are not currently supported by mmdr.</div>
+</div>
+</div>
+
+<div class="issue-section">
+<h3>ER Diagram <span class="badge minor">Minor</span></h3>
+<div class="issue minor">
+  <div class="title">Crow's foot style difference</div>
+  <div class="desc">mmdr uses straight-line V shapes for crow's foot markers vs official's curved paths. Functionally correct but visually different.</div>
+</div>
+</div>
+
+<div class="issue-section">
+<h3>Requirement <span class="badge minor">Minor</span></h3>
+<div class="issue minor">
+  <div class="title">Text positioning</div>
+  <div class="desc">mmdr uses left-aligned SVG text elements vs official's centered foreignObject HTML. Content is correct but alignment differs.</div>
+</div>
+</div>
+
+</div>
+
+<h2>Overall Assessment</h2>
+<div class="issue-section">
+<p>Out of 22 diagram types with 77 comparison examples:</p>
+<ul>
+  <li><strong>14 types</strong> render well with only minor cosmetic differences (Flowchart, Sequence, Class, State, ER, Pie, Mindmap, Gantt, Requirement, GitGraph, Block, Architecture, Sankey, Kanban)</li>
+  <li><strong>5 types</strong> have moderate issues that could be improved (Journey, Timeline, Quadrant, XY Chart, C4)</li>
+  <li><strong>3 types</strong> have basic/limited support (ZenUML, Packet, Radar)</li>
+  <li><strong>0 types</strong> have critical rendering failures</li>
+</ul>
+<p>The core diagram types (flowchart, sequence, class, state, ER, gantt) all render correctly and closely match the official output.</p>
+</div>
+
+</body>
+</html>
