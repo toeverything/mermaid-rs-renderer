@@ -9,42 +9,22 @@ pub(super) fn compute_kanban_layout(
         return compute_flowchart_layout(graph, theme, config);
     }
 
-    let mut nodes = BTreeMap::new();
-    for node in graph.nodes.values() {
-        let label = measure_label(&node.label, theme, config);
-        let (width, height) = shape_size(node.shape, &label, config, theme, graph.kind);
-        let mut style = resolve_node_style(node.id.as_str(), graph);
-        if graph.kind == crate::ir::DiagramKind::Requirement {
-            if style.fill.is_none() {
-                style.fill = Some(config.requirement.fill.clone());
+    let mut nodes = build_graph_node_layouts(graph, theme, config);
+    if graph.kind == crate::ir::DiagramKind::Requirement {
+        for node in nodes.values_mut() {
+            if node.style.fill.is_none() {
+                node.style.fill = Some(config.requirement.fill.clone());
             }
-            if style.stroke.is_none() {
-                style.stroke = Some(config.requirement.box_stroke.clone());
+            if node.style.stroke.is_none() {
+                node.style.stroke = Some(config.requirement.box_stroke.clone());
             }
-            if style.stroke_width.is_none() {
-                style.stroke_width = Some(config.requirement.box_stroke_width);
+            if node.style.stroke_width.is_none() {
+                node.style.stroke_width = Some(config.requirement.box_stroke_width);
             }
-            if style.text_color.is_none() {
-                style.text_color = Some(config.requirement.label_color.clone());
+            if node.style.text_color.is_none() {
+                node.style.text_color = Some(config.requirement.label_color.clone());
             }
         }
-        nodes.insert(
-            node.id.clone(),
-            NodeLayout {
-                id: node.id.clone(),
-                x: 0.0,
-                y: 0.0,
-                width,
-                height,
-                label,
-                shape: node.shape,
-                style,
-                link: graph.node_links.get(&node.id).cloned(),
-                anchor_subgraph: None,
-                hidden: false,
-                icon: None,
-            },
-        );
     }
 
     let node_gap = (theme.font_size * 0.45).max(4.0);

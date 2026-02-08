@@ -1,4 +1,11 @@
-use super::*;
+use std::collections::BTreeMap;
+
+use crate::config::LayoutConfig;
+use crate::ir::Graph;
+use crate::theme::Theme;
+
+use super::text::measure_label;
+use super::{build_node_layout, resolve_node_style, Layout};
 
 pub(super) fn compute_radar_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
     const WIDTH: f32 = 680.0;
@@ -27,8 +34,6 @@ pub(super) fn compute_radar_layout(graph: &Graph, theme: &Theme, config: &Layout
             continue;
         };
         let label = measure_label(&node.label, theme, config);
-        let x = legend_base_x;
-        let y = legend_base_y + idx as f32 * legend_row_height;
         let width = LEGEND_BOX_SIZE + LEGEND_GAP + label.width;
         let height = label.height.max(LEGEND_BOX_SIZE);
         let mut style = resolve_node_style(node.id.as_str(), graph);
@@ -38,23 +43,10 @@ pub(super) fn compute_radar_layout(graph: &Graph, theme: &Theme, config: &Layout
         if style.stroke_width.is_none() {
             style.stroke_width = Some(0.0);
         }
-        nodes.insert(
-            node.id.clone(),
-            NodeLayout {
-                id: node.id.clone(),
-                x,
-                y,
-                width,
-                height,
-                label,
-                shape: node.shape,
-                style,
-                link: graph.node_links.get(&node.id).cloned(),
-                anchor_subgraph: None,
-                hidden: false,
-                icon: None,
-            },
-        );
+        let mut nl = build_node_layout(node, label, width, height, style, graph);
+        nl.x = legend_base_x;
+        nl.y = legend_base_y + idx as f32 * legend_row_height;
+        nodes.insert(node.id.clone(), nl);
     }
 
     Layout {

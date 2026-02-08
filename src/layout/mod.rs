@@ -55,6 +55,80 @@ const LABEL_PAD_Y: f32 = 4.0;
 const LABEL_RANK_FONT_SCALE: f32 = 0.5;
 const LABEL_RANK_MIN_GAP: f32 = 8.0;
 
+// Minimum padding around the entire layout bounding box.
+const LAYOUT_BOUNDARY_PAD: f32 = 8.0;
+
+// ── State diagram constants ───────────────────────────────────────────
+const STATE_MARKER_FONT_SCALE: f32 = 0.75;
+const STATE_MARKER_MIN_SIZE: f32 = 10.0;
+const STATE_DEFAULT_HEIGHT_SCALE: f32 = 2.4;
+const STATE_MARKER_DIV: f32 = 3.0;
+const STATE_MARKER_MIN_SCALE: f32 = 0.5;
+const STATE_MARKER_MAX_SCALE: f32 = 0.95;
+const STATE_NOTE_PAD_X_SCALE: f32 = 0.75;
+const STATE_NOTE_PAD_Y_SCALE: f32 = 0.5;
+const STATE_NOTE_GAP_SCALE: f32 = 0.9;
+const STATE_NOTE_GAP_MIN: f32 = 10.0;
+const STATE_PAD_X_SCALE: f32 = 0.9;
+const STATE_PAD_Y_SCALE: f32 = 0.65;
+const STATE_PAD_X_LABEL_RATIO: f32 = 0.12;
+const STATE_PAD_Y_LABEL_RATIO: f32 = 0.22;
+
+// ── Subgraph padding ─────────────────────────────────────────────────
+const FLOWCHART_PAD_MAIN: f32 = 40.0;
+const FLOWCHART_PAD_CROSS: f32 = 30.0;
+const KANBAN_SUBGRAPH_PAD: f32 = 8.0;
+const STATE_SUBGRAPH_BASE_PAD: f32 = 16.0;
+const GENERIC_SUBGRAPH_BASE_PAD: f32 = 24.0;
+const SUBGRAPH_LABEL_GAP_FLOWCHART: f32 = 6.0;
+const SUBGRAPH_LABEL_GAP_KANBAN: f32 = 4.0;
+const SUBGRAPH_LABEL_GAP_GENERIC: f32 = 8.0;
+const STATE_SUBGRAPH_TOP_LABEL_SCALE: f32 = 0.75;
+const STATE_SUBGRAPH_TOP_MIN_SCALE: f32 = 1.4;
+
+// ── Shape size constants ─────────────────────────────────────────────
+const DIAMOND_SCALE: f32 = 0.95;
+const FORK_JOIN_MIN_WIDTH: f32 = 50.0;
+const FORK_JOIN_HEIGHT_SCALE: f32 = 0.4;
+const FORK_JOIN_MIN_HEIGHT: f32 = 8.0;
+const CIRCLE_EMPTY_HEIGHT_SCALE: f32 = 1.4;
+const CIRCLE_EMPTY_MIN_SIZE: f32 = 14.0;
+const ROUND_RECT_WIDTH_SCALE: f32 = 1.1;
+const ROUND_RECT_HEIGHT_SCALE: f32 = 1.05;
+const CYLINDER_SCALE: f32 = 1.1;
+const HEXAGON_WIDTH_SCALE: f32 = 1.2;
+const HEXAGON_HEIGHT_SCALE: f32 = 1.1;
+const TRAPEZOID_WIDTH_SCALE: f32 = 1.2;
+const CLASS_MIN_HEIGHT_SCALE: f32 = 6.5;
+const REQUIREMENT_MIN_WIDTH_SCALE: f32 = 9.5;
+const KANBAN_MIN_WIDTH_SCALE: f32 = 11.0;
+const KANBAN_MIN_HEIGHT_SCALE: f32 = 2.6;
+
+// ── Edge label relaxation constants ──────────────────────────────────
+const EDGE_LABEL_PAD_SCALE: f32 = 0.35;
+const ENDPOINT_LABEL_PAD_SCALE: f32 = 0.2;
+const DUAL_ENDPOINT_EXTRA_PAD_SCALE: f32 = 0.45;
+const EDGE_RELAX_STEP_MIN: f32 = 24.0;
+const EDGE_RELAX_GAP_TOLERANCE: f32 = 0.5;
+const MAX_MAIN_GAP_FACTOR: f32 = 6.0;
+
+// ── Overlap resolution ───────────────────────────────────────────────
+const OVERLAP_RESOLVE_PASSES: u32 = 6;
+const OVERLAP_MIN_GAP_RATIO: f32 = 0.2;
+const OVERLAP_MIN_GAP_FLOOR: f32 = 4.0;
+const OVERLAP_CENTER_THRESHOLD: f32 = 0.5;
+
+// ── Subgraph gap enforcement ─────────────────────────────────────────
+const SUBGRAPH_DESIRED_GAP_RATIO: f32 = 1.6;
+
+// ── Edge occupancy / multi-edge offset ───────────────────────────────
+const MIN_NODE_SPACING_FLOOR: f32 = 16.0;
+const EDGE_OCCUPANCY_CELL_RATIO: f32 = 0.6;
+const MULTI_EDGE_OFFSET_RATIO: f32 = 0.35;
+
+// ── State subgraph rank spacing boost ────────────────────────────────
+const STATE_RANK_SPACING_BOOST: f32 = 25.0;
+
 fn is_region_subgraph(sub: &crate::ir::Subgraph) -> bool {
     sub.label.trim().is_empty()
         && sub
@@ -199,7 +273,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
                 crate::ir::NodeShape::Circle | crate::ir::NodeShape::DoubleCircle
             )
         {
-            let size = (theme.font_size * 0.75).max(10.0);
+            let size = (theme.font_size * STATE_MARKER_FONT_SCALE).max(STATE_MARKER_MIN_SIZE);
             width = size;
             height = size;
             state_marker_ids.push(node.id.clone());
@@ -210,20 +284,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         let style = resolve_node_style(node.id.as_str(), graph);
         nodes.insert(
             node.id.clone(),
-            NodeLayout {
-                id: node.id.clone(),
-                x: 0.0,
-                y: 0.0,
-                width,
-                height,
-                label,
-                shape: node.shape,
-                style,
-                link: graph.node_links.get(&node.id).cloned(),
-                anchor_subgraph: None,
-                hidden: false,
-                icon: None,
-            },
+            build_node_layout(node, label, width, height, style, graph),
         );
     }
 
@@ -231,9 +292,9 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         let avg_height = if state_height_count > 0 {
             state_height_total / state_height_count as f32
         } else {
-            theme.font_size * 2.4
+            theme.font_size * STATE_DEFAULT_HEIGHT_SCALE
         };
-        let marker_size = (avg_height / 3.0).clamp(theme.font_size * 0.5, theme.font_size * 0.95);
+        let marker_size = (avg_height / STATE_MARKER_DIV).clamp(theme.font_size * STATE_MARKER_MIN_SCALE, theme.font_size * STATE_MARKER_MAX_SCALE);
         for id in state_marker_ids {
             if let Some(node) = nodes.get_mut(&id) {
                 node.width = marker_size;
@@ -633,7 +694,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     let mut routed_points: Vec<Vec<(f32, f32)>> = vec![Vec::new(); graph.edges.len()];
     let use_occupancy = !tiny_graph && graph.edges.len() > 2;
     let mut edge_occupancy = if use_occupancy {
-        Some(EdgeOccupancy::new(config.node_spacing.max(16.0) * 0.6))
+        Some(EdgeOccupancy::new(config.node_spacing.max(MIN_NODE_SPACING_FLOOR) * EDGE_OCCUPANCY_CELL_RATIO))
     } else {
         None
     };
@@ -646,7 +707,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         let total = *pair_counts.get(&key).unwrap_or(&1) as f32;
         let idx_in_pair = pair_index[*idx] as f32;
         let base_offset = if total > 1.0 {
-            (idx_in_pair - (total - 1.0) / 2.0) * (config.node_spacing * 0.35)
+            (idx_in_pair - (total - 1.0) / 2.0) * (config.node_spacing * MULTI_EDGE_OFFSET_RATIO)
         } else {
             0.0
         };
@@ -788,9 +849,9 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     normalize_layout(&mut nodes, &mut edges, &mut subgraphs);
     let mut state_notes = Vec::new();
     if graph.kind == crate::ir::DiagramKind::State && !graph.state_notes.is_empty() {
-        let note_pad_x = theme.font_size * 0.75;
-        let note_pad_y = theme.font_size * 0.5;
-        let note_gap = (theme.font_size * 0.9).max(10.0);
+        let note_pad_x = theme.font_size * STATE_NOTE_PAD_X_SCALE;
+        let note_pad_y = theme.font_size * STATE_NOTE_PAD_Y_SCALE;
+        let note_gap = (theme.font_size * STATE_NOTE_GAP_SCALE).max(STATE_NOTE_GAP_MIN);
         for note in &graph.state_notes {
             let Some(target) = nodes.get(&note.target) else {
                 continue;
@@ -819,8 +880,8 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         max_x = max_x.max(note.x + note.width);
         max_y = max_y.max(note.y + note.height);
     }
-    let width = max_x + 8.0;
-    let height = max_y + 8.0;
+    let width = max_x + LAYOUT_BOUNDARY_PAD;
+    let height = max_y + LAYOUT_BOUNDARY_PAD;
 
     Layout {
         kind: graph.kind,
@@ -2112,7 +2173,7 @@ fn subgraph_layout_direction(graph: &Graph, sub: &crate::ir::Subgraph) -> Direct
 fn subgraph_layout_config(graph: &Graph, anchorable: bool, config: &LayoutConfig) -> LayoutConfig {
     let mut local = config.clone();
     if graph.kind == crate::ir::DiagramKind::Flowchart && anchorable {
-        local.rank_spacing = config.rank_spacing + 25.0;
+        local.rank_spacing = config.rank_spacing + STATE_RANK_SPACING_BOOST;
     }
     local
 }
@@ -2121,9 +2182,9 @@ fn flowchart_subgraph_padding(direction: Direction) -> (f32, f32) {
     // Mermaid CLI uses larger padding along the main axis and slightly
     // smaller padding along the cross axis.
     if is_horizontal(direction) {
-        (40.0, 30.0)
+        (FLOWCHART_PAD_MAIN, FLOWCHART_PAD_CROSS)
     } else {
-        (30.0, 40.0)
+        (FLOWCHART_PAD_CROSS, FLOWCHART_PAD_MAIN)
     }
 }
 
@@ -2143,12 +2204,12 @@ fn subgraph_padding_from_label(
     let (pad_x, pad_y) = if graph.kind == crate::ir::DiagramKind::Flowchart {
         flowchart_subgraph_padding(graph.direction)
     } else if graph.kind == crate::ir::DiagramKind::Kanban {
-        (8.0, 8.0)
+        (KANBAN_SUBGRAPH_PAD, KANBAN_SUBGRAPH_PAD)
     } else {
         let base_padding = if graph.kind == crate::ir::DiagramKind::State {
-            16.0
+            STATE_SUBGRAPH_BASE_PAD
         } else {
-            24.0
+            GENERIC_SUBGRAPH_BASE_PAD
         };
         (base_padding, base_padding)
     };
@@ -2158,13 +2219,13 @@ fn subgraph_padding_from_label(
     } else if graph.kind == crate::ir::DiagramKind::Flowchart {
         // Keep the label comfortably inside the top band without over-expanding
         // the cluster height.
-        pad_y.max(label_height + 6.0)
+        pad_y.max(label_height + SUBGRAPH_LABEL_GAP_FLOWCHART)
     } else if graph.kind == crate::ir::DiagramKind::Kanban {
-        pad_y.max(label_height + 4.0)
+        pad_y.max(label_height + SUBGRAPH_LABEL_GAP_KANBAN)
     } else if graph.kind == crate::ir::DiagramKind::State {
-        (label_height + theme.font_size * 0.75).max(theme.font_size * 1.4)
+        (label_height + theme.font_size * STATE_SUBGRAPH_TOP_LABEL_SCALE).max(theme.font_size * STATE_SUBGRAPH_TOP_MIN_SCALE)
     } else {
-        pad_y + label_height + 8.0
+        pad_y + label_height + SUBGRAPH_LABEL_GAP_GENERIC
     };
 
     (pad_x, pad_y, top_padding)
@@ -2753,7 +2814,7 @@ fn normalize_layout(
         }
     }
 
-    let padding = 8.0;
+    let padding = LAYOUT_BOUNDARY_PAD;
     let shift_x = if min_x < padding {
         padding - min_x
     } else {
@@ -2805,6 +2866,55 @@ fn resolve_node_style(node_id: &str, graph: &Graph) -> crate::ir::NodeStyle {
     }
 
     style
+}
+
+/// Build a `NodeLayout` with the standard defaults (position at origin, no
+/// anchor, not hidden, no icon).  Callers that need custom x/y or
+/// width/height can mutate the returned value.
+fn build_node_layout(
+    node: &crate::ir::Node,
+    label: TextBlock,
+    width: f32,
+    height: f32,
+    style: crate::ir::NodeStyle,
+    graph: &Graph,
+) -> NodeLayout {
+    NodeLayout {
+        id: node.id.clone(),
+        x: 0.0,
+        y: 0.0,
+        width,
+        height,
+        label,
+        shape: node.shape,
+        style,
+        link: graph.node_links.get(&node.id).cloned(),
+        anchor_subgraph: None,
+        hidden: false,
+        icon: None,
+    }
+}
+
+/// Build `NodeLayout`s for every node in `graph` using the standard pipeline:
+/// `measure_label → shape_size → resolve_node_style → NodeLayout`.
+///
+/// Returns a `BTreeMap` ready to assign into a `Layout`.
+fn build_graph_node_layouts(
+    graph: &Graph,
+    theme: &Theme,
+    config: &LayoutConfig,
+) -> BTreeMap<String, NodeLayout> {
+    let mut nodes = BTreeMap::new();
+    for node in graph.nodes.values() {
+        let label = measure_label(&node.label, theme, config);
+        let (width, height) = shape_size(node.shape, &label, config, theme, graph.kind);
+        let style = resolve_node_style(node.id.as_str(), graph);
+        nodes.insert(
+            node.id.clone(),
+            build_node_layout(node, label, width, height, style, graph),
+        );
+    }
+    nodes
 }
 
 fn resolve_subgraph_style(sub: &crate::ir::Subgraph, graph: &Graph) -> crate::ir::NodeStyle {
@@ -2950,7 +3060,7 @@ fn enforce_top_level_subgraph_gap(
     });
 
     let pad_main = bounds.iter().map(|b| b.pad_main).fold(0.0_f32, f32::max);
-    let desired_gap = (config.node_spacing * 1.6).max(pad_main * 2.0);
+    let desired_gap = (config.node_spacing * SUBGRAPH_DESIRED_GAP_RATIO).max(pad_main * 2.0);
 
     let mut prev_max_main: Option<f32> = None;
     for bound in &mut bounds {
@@ -3501,7 +3611,7 @@ fn align_disconnected_components(
         .iter()
         .map(|b| if horizontal { b.min_y } else { b.min_x })
         .fold(f32::MAX, f32::min);
-    let spacing = config.node_spacing.max(16.0);
+    let spacing = config.node_spacing.max(MIN_NODE_SPACING_FLOOR);
     let mut cursor = if horizontal {
         bounds.iter().map(|b| b.min_x).fold(f32::MAX, f32::min)
     } else {
@@ -3608,7 +3718,7 @@ fn relax_edge_span_constraints(
     let horizontal = is_horizontal(graph.direction);
     let objective = &config.flowchart.objective;
     let passes = objective.edge_relax_passes.max(1);
-    let step_limit = (config.rank_spacing + config.node_spacing).max(24.0);
+    let step_limit = (config.rank_spacing + config.node_spacing).max(EDGE_RELAX_STEP_MIN);
     let mut label_cache: HashMap<String, TextBlock> = HashMap::new();
 
     for _ in 0..passes {
@@ -3664,7 +3774,7 @@ fn relax_edge_span_constraints(
                     label_block.height
                 };
                 required_main_gap += label_extent * objective.edge_label_weight;
-                required_main_gap += theme.font_size * 0.35;
+                required_main_gap += theme.font_size * EDGE_LABEL_PAD_SCALE;
             }
             if let Some(label) = edge
                 .start_label
@@ -3681,7 +3791,7 @@ fn relax_edge_span_constraints(
                     label_block.height
                 };
                 required_main_gap += label_extent * objective.endpoint_label_weight;
-                required_main_gap += theme.font_size * 0.2;
+                required_main_gap += theme.font_size * ENDPOINT_LABEL_PAD_SCALE;
             }
             if let Some(label) = edge
                 .end_label
@@ -3698,15 +3808,15 @@ fn relax_edge_span_constraints(
                     label_block.height
                 };
                 required_main_gap += label_extent * objective.endpoint_label_weight;
-                required_main_gap += theme.font_size * 0.2;
+                required_main_gap += theme.font_size * ENDPOINT_LABEL_PAD_SCALE;
             }
             if has_start_label && has_end_label {
-                required_main_gap += theme.font_size * 0.45;
+                required_main_gap += theme.font_size * DUAL_ENDPOINT_EXTRA_PAD_SCALE;
             }
-            let max_main_gap = (config.rank_spacing + config.node_spacing) * 6.0;
+            let max_main_gap = (config.rank_spacing + config.node_spacing) * MAX_MAIN_GAP_FACTOR;
             required_main_gap = required_main_gap.min(max_main_gap);
 
-            if current_main_gap + 0.5 < required_main_gap {
+            if current_main_gap + EDGE_RELAX_GAP_TOLERANCE < required_main_gap {
                 let delta = (required_main_gap - current_main_gap).min(step_limit);
                 let ahead_id = if main_delta >= 0.0 {
                     edge.to.as_str()
@@ -3727,7 +3837,7 @@ fn relax_edge_span_constraints(
 
 fn resolve_node_overlaps(graph: &Graph, nodes: &mut BTreeMap<String, NodeLayout>, config: &LayoutConfig) {
     let horizontal = is_horizontal(graph.direction);
-    let min_gap = (config.node_spacing * 0.2).max(4.0);
+    let min_gap = (config.node_spacing * OVERLAP_MIN_GAP_RATIO).max(OVERLAP_MIN_GAP_FLOOR);
     let mut ids: Vec<String> = nodes
         .values()
         .filter(|node| !node.hidden)
@@ -3738,7 +3848,7 @@ fn resolve_node_overlaps(graph: &Graph, nodes: &mut BTreeMap<String, NodeLayout>
     }
     ids.sort_by_key(|id| graph.node_order.get(id).copied().unwrap_or(usize::MAX));
 
-    for _ in 0..6 {
+    for _ in 0..OVERLAP_RESOLVE_PASSES {
         let mut moved = false;
         for i in 0..ids.len() {
             for j in (i + 1)..ids.len() {
@@ -3764,7 +3874,7 @@ fn resolve_node_overlaps(graph: &Graph, nodes: &mut BTreeMap<String, NodeLayout>
                     (ax + aw / 2.0, bx + bw / 2.0)
                 };
                 let mut sign = if center_b >= center_a { 1.0 } else { -1.0 };
-                if (center_b - center_a).abs() < 0.5 {
+                if (center_b - center_a).abs() < OVERLAP_CENTER_THRESHOLD {
                     let order_a = graph.node_order.get(id_a).copied().unwrap_or(usize::MAX);
                     let order_b = graph.node_order.get(id_b).copied().unwrap_or(usize::MAX);
                     sign = if order_b >= order_a { 1.0 } else { -1.0 };
@@ -4235,8 +4345,8 @@ fn shape_size(
     let mut pad_x = config.node_padding_x * pad_x_factor * kind_pad_x_scale;
     let mut pad_y = config.node_padding_y * pad_y_factor * kind_pad_y_scale;
     if kind == crate::ir::DiagramKind::State {
-        let dynamic_pad_x = (theme.font_size * 0.9).max(label.width * 0.12);
-        let dynamic_pad_y = (theme.font_size * 0.65).max(label.height * 0.22);
+        let dynamic_pad_x = (theme.font_size * STATE_PAD_X_SCALE).max(label.width * STATE_PAD_X_LABEL_RATIO);
+        let dynamic_pad_y = (theme.font_size * STATE_PAD_Y_SCALE).max(label.height * STATE_PAD_Y_LABEL_RATIO);
         pad_x = dynamic_pad_x;
         pad_y = dynamic_pad_y;
     }
@@ -4250,17 +4360,17 @@ fn shape_size(
         crate::ir::NodeShape::Diamond => {
             // Mermaid renders diamonds as squares sized off the larger
             // dimension rather than stretching width/height independently.
-            let size = base_width.max(base_height) * 0.95;
+            let size = base_width.max(base_height) * DIAMOND_SCALE;
             width = size;
             height = size;
         }
         crate::ir::NodeShape::ForkJoin => {
-            width = width.max(50.0);
-            height = (config.node_padding_y * 0.4).max(8.0);
+            width = width.max(FORK_JOIN_MIN_WIDTH);
+            height = (config.node_padding_y * FORK_JOIN_HEIGHT_SCALE).max(FORK_JOIN_MIN_HEIGHT);
         }
         crate::ir::NodeShape::Circle | crate::ir::NodeShape::DoubleCircle => {
             let size = if label_empty {
-                (config.node_padding_y * 1.4).max(14.0)
+                (config.node_padding_y * CIRCLE_EMPTY_HEIGHT_SCALE).max(CIRCLE_EMPTY_MIN_SIZE)
             } else {
                 width.max(height)
             };
@@ -4269,40 +4379,40 @@ fn shape_size(
         }
         crate::ir::NodeShape::Stadium => {}
         crate::ir::NodeShape::RoundRect => {
-            width *= 1.1;
-            height *= 1.05;
+            width *= ROUND_RECT_WIDTH_SCALE;
+            height *= ROUND_RECT_HEIGHT_SCALE;
         }
         crate::ir::NodeShape::Cylinder => {
-            width *= 1.1;
-            height *= 1.1;
+            width *= CYLINDER_SCALE;
+            height *= CYLINDER_SCALE;
         }
         crate::ir::NodeShape::Hexagon => {
-            width *= 1.2;
-            height *= 1.1;
+            width *= HEXAGON_WIDTH_SCALE;
+            height *= HEXAGON_HEIGHT_SCALE;
         }
         crate::ir::NodeShape::Parallelogram | crate::ir::NodeShape::ParallelogramAlt => {}
         crate::ir::NodeShape::Trapezoid
         | crate::ir::NodeShape::TrapezoidAlt
         | crate::ir::NodeShape::Asymmetric => {
-            width *= 1.2;
+            width *= TRAPEZOID_WIDTH_SCALE;
         }
         crate::ir::NodeShape::Subroutine => {}
         _ => {}
     }
 
     if kind == crate::ir::DiagramKind::Class {
-        let min_height = theme.font_size * 6.5;
+        let min_height = theme.font_size * CLASS_MIN_HEIGHT_SCALE;
         height = height.max(min_height);
     }
 
     if kind == crate::ir::DiagramKind::Requirement {
-        let min_width = theme.font_size * 9.5;
+        let min_width = theme.font_size * REQUIREMENT_MIN_WIDTH_SCALE;
         width = width.max(min_width);
     }
 
     if kind == crate::ir::DiagramKind::Kanban {
-        let min_width = theme.font_size * 11.0;
-        let min_height = theme.font_size * 2.6;
+        let min_width = theme.font_size * KANBAN_MIN_WIDTH_SCALE;
+        let min_height = theme.font_size * KANBAN_MIN_HEIGHT_SCALE;
         width = width.max(min_width);
         height = height.max(min_height);
     }
@@ -4525,7 +4635,7 @@ mod tests {
             end_offset: 0.0,
             fast_route: false,
         };
-        let mut occupancy = EdgeOccupancy::new(config.node_spacing.max(16.0) * 0.6);
+        let mut occupancy = EdgeOccupancy::new(config.node_spacing.max(MIN_NODE_SPACING_FLOOR) * EDGE_OCCUPANCY_CELL_RATIO);
         let start = anchor_point_for_node(&from, EdgeSide::Right, 0.0);
         let end = anchor_point_for_node(&to, EdgeSide::Left, 0.0);
         occupancy.add_path(&[start, end]);

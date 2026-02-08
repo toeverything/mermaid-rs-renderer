@@ -29,23 +29,10 @@ pub(super) fn compute_architecture_layout(
         if style.stroke_width.is_none() {
             style.stroke_width = Some(0.0);
         }
-        nodes.insert(
-            node.id.clone(),
-            NodeLayout {
-                id: node.id.clone(),
-                x: 0.0,
-                y: 0.0,
-                width: SERVICE_SIZE,
-                height: SERVICE_SIZE,
-                label,
-                shape: crate::ir::NodeShape::Rectangle,
-                style,
-                link: graph.node_links.get(&node.id).cloned(),
-                anchor_subgraph: None,
-                hidden: false,
-                icon: node.icon.clone(),
-            },
-        );
+        let mut nl = build_node_layout(node, label, SERVICE_SIZE, SERVICE_SIZE, style, graph);
+        nl.shape = crate::ir::NodeShape::Rectangle;
+        nl.icon = node.icon.clone();
+        nodes.insert(node.id.clone(), nl);
     }
 
     let mut assigned: HashSet<String> = HashSet::new();

@@ -5,29 +5,7 @@ pub(super) fn compute_block_layout(
     theme: &Theme,
     config: &LayoutConfig,
 ) -> Layout {
-    let mut nodes = BTreeMap::new();
-    for node in graph.nodes.values() {
-        let label = measure_label(&node.label, theme, config);
-        let (width, height) = shape_size(node.shape, &label, config, theme, graph.kind);
-        let style = resolve_node_style(node.id.as_str(), graph);
-        nodes.insert(
-            node.id.clone(),
-            NodeLayout {
-                id: node.id.clone(),
-                x: 0.0,
-                y: 0.0,
-                width,
-                height,
-                label,
-                shape: node.shape,
-                style,
-                link: graph.node_links.get(&node.id).cloned(),
-                anchor_subgraph: None,
-                hidden: false,
-                icon: None,
-            },
-        );
-    }
+    let mut nodes = build_graph_node_layouts(graph, theme, config);
 
     let node_gap = (theme.font_size * 0.4).max(4.0);
     let column_gap = (theme.font_size * 0.45).max(6.0);
