@@ -1953,7 +1953,7 @@ pub(super) fn build_label_obstacles_for_routing(
         });
     }
 
-    let sub_pad = 3.0;
+    let sub_pad = LABEL_OBSTACLE_SUB_PAD;
     for sub in subgraphs {
         if sub.label.trim().is_empty()
             || sub.label_block.width <= 0.0
