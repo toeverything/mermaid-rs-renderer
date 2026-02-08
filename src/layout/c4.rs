@@ -1,0 +1,794 @@
+use super::*;
+
+pub(super) fn compute_c4_layout(graph: &Graph, config: &LayoutConfig) -> Layout {
+    let c4 = &graph.c4;
+    let fast_metrics = config.fast_text_metrics;
+    let mut conf = config.c4.clone();
+    if let Some(val) = c4.c4_shape_in_row_override {
+        conf.c4_shape_in_row = val;
+    }
+    if let Some(val) = c4.c4_boundary_in_row_override {
+        conf.c4_boundary_in_row = val;
+    }
+    let conf = &conf;
+    let mut shapes_out = Vec::new();
+    let mut boundaries_out = Vec::new();
+    let mut rels_out = Vec::new();
+
+    let mut shapes_by_boundary: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    let mut shape_map: std::collections::HashMap<String, &crate::ir::C4Shape> =
+        std::collections::HashMap::new();
+    for shape in &c4.shapes {
+        shapes_by_boundary
+            .entry(shape.parent_boundary.clone())
+            .or_default()
+            .push(shape.id.clone());
+        shape_map.insert(shape.id.clone(), shape);
+    }
+
+    let mut boundaries_by_parent: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    let mut boundary_map: std::collections::HashMap<String, &crate::ir::C4Boundary> =
+        std::collections::HashMap::new();
+    for boundary in &c4.boundaries {
+        boundaries_by_parent
+            .entry(boundary.parent_boundary.clone())
+            .or_default()
+            .push(boundary.id.clone());
+        boundary_map.insert(boundary.id.clone(), boundary);
+    }
+
+    let root_boundaries = boundaries_by_parent.get("").cloned().unwrap_or_default();
+
+    let mut global_max_x = conf.diagram_margin_x;
+    let mut global_max_y = conf.diagram_margin_y;
+
+    let mut screen_bounds = C4Bounds::new(conf);
+    let width_limit = 1920.0;
+    screen_bounds.set_data(
+        conf.diagram_margin_x,
+        conf.diagram_margin_x,
+        conf.diagram_margin_y,
+        conf.diagram_margin_y,
+        width_limit,
+    );
+
+    layout_c4_boundaries(
+        &mut screen_bounds,
+        &root_boundaries,
+        &mut shapes_out,
+        &mut boundaries_out,
+        &mut global_max_x,
+        &mut global_max_y,
+        &shapes_by_boundary,
+        &shape_map,
+        &boundaries_by_parent,
+        &boundary_map,
+        conf,
+        fast_metrics,
+    );
+
+    for rel in &c4.rels {
+        let Some(from_shape) = shapes_out.iter().find(|s| s.id == rel.from) else {
+            continue;
+        };
+        let Some(to_shape) = shapes_out.iter().find(|s| s.id == rel.to) else {
+            continue;
+        };
+        let (start, end) = c4_intersect_points(from_shape, to_shape);
+        let label_font_size = conf.message_font_size;
+        let rel_font_family = conf.message_font_family.as_str();
+        let label_layout = c4_text_layout(
+            &rel.label,
+            label_font_size,
+            0.0,
+            conf.wrap,
+            estimate_text_width(&rel.label, label_font_size, rel_font_family, fast_metrics),
+            c4_text_line_height(conf, label_font_size),
+            rel_font_family,
+            fast_metrics,
+        );
+        let techn_layout = rel.techn.as_ref().map(|t| {
+            c4_text_layout(
+                t,
+                label_font_size,
+                0.0,
+                conf.wrap,
+                estimate_text_width(t, label_font_size, rel_font_family, fast_metrics),
+                c4_text_line_height(conf, label_font_size),
+                rel_font_family,
+                fast_metrics,
+            )
+        });
+        rels_out.push(C4RelLayout {
+            kind: rel.kind,
+            from: rel.from.clone(),
+            to: rel.to.clone(),
+            label: label_layout,
+            techn: techn_layout,
+            start,
+            end,
+            offset_x: rel.offset_x,
+            offset_y: rel.offset_y,
+            line_color: rel.line_color.clone(),
+            text_color: rel.text_color.clone(),
+        });
+    }
+
+    let width = (global_max_x - conf.diagram_margin_x + 2.0 * conf.diagram_margin_x).max(1.0);
+    let height = (global_max_y - conf.diagram_margin_y + 2.0 * conf.diagram_margin_y).max(1.0);
+    let viewbox_x = 0.0;
+    let viewbox_y = -conf.diagram_margin_y;
+    let viewbox_width = width;
+    let viewbox_height = height;
+
+    Layout {
+        kind: graph.kind,
+        nodes: BTreeMap::new(),
+        edges: Vec::new(),
+        subgraphs: Vec::new(),
+        lifelines: Vec::new(),
+        sequence_footboxes: Vec::new(),
+        sequence_boxes: Vec::new(),
+        sequence_frames: Vec::new(),
+        sequence_notes: Vec::new(),
+        sequence_activations: Vec::new(),
+        sequence_numbers: Vec::new(),
+        state_notes: Vec::new(),
+        pie_slices: Vec::new(),
+        pie_legend: Vec::new(),
+        pie_center: (0.0, 0.0),
+        pie_radius: 0.0,
+        pie_title: None,
+        quadrant: None,
+        gantt: None,
+        sankey: None,
+        gitgraph: None,
+        c4: Some(C4Layout {
+            shapes: shapes_out,
+            boundaries: boundaries_out,
+            rels: rels_out,
+            viewbox_x,
+            viewbox_y,
+            viewbox_width,
+            viewbox_height,
+            use_max_width: conf.use_max_width,
+        }),
+        xychart: None,
+        timeline: None,
+        journey: None,
+        error: None,
+
+        width,
+        height,
+    }
+}
+
+#[derive(Debug, Clone)]
+struct C4BoundsData {
+    startx: f32,
+    stopx: f32,
+    starty: f32,
+    stopy: f32,
+    width_limit: f32,
+}
+
+#[derive(Debug, Clone)]
+struct C4BoundsNext {
+    startx: f32,
+    stopx: f32,
+    starty: f32,
+    stopy: f32,
+    cnt: usize,
+}
+
+#[derive(Debug, Clone)]
+struct C4Bounds {
+    data: C4BoundsData,
+    next: C4BoundsNext,
+    conf: crate::config::C4Config,
+}
+
+impl C4Bounds {
+    fn new(conf: &crate::config::C4Config) -> Self {
+        Self {
+            data: C4BoundsData {
+                startx: 0.0,
+                stopx: 0.0,
+                starty: 0.0,
+                stopy: 0.0,
+                width_limit: 0.0,
+            },
+            next: C4BoundsNext {
+                startx: 0.0,
+                stopx: 0.0,
+                starty: 0.0,
+                stopy: 0.0,
+                cnt: 0,
+            },
+            conf: conf.clone(),
+        }
+    }
+
+    fn set_data(&mut self, startx: f32, stopx: f32, starty: f32, stopy: f32, width_limit: f32) {
+        self.data.startx = startx;
+        self.data.stopx = stopx;
+        self.data.starty = starty;
+        self.data.stopy = stopy;
+        self.data.width_limit = width_limit;
+        self.next.startx = startx;
+        self.next.stopx = stopx;
+        self.next.starty = starty;
+        self.next.stopy = stopy;
+        self.next.cnt = 0;
+    }
+
+    fn bump_last_margin(&mut self, margin: f32) {
+        self.data.stopx += margin;
+        self.data.stopy += margin;
+    }
+
+    fn insert(&mut self, width: f32, height: f32, margin: f32) -> (f32, f32) {
+        self.next.cnt += 1;
+        let mut startx = if (self.next.startx - self.next.stopx).abs() < f32::EPSILON {
+            self.next.stopx + margin
+        } else {
+            self.next.stopx + margin * 2.0
+        };
+        let mut stopx = startx + width;
+        let mut starty = self.next.starty + margin * 2.0;
+        let mut stopy = starty + height;
+
+        if startx >= self.data.width_limit
+            || stopx >= self.data.width_limit
+            || self.next.cnt > self.conf.c4_shape_in_row
+        {
+            startx = self.next.startx + margin + self.conf.next_line_padding_x;
+            starty = self.next.stopy + margin * 2.0;
+            stopx = startx + width;
+            stopy = starty + height;
+            self.next.starty = self.next.stopy;
+            self.next.stopy = stopy;
+            self.next.stopx = stopx;
+            self.next.cnt = 1;
+        }
+
+        self.data.startx = if self.data.startx == 0.0 {
+            startx
+        } else {
+            self.data.startx.min(startx)
+        };
+        self.data.starty = if self.data.starty == 0.0 {
+            starty
+        } else {
+            self.data.starty.min(starty)
+        };
+        self.data.stopx = self.data.stopx.max(stopx);
+        self.data.stopy = self.data.stopy.max(stopy);
+
+        self.next.startx = self.next.startx.min(startx);
+        self.next.starty = self.next.starty.min(starty);
+        self.next.stopx = self.next.stopx.max(stopx);
+        self.next.stopy = self.next.stopy.max(stopy);
+
+        (startx, starty)
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn layout_c4_boundaries(
+    parent_bounds: &mut C4Bounds,
+    boundary_ids: &[String],
+    shapes_out: &mut Vec<C4ShapeLayout>,
+    boundaries_out: &mut Vec<C4BoundaryLayout>,
+    global_max_x: &mut f32,
+    global_max_y: &mut f32,
+    shapes_by_boundary: &std::collections::HashMap<String, Vec<String>>,
+    shape_map: &std::collections::HashMap<String, &crate::ir::C4Shape>,
+    boundaries_by_parent: &std::collections::HashMap<String, Vec<String>>,
+    boundary_map: &std::collections::HashMap<String, &crate::ir::C4Boundary>,
+    conf: &crate::config::C4Config,
+    fast_metrics: bool,
+) {
+    if boundary_ids.is_empty() {
+        return;
+    }
+    let mut current_bounds = C4Bounds::new(conf);
+    let limit_div = conf.c4_boundary_in_row.max(1).min(boundary_ids.len());
+    current_bounds.data.width_limit = parent_bounds.data.width_limit / limit_div as f32;
+
+    for (idx, boundary_id) in boundary_ids.iter().enumerate() {
+        let Some(boundary) = boundary_map.get(boundary_id) else {
+            continue;
+        };
+        let mut y = 0.0;
+        let boundary_text_wrap = conf.wrap;
+        let label_font_size = conf.boundary_font_size + 2.0;
+        let boundary_font_family = conf.boundary_font_family.as_str();
+        let label_layout = c4_text_layout(
+            &boundary.label,
+            label_font_size,
+            y + 8.0,
+            boundary_text_wrap,
+            current_bounds.data.width_limit,
+            c4_text_line_height(conf, label_font_size),
+            boundary_font_family,
+            fast_metrics,
+        );
+        y = label_layout.y + label_layout.height;
+        let mut boundary_type_layout = None;
+        if !boundary.boundary_type.is_empty() {
+            let type_text = format!("[{}]", boundary.boundary_type);
+            let type_layout = c4_text_layout(
+                &type_text,
+                conf.boundary_font_size,
+                y + 5.0,
+                boundary_text_wrap,
+                current_bounds.data.width_limit,
+                c4_text_line_height(conf, conf.boundary_font_size),
+                boundary_font_family,
+                fast_metrics,
+            );
+            y = type_layout.y + type_layout.height;
+            boundary_type_layout = Some(type_layout);
+        }
+        let mut boundary_descr_layout = None;
+        if let Some(descr) = &boundary.descr {
+            let descr_layout = c4_text_layout(
+                descr,
+                (conf.boundary_font_size - 2.0).max(1.0),
+                y + 20.0,
+                boundary_text_wrap,
+                current_bounds.data.width_limit,
+                c4_text_line_height(conf, (conf.boundary_font_size - 2.0).max(1.0)),
+                boundary_font_family,
+                fast_metrics,
+            );
+            y = descr_layout.y + descr_layout.height;
+            boundary_descr_layout = Some(descr_layout);
+        }
+
+        if idx == 0 || idx % conf.c4_boundary_in_row == 0 {
+            let startx = parent_bounds.data.startx + conf.diagram_margin_x;
+            let starty = parent_bounds.data.stopy + conf.diagram_margin_y + y;
+            current_bounds.set_data(
+                startx,
+                startx,
+                starty,
+                starty,
+                current_bounds.data.width_limit,
+            );
+        } else {
+            let startx =
+                if (current_bounds.data.stopx - current_bounds.data.startx).abs() > f32::EPSILON {
+                    current_bounds.data.stopx + conf.diagram_margin_x
+                } else {
+                    current_bounds.data.startx
+                };
+            let starty = current_bounds.data.starty;
+            current_bounds.set_data(
+                startx,
+                startx,
+                starty,
+                starty,
+                current_bounds.data.width_limit,
+            );
+        }
+
+        if let Some(shape_ids) = shapes_by_boundary.get(boundary_id) {
+            layout_c4_shapes(
+                &mut current_bounds,
+                shape_ids,
+                shapes_out,
+                shape_map,
+                conf,
+                fast_metrics,
+            );
+        }
+
+        if let Some(child_boundaries) = boundaries_by_parent.get(boundary_id) {
+            layout_c4_boundaries(
+                &mut current_bounds,
+                child_boundaries,
+                shapes_out,
+                boundaries_out,
+                global_max_x,
+                global_max_y,
+                shapes_by_boundary,
+                shape_map,
+                boundaries_by_parent,
+                boundary_map,
+                conf,
+                fast_metrics,
+            );
+        }
+
+        if boundary_id != "global" {
+            let boundary_layout = C4BoundaryLayout {
+                id: boundary_id.clone(),
+                label: label_layout,
+                boundary_type: boundary_type_layout,
+                descr: boundary_descr_layout,
+                bg_color: boundary.bg_color.clone(),
+                border_color: boundary.border_color.clone(),
+                font_color: boundary.font_color.clone(),
+                x: current_bounds.data.startx,
+                y: current_bounds.data.starty,
+                width: current_bounds.data.stopx - current_bounds.data.startx,
+                height: current_bounds.data.stopy - current_bounds.data.starty,
+            };
+            boundaries_out.push(boundary_layout);
+        }
+
+        parent_bounds.data.stopy = parent_bounds
+            .data
+            .stopy
+            .max(current_bounds.data.stopy + conf.c4_shape_margin);
+        parent_bounds.data.stopx = parent_bounds
+            .data
+            .stopx
+            .max(current_bounds.data.stopx + conf.c4_shape_margin);
+        *global_max_x = (*global_max_x).max(parent_bounds.data.stopx);
+        *global_max_y = (*global_max_y).max(parent_bounds.data.stopy);
+    }
+}
+
+fn layout_c4_shapes(
+    bounds: &mut C4Bounds,
+    shape_ids: &[String],
+    shapes_out: &mut Vec<C4ShapeLayout>,
+    shape_map: &std::collections::HashMap<String, &crate::ir::C4Shape>,
+    conf: &crate::config::C4Config,
+    fast_metrics: bool,
+) {
+    for shape_id in shape_ids {
+        let Some(shape) = shape_map.get(shape_id) else {
+            continue;
+        };
+        let type_font_size = (c4_shape_font_size(conf, shape.kind) - 2.0).max(1.0);
+        let type_font_family = c4_shape_font_family(conf, shape.kind);
+        let type_label_text = format!("<<{}>>", shape.kind.as_str());
+        let type_width = estimate_text_width(
+            &type_label_text,
+            type_font_size,
+            type_font_family,
+            fast_metrics,
+        );
+        let type_height = type_font_size + 2.0;
+        let type_layout = C4TextLayout {
+            text: type_label_text.clone(),
+            lines: vec![type_label_text],
+            width: type_width,
+            height: type_height,
+            y: conf.c4_shape_padding,
+        };
+        let mut y = type_layout.y + type_layout.height - 4.0;
+
+        let mut image_y = None;
+        if matches!(
+            shape.kind,
+            crate::ir::C4ShapeKind::Person | crate::ir::C4ShapeKind::ExternalPerson
+        ) {
+            image_y = Some(y);
+            y += conf.person_icon_size;
+        } else if shape.sprite.is_some() {
+            image_y = Some(y);
+            y += conf.person_icon_size;
+        }
+
+        let label_font_size = c4_shape_font_size(conf, shape.kind) + 2.0;
+        let label_font_family = c4_shape_font_family(conf, shape.kind);
+        let text_limit_width = conf.width - conf.c4_shape_padding * 2.0;
+        let label_layout = c4_text_layout(
+            &shape.label,
+            label_font_size,
+            y + 8.0,
+            conf.wrap,
+            text_limit_width,
+            c4_text_line_height(conf, label_font_size),
+            label_font_family,
+            fast_metrics,
+        );
+        y = label_layout.y + label_layout.height;
+
+        let mut type_or_techn_layout = None;
+        let type_or_techn_text = shape
+            .techn
+            .as_ref()
+            .or(shape.type_label.as_ref())
+            .map(|t| format!("[{}]", t));
+        if let Some(text) = type_or_techn_text {
+            let font_size = c4_shape_font_size(conf, shape.kind);
+            let font_family = c4_shape_font_family(conf, shape.kind);
+            let layout = c4_text_layout(
+                &text,
+                font_size,
+                y + 5.0,
+                conf.wrap,
+                text_limit_width,
+                c4_text_line_height(conf, font_size),
+                font_family,
+                fast_metrics,
+            );
+            y = layout.y + layout.height;
+            type_or_techn_layout = Some(layout);
+        }
+
+        let mut descr_layout = None;
+        let mut rect_height = y;
+        let mut rect_width = label_layout.width;
+        if let Some(descr) = &shape.descr {
+            let font_size = c4_shape_font_size(conf, shape.kind);
+            let font_family = c4_shape_font_family(conf, shape.kind);
+            let layout = c4_text_layout(
+                descr,
+                font_size,
+                y + 20.0,
+                conf.wrap,
+                text_limit_width,
+                c4_text_line_height(conf, font_size),
+                font_family,
+                fast_metrics,
+            );
+            y = layout.y + layout.height;
+            rect_width = rect_width.max(layout.width);
+            let lines = layout.lines.len() as f32;
+            rect_height = y - lines * 5.0;
+            descr_layout = Some(layout);
+        }
+        rect_width += conf.c4_shape_padding;
+        let width = conf.width.max(rect_width);
+        let height = conf.height.max(rect_height);
+        let margin = conf.c4_shape_margin;
+        let (x, y_pos) = bounds.insert(width, height, margin);
+
+        shapes_out.push(C4ShapeLayout {
+            id: shape.id.clone(),
+            kind: shape.kind,
+            bg_color: shape.bg_color.clone(),
+            border_color: shape.border_color.clone(),
+            font_color: shape.font_color.clone(),
+            x,
+            y: y_pos,
+            width,
+            height,
+            margin,
+            type_label: type_layout,
+            label: label_layout,
+            type_or_techn: type_or_techn_layout,
+            descr: descr_layout,
+            image_y,
+        });
+    }
+    bounds.bump_last_margin(conf.c4_shape_margin);
+}
+
+fn c4_shape_font_size(conf: &crate::config::C4Config, kind: crate::ir::C4ShapeKind) -> f32 {
+    match kind {
+        crate::ir::C4ShapeKind::Person => conf.person_font_size,
+        crate::ir::C4ShapeKind::ExternalPerson => conf.external_person_font_size,
+        crate::ir::C4ShapeKind::System => conf.system_font_size,
+        crate::ir::C4ShapeKind::SystemDb => conf.system_db_font_size,
+        crate::ir::C4ShapeKind::SystemQueue => conf.system_queue_font_size,
+        crate::ir::C4ShapeKind::ExternalSystem => conf.external_system_font_size,
+        crate::ir::C4ShapeKind::ExternalSystemDb => conf.external_system_db_font_size,
+        crate::ir::C4ShapeKind::ExternalSystemQueue => conf.external_system_queue_font_size,
+        crate::ir::C4ShapeKind::Container => conf.container_font_size,
+        crate::ir::C4ShapeKind::ContainerDb => conf.container_db_font_size,
+        crate::ir::C4ShapeKind::ContainerQueue => conf.container_queue_font_size,
+        crate::ir::C4ShapeKind::ExternalContainer => conf.external_container_font_size,
+        crate::ir::C4ShapeKind::ExternalContainerDb => conf.external_container_db_font_size,
+        crate::ir::C4ShapeKind::ExternalContainerQueue => conf.external_container_queue_font_size,
+        crate::ir::C4ShapeKind::Component => conf.component_font_size,
+        crate::ir::C4ShapeKind::ComponentDb => conf.component_db_font_size,
+        crate::ir::C4ShapeKind::ComponentQueue => conf.component_queue_font_size,
+        crate::ir::C4ShapeKind::ExternalComponent => conf.external_component_font_size,
+        crate::ir::C4ShapeKind::ExternalComponentDb => conf.external_component_db_font_size,
+        crate::ir::C4ShapeKind::ExternalComponentQueue => conf.external_component_queue_font_size,
+    }
+}
+
+fn c4_shape_font_family(conf: &crate::config::C4Config, kind: crate::ir::C4ShapeKind) -> &str {
+    match kind {
+        crate::ir::C4ShapeKind::Person => &conf.person_font_family,
+        crate::ir::C4ShapeKind::ExternalPerson => &conf.external_person_font_family,
+        crate::ir::C4ShapeKind::System => &conf.system_font_family,
+        crate::ir::C4ShapeKind::SystemDb => &conf.system_db_font_family,
+        crate::ir::C4ShapeKind::SystemQueue => &conf.system_queue_font_family,
+        crate::ir::C4ShapeKind::ExternalSystem => &conf.external_system_font_family,
+        crate::ir::C4ShapeKind::ExternalSystemDb => &conf.external_system_db_font_family,
+        crate::ir::C4ShapeKind::ExternalSystemQueue => &conf.external_system_queue_font_family,
+        crate::ir::C4ShapeKind::Container => &conf.container_font_family,
+        crate::ir::C4ShapeKind::ContainerDb => &conf.container_db_font_family,
+        crate::ir::C4ShapeKind::ContainerQueue => &conf.container_queue_font_family,
+        crate::ir::C4ShapeKind::ExternalContainer => &conf.external_container_font_family,
+        crate::ir::C4ShapeKind::ExternalContainerDb => &conf.external_container_db_font_family,
+        crate::ir::C4ShapeKind::ExternalContainerQueue => {
+            &conf.external_container_queue_font_family
+        }
+        crate::ir::C4ShapeKind::Component => &conf.component_font_family,
+        crate::ir::C4ShapeKind::ComponentDb => &conf.component_db_font_family,
+        crate::ir::C4ShapeKind::ComponentQueue => &conf.component_queue_font_family,
+        crate::ir::C4ShapeKind::ExternalComponent => &conf.external_component_font_family,
+        crate::ir::C4ShapeKind::ExternalComponentDb => &conf.external_component_db_font_family,
+        crate::ir::C4ShapeKind::ExternalComponentQueue => {
+            &conf.external_component_queue_font_family
+        }
+    }
+}
+
+fn c4_text_line_height(conf: &crate::config::C4Config, font_size: f32) -> f32 {
+    let mut height = font_size + conf.text_line_height;
+    if font_size <= conf.text_line_height_small_threshold {
+        height += conf.text_line_height_small_add;
+    }
+    height.max(1.0)
+}
+
+fn c4_text_layout(
+    text: &str,
+    font_size: f32,
+    y: f32,
+    wrap: bool,
+    max_width: f32,
+    line_height: f32,
+    font_family: &str,
+    fast_metrics: bool,
+) -> C4TextLayout {
+    let mut lines = Vec::new();
+    for raw in split_lines(text) {
+        if wrap {
+            lines.extend(wrap_text_to_width(
+                &raw,
+                max_width,
+                font_size,
+                font_family,
+                fast_metrics,
+            ));
+        } else {
+            lines.push(raw);
+        }
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    let width = lines
+        .iter()
+        .map(|line| estimate_text_width(line, font_size, font_family, fast_metrics))
+        .fold(0.0, f32::max);
+    let height = line_height * lines.len().max(1) as f32;
+    C4TextLayout {
+        text: text.to_string(),
+        lines,
+        width,
+        height,
+        y,
+    }
+}
+
+fn wrap_text_to_width(
+    text: &str,
+    max_width: f32,
+    font_size: f32,
+    font_family: &str,
+    fast_metrics: bool,
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for word in text.split_whitespace() {
+        let candidate = if current.is_empty() {
+            word.to_string()
+        } else {
+            format!("{} {}", current, word)
+        };
+        if estimate_text_width(&candidate, font_size, font_family, fast_metrics) <= max_width
+            || current.is_empty()
+        {
+            current = candidate;
+        } else {
+            lines.push(current);
+            current = word.to_string();
+        }
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    if lines.is_empty() {
+        lines.push(text.to_string());
+    }
+    lines
+}
+
+fn estimate_text_width(text: &str, font_size: f32, font_family: &str, fast_metrics: bool) -> f32 {
+    if fast_metrics && text.is_ascii() {
+        return text.chars().map(c4_char_width_factor).sum::<f32>() * font_size;
+    }
+    text_metrics::measure_text_width(text, font_size, font_family)
+        .unwrap_or_else(|| text.chars().map(c4_char_width_factor).sum::<f32>() * font_size)
+}
+
+fn c4_char_width_factor(ch: char) -> f32 {
+    match ch {
+        '<' | '>' => 0.247,
+        '_' => 0.455,
+        _ => char_width_factor(ch),
+    }
+}
+
+fn c4_intersect_points(
+    from_node: &C4ShapeLayout,
+    to_node: &C4ShapeLayout,
+) -> ((f32, f32), (f32, f32)) {
+    let end_center = (
+        to_node.x + to_node.width / 2.0,
+        to_node.y + to_node.height / 2.0,
+    );
+    let start = c4_intersect_point(from_node, end_center);
+    let start_center = (
+        from_node.x + from_node.width / 2.0,
+        from_node.y + from_node.height / 2.0,
+    );
+    let end = c4_intersect_point(to_node, start_center);
+    (start, end)
+}
+
+fn c4_intersect_point(node: &C4ShapeLayout, end: (f32, f32)) -> (f32, f32) {
+    let (x1, y1) = (node.x, node.y);
+    let (x2, y2) = end;
+    let from_center_x = x1 + node.width / 2.0;
+    let from_center_y = y1 + node.height / 2.0;
+    let dx = (x1 - x2).abs();
+    let dy = (y1 - y2).abs();
+    let tan_dyx = if dx.abs() < f32::EPSILON {
+        0.0
+    } else {
+        dy / dx
+    };
+    let from_dyx = node.height / node.width;
+    if (y1 - y2).abs() < f32::EPSILON && x1 < x2 {
+        return (x1 + node.width, from_center_y);
+    }
+    if (y1 - y2).abs() < f32::EPSILON && x1 > x2 {
+        return (x1, from_center_y);
+    }
+    if (x1 - x2).abs() < f32::EPSILON && y1 < y2 {
+        return (from_center_x, y1 + node.height);
+    }
+    if (x1 - x2).abs() < f32::EPSILON && y1 > y2 {
+        return (from_center_x, y1);
+    }
+    if x1 > x2 && y1 < y2 {
+        if from_dyx >= tan_dyx {
+            (x1, from_center_y + tan_dyx * node.width / 2.0)
+        } else {
+            (
+                from_center_x - dx / dy * node.height / 2.0,
+                y1 + node.height,
+            )
+        }
+    } else if x1 < x2 && y1 < y2 {
+        if from_dyx >= tan_dyx {
+            (x1 + node.width, from_center_y + tan_dyx * node.width / 2.0)
+        } else {
+            (
+                from_center_x + dx / dy * node.height / 2.0,
+                y1 + node.height,
+            )
+        }
+    } else if x1 < x2 && y1 > y2 {
+        if from_dyx >= tan_dyx {
+            (x1 + node.width, from_center_y - tan_dyx * node.width / 2.0)
+        } else {
+            (from_center_x + node.height / 2.0 * dx / dy, y1)
+        }
+    } else if x1 > x2 && y1 > y2 {
+        if from_dyx >= tan_dyx {
+            (x1, from_center_y - node.width / 2.0 * tan_dyx)
+        } else {
+            (from_center_x - node.height / 2.0 * dx / dy, y1)
+        }
+    } else {
+        (from_center_x, from_center_y)
+    }
+}
