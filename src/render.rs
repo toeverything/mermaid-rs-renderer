@@ -1206,7 +1206,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
 
         if overlay_flowchart && !overlay_arrows.is_empty() {
             for (is_start, point, angle, stroke, stroke_width) in overlay_arrows {
-                let final_angle = if is_start { angle } else { angle };
+                let final_angle = if is_start { angle + 180.0 } else { angle };
                 svg.push_str(&arrowhead_svg(
                     point,
                     final_angle,
@@ -4698,6 +4698,33 @@ fn compute_edge_label_positions(
         };
         let pad_w = label.width + 2.0 * LABEL_PAD_X;
         let pad_h = label.height + 2.0 * LABEL_PAD_Y;
+
+        // When a label dummy provided the anchor, place the label directly
+        // at the dummy center instead of searching with penalties.
+        if let Some((ax, ay)) = edge.label_anchor {
+            let clamped = if let Some(bound) = bounds {
+                clamp_label_center_to_bounds(
+                    (ax, ay),
+                    label.width,
+                    label.height,
+                    LABEL_PAD_X,
+                    LABEL_PAD_Y,
+                    bound,
+                )
+            } else {
+                (ax, ay)
+            };
+            let rect = (
+                clamped.0 - label.width / 2.0 - LABEL_PAD_X,
+                clamped.1 - label.height / 2.0 - LABEL_PAD_Y,
+                pad_w,
+                pad_h,
+            );
+            occupied.push(rect);
+            positions.insert(idx, Some((clamped.0, clamped.1, label.clone())));
+            continue;
+        }
+
         // Rebuild node obstacle grid each iteration since occupied grows.
         let occupied_grid = ObstacleGrid::new(48.0, &occupied);
         let mut anchors: Vec<(f32, f32, f32, f32)> = vec![edge_label_anchor(edge)];

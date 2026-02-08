@@ -41,6 +41,7 @@ pub struct EdgeLayout {
     pub label: Option<TextBlock>,
     pub start_label: Option<TextBlock>,
     pub end_label: Option<TextBlock>,
+    pub label_anchor: Option<(f32, f32)>,
     pub points: Vec<(f32, f32)>,
     pub directed: bool,
     pub arrow_start: bool,
@@ -2197,6 +2198,7 @@ fn compute_mindmap_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -
             label: None,
             start_label: None,
             end_label: None,
+            label_anchor: None,
             points: vec![from_center, to_center],
             directed: false,
             arrow_start: false,
@@ -4394,6 +4396,7 @@ fn compute_sankey_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) ->
             label: None,
             start_label: None,
             end_label: None,
+            label_anchor: None,
             points: vec![(start_x, start_y), (end_x, end_y)],
             directed: false,
             arrow_start: false,
@@ -4614,6 +4617,7 @@ fn compute_architecture_layout(graph: &Graph, theme: &Theme, config: &LayoutConf
             label: None,
             start_label: None,
             end_label: None,
+            label_anchor: None,
             points: vec![(start_x, start_y), (end_x, end_y)],
             directed: true,
             arrow_start: false,
@@ -4938,6 +4942,7 @@ fn compute_block_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
             label,
             start_label,
             end_label,
+            label_anchor: None,
             points: vec![from_center, to_center],
             directed: edge.directed,
             arrow_start: edge.arrow_start,
@@ -5983,6 +5988,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     let edge_end_labels: Vec<Option<TextBlock>> =
         graph.edges.iter().map(|e| measure_edge_field(&e.end_label)).collect();
 
+    let mut label_dummy_ids: Vec<Option<String>> = vec![None; graph.edges.len()];
     assign_positions_manual(
         graph,
         &layout_node_ids,
@@ -5992,6 +5998,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         &layout_edges,
         theme,
         &edge_route_labels,
+        &mut label_dummy_ids,
     );
 
     if !graph.subgraphs.is_empty() {
@@ -6358,6 +6365,27 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         routed_points[*idx] = points;
     }
 
+    // Insert label dummy via-points so edges pass through label positions.
+    // For each edge with a label dummy, insert the dummy center into the
+    // routed path at the correct main-axis position.
+    let mut label_anchors: Vec<Option<(f32, f32)>> = vec![None; graph.edges.len()];
+    for (idx, dummy_id_opt) in label_dummy_ids.iter().enumerate() {
+        let Some(dummy_id) = dummy_id_opt else {
+            continue;
+        };
+        let Some(dummy_node) = nodes.get(dummy_id) else {
+            continue;
+        };
+        let cx = dummy_node.x + dummy_node.width / 2.0;
+        let cy = dummy_node.y + dummy_node.height / 2.0;
+        label_anchors[idx] = Some((cx, cy));
+
+        let points = &mut routed_points[idx];
+        if points.len() >= 2 {
+            insert_label_via_point(points, (cx, cy), graph.direction);
+        }
+    }
+
     let mut edges = Vec::new();
     for (idx, edge) in graph.edges.iter().enumerate() {
         let label = edge_route_labels[idx].clone();
@@ -6396,6 +6424,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             end_decoration: edge.end_decoration,
             style: edge.style,
             override_style,
+            label_anchor: label_anchors[idx],
         });
     }
 
@@ -6736,14 +6765,17 @@ fn assign_positions_manual(
     layout_edges: &[crate::ir::Edge],
     theme: &Theme,
     pre_measured_labels: &[Option<TextBlock>],
+    label_dummy_ids: &mut Vec<Option<String>>,
 ) {
     let mut edge_labels_vec: Vec<Option<TextBlock>> = Vec::new();
+    let mut original_edge_indices: Vec<usize> = Vec::new();
     let layout_edges: Vec<crate::ir::Edge> = layout_edges
         .iter()
         .enumerate()
         .filter(|(_, edge)| layout_set.contains(&edge.from) && layout_set.contains(&edge.to))
         .map(|(i, edge)| {
             edge_labels_vec.push(pre_measured_labels.get(i).cloned().unwrap_or(None));
+            original_edge_indices.push(i);
             edge.clone()
         })
         .collect();
@@ -6873,6 +6905,13 @@ fn assign_positions_manual(
             },
         );
 
+        // Record original edge index → dummy node ID mapping.
+        if let Some(&orig_idx) = original_edge_indices.get(idx) {
+            if orig_idx < label_dummy_ids.len() {
+                label_dummy_ids[orig_idx] = Some(dummy_id.clone());
+            }
+        }
+
         if let Some(bucket) = rank_nodes.get_mut(label_rank) {
             bucket.push(dummy_id);
         }
@@ -6984,7 +7023,9 @@ fn assign_positions_manual(
 
     let mut incoming: HashMap<String, Vec<String>> = HashMap::new();
     let mut outgoing: HashMap<String, Vec<String>> = HashMap::new();
-    for edge in &layout_edges {
+    // Use expanded_edges so dummy nodes (both span dummies and label
+    // dummies) get proper neighbor connectivity for cross-axis positioning.
+    for edge in &expanded_edges {
         incoming
             .entry(edge.to.clone())
             .or_default()
@@ -7311,6 +7352,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
             label,
             start_label,
             end_label,
+            label_anchor: None,
             points,
             directed: edge.directed,
             arrow_start: edge.arrow_start,
@@ -9325,6 +9367,9 @@ fn apply_direction_mirror(
             for point in edge.points.iter_mut() {
                 point.0 = max_x - point.0;
             }
+            if let Some(anchor) = edge.label_anchor.as_mut() {
+                anchor.0 = max_x - anchor.0;
+            }
         }
         for sub in subgraphs.iter_mut() {
             sub.x = max_x - sub.x - sub.width;
@@ -9337,6 +9382,9 @@ fn apply_direction_mirror(
         for edge in edges.iter_mut() {
             for point in edge.points.iter_mut() {
                 point.1 = max_y - point.1;
+            }
+            if let Some(anchor) = edge.label_anchor.as_mut() {
+                anchor.1 = max_y - anchor.1;
             }
         }
         for sub in subgraphs.iter_mut() {
@@ -9392,6 +9440,10 @@ fn normalize_layout(
         for point in edge.points.iter_mut() {
             point.0 += shift_x;
             point.1 += shift_y;
+        }
+        if let Some(anchor) = edge.label_anchor.as_mut() {
+            anchor.0 += shift_x;
+            anchor.1 += shift_y;
         }
     }
     for sub in subgraphs.iter_mut() {
@@ -9930,6 +9982,46 @@ fn cell_blocked(
         }
     }
     false
+}
+
+/// Insert a label dummy center as a via-point into an edge's routed path.
+/// Finds the segment where the via-point falls (by main-axis coordinate)
+/// and inserts the point there so the edge bends through the label position.
+fn insert_label_via_point(
+    points: &mut Vec<(f32, f32)>,
+    via: (f32, f32),
+    direction: Direction,
+) {
+    if points.len() < 2 {
+        return;
+    }
+    let main = |p: (f32, f32)| -> f32 {
+        if is_horizontal(direction) { p.0 } else { p.1 }
+    };
+    let via_main = main(via);
+    // Find the first segment where the via-point's main-axis coordinate
+    // falls between the two endpoints.
+    for i in 1..points.len() {
+        let a_main = main(points[i - 1]);
+        let b_main = main(points[i]);
+        let lo = a_main.min(b_main);
+        let hi = a_main.max(b_main);
+        if via_main >= lo - 1.0 && via_main <= hi + 1.0 {
+            // Don't insert if very close to an existing point.
+            let dist_a = ((via.0 - points[i - 1].0).powi(2)
+                + (via.1 - points[i - 1].1).powi(2))
+            .sqrt();
+            let dist_b =
+                ((via.0 - points[i].0).powi(2) + (via.1 - points[i].1).powi(2)).sqrt();
+            if dist_a > 2.0 && dist_b > 2.0 {
+                points.insert(i, via);
+            }
+            return;
+        }
+    }
+    // Fallback: insert at the midpoint of the path (by index).
+    let mid = points.len() / 2;
+    points.insert(mid, via);
 }
 
 fn compress_path(points: &[(f32, f32)]) -> Vec<(f32, f32)> {
