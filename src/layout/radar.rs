@@ -1,0 +1,91 @@
+use super::*;
+
+pub(super) fn compute_radar_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
+    const WIDTH: f32 = 680.0;
+    const HEIGHT: f32 = 680.0;
+    const CENTER_X: f32 = WIDTH / 2.0;
+    const CENTER_Y: f32 = HEIGHT / 2.0;
+    const MAX_RADIUS: f32 = 290.0;
+    const LEGEND_BOX_SIZE: f32 = 11.0;
+    const LEGEND_GAP: f32 = 3.0;
+
+    let legend_offset = MAX_RADIUS * 0.875;
+    let legend_base_x = CENTER_X + legend_offset;
+    let legend_base_y = CENTER_Y - legend_offset;
+    let legend_row_height = theme.font_size + 6.0;
+
+    let mut node_ids: Vec<String> = graph.nodes.keys().cloned().collect();
+    node_ids.sort_by(|a, b| {
+        let order_a = graph.node_order.get(a).copied().unwrap_or(usize::MAX);
+        let order_b = graph.node_order.get(b).copied().unwrap_or(usize::MAX);
+        order_a.cmp(&order_b).then_with(|| a.cmp(b))
+    });
+
+    let mut nodes = BTreeMap::new();
+    for (idx, node_id) in node_ids.iter().enumerate() {
+        let Some(node) = graph.nodes.get(node_id) else {
+            continue;
+        };
+        let label = measure_label(&node.label, theme, config);
+        let x = legend_base_x;
+        let y = legend_base_y + idx as f32 * legend_row_height;
+        let width = LEGEND_BOX_SIZE + LEGEND_GAP + label.width;
+        let height = label.height.max(LEGEND_BOX_SIZE);
+        let mut style = resolve_node_style(node.id.as_str(), graph);
+        if style.stroke.is_none() {
+            style.stroke = Some("none".to_string());
+        }
+        if style.stroke_width.is_none() {
+            style.stroke_width = Some(0.0);
+        }
+        nodes.insert(
+            node.id.clone(),
+            NodeLayout {
+                id: node.id.clone(),
+                x,
+                y,
+                width,
+                height,
+                label,
+                shape: node.shape,
+                style,
+                link: graph.node_links.get(&node.id).cloned(),
+                anchor_subgraph: None,
+                hidden: false,
+                icon: None,
+            },
+        );
+    }
+
+    Layout {
+        kind: graph.kind,
+        nodes,
+        edges: Vec::new(),
+        subgraphs: Vec::new(),
+        lifelines: Vec::new(),
+        sequence_footboxes: Vec::new(),
+        sequence_boxes: Vec::new(),
+        sequence_frames: Vec::new(),
+        sequence_notes: Vec::new(),
+        sequence_activations: Vec::new(),
+        sequence_numbers: Vec::new(),
+        state_notes: Vec::new(),
+        pie_slices: Vec::new(),
+        pie_legend: Vec::new(),
+        pie_center: (0.0, 0.0),
+        pie_radius: 0.0,
+        pie_title: None,
+        quadrant: None,
+        gantt: None,
+        sankey: None,
+        gitgraph: None,
+        c4: None,
+        xychart: None,
+        timeline: None,
+        journey: None,
+        error: None,
+
+        width: WIDTH,
+        height: HEIGHT,
+    }
+}
