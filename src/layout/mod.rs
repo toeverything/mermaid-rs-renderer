@@ -1,6 +1,8 @@
 pub(crate) mod label_placement;
+mod text;
 pub(crate) mod types;
 pub use types::*;
+use text::*;
 
 use crate::config::{LayoutConfig, PieRenderMode, TreemapRenderMode};
 use crate::ir::{Direction, Graph};
@@ -6340,6 +6342,30 @@ fn assign_positions_manual(
         }
     }
 
+    // Build a lookup: for each layout edge index, the (shifted_label_rank, dummy_id)
+    // so the span-dummy expansion loop can reuse label dummies instead of creating
+    // new span dummies at the same rank (which would leave label dummies disconnected).
+    let mut label_dummy_at_rank: HashMap<usize, (usize, String)> = HashMap::new();
+    for (idx, edge) in layout_edges.iter().enumerate() {
+        if edge_labels[idx].is_none() {
+            continue;
+        }
+        let from_rank = ranks.get(&edge.from).copied().unwrap_or(0);
+        let to_rank = ranks.get(&edge.to).copied().unwrap_or(0);
+        let lo = from_rank.min(to_rank);
+        let hi = from_rank.max(to_rank);
+        if hi <= lo {
+            continue;
+        }
+        let mid_gap = lo + (hi - lo - 1) / 2;
+        let label_rank = mid_gap + rank_shift[mid_gap] + 1;
+        if let Some(&orig_idx) = original_edge_indices.get(idx) {
+            if let Some(Some(dummy_id)) = label_dummy_ids.get(orig_idx) {
+                label_dummy_at_rank.insert(idx, (label_rank, dummy_id.clone()));
+            }
+        }
+    }
+
     // Update ranks for existing nodes to use shifted values (for the existing dummy expansion).
     let shifted_ranks: HashMap<String, usize> = ranks
         .iter()
@@ -6350,7 +6376,7 @@ fn assign_positions_manual(
 
     let mut expanded_edges: Vec<crate::ir::Edge> = Vec::new();
 
-    for edge in &layout_edges {
+    for (edge_idx, edge) in layout_edges.iter().enumerate() {
         let Some(&from_rank) = shifted_ranks.get(&edge.from) else {
             continue;
         };
@@ -6365,15 +6391,37 @@ fn assign_positions_manual(
             expanded_edges.push(edge.clone());
             continue;
         }
+        // Look up whether this edge has a label dummy at some rank.
+        let label_dummy_info = label_dummy_at_rank.get(&edge_idx);
         let mut prev = edge.from.clone();
         for step in 1..span {
-            let dummy_id = format!("__dummy_{}__", dummy_counter);
-            dummy_counter += 1;
-            let order_idx = order_map.len();
-            order_map.insert(dummy_id.clone(), order_idx);
-            if let Some(bucket) = rank_nodes.get_mut(from_rank + step) {
-                bucket.push(dummy_id.clone());
-            }
+            let current_rank = from_rank + step;
+            // Reuse the label dummy if it exists at this rank, instead of
+            // creating a new span dummy. This connects the label dummy into
+            // the expanded edge chain so it gets proper cross-axis positioning.
+            let dummy_id = if let Some((lr, lid)) = label_dummy_info {
+                if current_rank == *lr {
+                    lid.clone()
+                } else {
+                    let id = format!("__dummy_{}__", dummy_counter);
+                    dummy_counter += 1;
+                    let order_idx = order_map.len();
+                    order_map.insert(id.clone(), order_idx);
+                    if let Some(bucket) = rank_nodes.get_mut(current_rank) {
+                        bucket.push(id.clone());
+                    }
+                    id
+                }
+            } else {
+                let id = format!("__dummy_{}__", dummy_counter);
+                dummy_counter += 1;
+                let order_idx = order_map.len();
+                order_map.insert(id.clone(), order_idx);
+                if let Some(bucket) = rank_nodes.get_mut(current_rank) {
+                    bucket.push(id.clone());
+                }
+                id
+            };
             expanded_edges.push(crate::ir::Edge {
                 from: prev.clone(),
                 to: dummy_id.clone(),
@@ -10707,211 +10755,6 @@ fn edge_crossings_with_existing(points: &[(f32, f32)], existing: &[Segment]) -> 
         }
     }
     (crossings, overlap)
-}
-
-fn measure_label(text: &str, theme: &Theme, config: &LayoutConfig) -> TextBlock {
-    // Mermaid's layout sizing appears to use a baseline font size (~16px)
-    // even when the configured theme font size is smaller. Using that
-    // baseline improves parity with mermaid-cli node sizes.
-    let measure_font_size = theme.font_size.max(16.0);
-    measure_label_with_font_size(
-        text,
-        measure_font_size,
-        config,
-        true,
-        theme.font_family.as_str(),
-    )
-}
-
-fn measure_label_with_font_size(
-    text: &str,
-    font_size: f32,
-    config: &LayoutConfig,
-    wrap: bool,
-    font_family: &str,
-) -> TextBlock {
-    let raw_lines = split_lines(text);
-    let mut lines = Vec::new();
-    let fast_metrics = config.fast_text_metrics;
-    let max_width_px = max_label_width_px(
-        config.max_label_width_chars,
-        font_size,
-        font_family,
-        fast_metrics,
-    );
-    for line in raw_lines {
-        if wrap {
-            let wrapped = wrap_line(&line, max_width_px, font_size, font_family, fast_metrics);
-            lines.extend(wrapped);
-        } else {
-            lines.push(line);
-        }
-    }
-
-    if lines.is_empty() {
-        lines.push(String::new());
-    }
-
-    let max_len = lines.iter().map(|l| l.chars().count()).max().unwrap_or(1);
-    let max_width = lines
-        .iter()
-        .map(|line| text_width(line, font_size, font_family, fast_metrics))
-        .fold(0.0, f32::max);
-    let avg_char = average_char_width(font_family, font_size, fast_metrics);
-    let guard_width = max_len as f32 * avg_char;
-    let width = max_width.max(guard_width);
-    let height = lines.len() as f32 * font_size * config.label_line_height;
-
-    TextBlock {
-        lines,
-        width,
-        height,
-    }
-}
-
-fn char_width_factor(ch: char) -> f32 {
-    // Calibrated per-character widths against mermaid-cli output using the
-    // default font stack and a 16px measurement baseline.
-    match ch {
-        ' ' => 0.306,
-        '\\' | '.' | ',' | ':' | ';' | '|' | '!' | '(' | ')' | '[' | ']' | '{' | '}' => 0.321,
-        'A' => 0.652,
-        'B' => 0.648,
-        'C' => 0.734,
-        'D' => 0.723,
-        'E' => 0.594,
-        'F' => 0.575,
-        'G' | 'H' => 0.742,
-        'I' => 0.272,
-        'J' => 0.557,
-        'K' => 0.648,
-        'L' => 0.559,
-        'M' => 0.903,
-        'N' => 0.763,
-        'O' => 0.754,
-        'P' => 0.623,
-        'Q' => 0.755,
-        'R' => 0.637,
-        'S' => 0.633,
-        'T' => 0.599,
-        'U' => 0.746,
-        'V' => 0.661,
-        'W' => 0.958,
-        'X' => 0.655,
-        'Y' => 0.646,
-        'Z' => 0.621,
-        'a' => 0.550,
-        'b' => 0.603,
-        'c' => 0.547,
-        'd' => 0.609,
-        'e' => 0.570,
-        'f' => 0.340,
-        'g' | 'h' => 0.600,
-        'i' => 0.235,
-        'j' => 0.227,
-        'k' => 0.522,
-        'l' => 0.239,
-        'm' => 0.867,
-        'n' => 0.585,
-        'o' => 0.574,
-        'p' => 0.595,
-        'q' => 0.585,
-        'r' => 0.364,
-        's' => 0.523,
-        't' => 0.305,
-        'u' => 0.585,
-        'v' => 0.545,
-        'w' => 0.811,
-        'x' => 0.538,
-        'y' => 0.556,
-        'z' => 0.550,
-        '0' => 0.613,
-        '1' => 0.396,
-        '2' => 0.609,
-        '3' => 0.597,
-        '4' => 0.614,
-        '5' => 0.586,
-        '6' => 0.608,
-        '7' => 0.559,
-        '8' => 0.611,
-        '9' => 0.595,
-        '@' | '#' | '%' | '&' => 0.946,
-        _ => 0.568,
-    }
-}
-
-fn split_lines(text: &str) -> Vec<String> {
-    let mut lines = Vec::new();
-    let mut current = text.replace("<br/>", "\n").replace("<br>", "\n");
-    current = current.replace("\\n", "\n");
-    for line in current.split('\n') {
-        lines.push(line.trim().to_string());
-    }
-    lines
-}
-
-fn wrap_line(
-    line: &str,
-    max_width: f32,
-    font_size: f32,
-    font_family: &str,
-    fast_metrics: bool,
-) -> Vec<String> {
-    if text_width(line, font_size, font_family, fast_metrics) <= max_width {
-        return vec![line.to_string()];
-    }
-
-    let mut lines = Vec::new();
-    let mut current = String::new();
-    for word in line.split_whitespace() {
-        let candidate = if current.is_empty() {
-            word.to_string()
-        } else {
-            format!("{} {}", current, word)
-        };
-        if text_width(&candidate, font_size, font_family, fast_metrics) > max_width {
-            if !current.is_empty() {
-                lines.push(current.clone());
-                current.clear();
-            }
-            current.push_str(word);
-        } else {
-            current = candidate;
-        }
-    }
-    if !current.is_empty() {
-        lines.push(current);
-    }
-    lines
-}
-
-fn text_width(text: &str, font_size: f32, font_family: &str, fast_metrics: bool) -> f32 {
-    if fast_metrics && text.is_ascii() {
-        return fallback_text_width(text, font_size);
-    }
-    text_metrics::measure_text_width(text, font_size, font_family)
-        .unwrap_or_else(|| fallback_text_width(text, font_size))
-}
-
-fn fallback_text_width(text: &str, font_size: f32) -> f32 {
-    text.chars().map(char_width_factor).sum::<f32>() * font_size
-}
-
-fn average_char_width(font_family: &str, font_size: f32, fast_metrics: bool) -> f32 {
-    if fast_metrics {
-        return font_size * 0.56;
-    }
-    text_metrics::average_char_width(font_family, font_size).unwrap_or(font_size * 0.56)
-}
-
-fn max_label_width_px(
-    max_chars: usize,
-    font_size: f32,
-    font_family: &str,
-    fast_metrics: bool,
-) -> f32 {
-    let avg_char = average_char_width(font_family, font_size, fast_metrics);
-    (max_chars.max(1) as f32) * avg_char
 }
 
 fn resolve_node_style(node_id: &str, graph: &Graph) -> crate::ir::NodeStyle {
