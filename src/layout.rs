@@ -6077,28 +6077,13 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
 
         let from_anchor = anchor_point_for_node(from, start_side, 0.0);
         let to_anchor = anchor_point_for_node(to, end_side, 0.0);
-        // Use approach-angle ordering (dx/|dy| for horizontal sides, dy/|dx|
-        // for vertical sides) instead of raw coordinates.  This prevents
-        // near-coincident source positions from producing a misleading port
-        // order when the edges approach from very different angles.
-        let start_other = {
-            let dx = to_anchor.0 - from_anchor.0;
-            let dy = to_anchor.1 - from_anchor.1;
-            if side_is_vertical(start_side) {
-                dy / dx.abs().max(1.0)
-            } else {
-                dx / dy.abs().max(1.0)
-            }
-        };
-        let end_other = {
-            let dx = from_anchor.0 - to_anchor.0;
-            let dy = from_anchor.1 - to_anchor.1;
-            if side_is_vertical(end_side) {
-                dy / dx.abs().max(1.0)
-            } else {
-                dx / dy.abs().max(1.0)
-            }
-        };
+        // Compute the ideal port position: where a straight line from the
+        // remote anchor to this node's centre crosses the node boundary on
+        // the given side.  This produces positions in the node's coordinate
+        // space, so ports naturally cluster where the geometry dictates
+        // rather than being spread across the full node width.
+        let start_other = ideal_port_pos((to_anchor.0, to_anchor.1), from, start_side);
+        let end_other = ideal_port_pos((from_anchor.0, from_anchor.1), to, end_side);
         port_candidates
             .entry((edge.from.clone(), start_side))
             .or_default()
@@ -6145,19 +6130,21 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             .max(config.flowchart.port_pad_min);
         let usable = (node_len - 2.0 * pad).max(1.0);
         let min_sep = usable / (candidates.len() as f32 + 1.0);
-        let span_ratio = if node_len > 1.0 { span / node_len } else { 1.0 };
-        let position_weight = (1.0 / (1.0 + span_ratio)).clamp(0.25, 0.85);
+        // other_pos is now an ideal port coordinate (x or y) in absolute
+        // space.  Normalise it within the node's usable range so that ports
+        // land where straight-line geometry dictates.
+        let node_start = if side_is_vertical(side) { node.y } else { node.x };
+        let ideal_span = span; // span of ideal positions across the node
+        let span_frac = if usable > 1.0 { (ideal_span / usable).min(2.0) } else { 1.0 };
+        let position_weight = (0.5 + 0.35 * span_frac).clamp(0.50, 0.85);
         let rank_weight = 1.0 - position_weight;
         let desired: Vec<(usize, f32)> = order
             .iter()
             .enumerate()
             .map(|(rank, &idx)| {
                 let candidate = &candidates[idx];
-                let t_pos = if span <= 1.0 {
-                    0.5
-                } else {
-                    (candidate.other_pos - min_other) / span
-                };
+                let pos_in_node = candidate.other_pos - node_start;
+                let t_pos = ((pos_in_node - pad) / usable).clamp(0.0, 1.0);
                 let t_rank = (rank as f32 + 0.5) / candidates.len() as f32;
                 let t = t_pos * position_weight + t_rank * rank_weight;
                 let pos = pad + t * usable;
@@ -9832,6 +9819,30 @@ fn ray_ellipse_intersection(
         return None;
     };
     Some((origin.0 + dx * t, origin.1 + dy * t))
+}
+
+/// Compute where a straight line from `remote` to `node`'s centre would
+/// cross `node`'s boundary on `side`.  Returns the coordinate along the
+/// side's axis (x for Top/Bottom, y for Left/Right) – i.e. the ideal
+/// port position if the edge could travel in a straight line.
+fn ideal_port_pos(remote: (f32, f32), node: &NodeLayout, side: EdgeSide) -> f32 {
+    let cx = node.x + node.width / 2.0;
+    let cy = node.y + node.height / 2.0;
+    if side_is_vertical(side) {
+        // Left / Right – port distributed along y-axis
+        let edge_x = if matches!(side, EdgeSide::Left) { node.x } else { node.x + node.width };
+        let dx = cx - remote.0;
+        if dx.abs() < 1.0 { return cy; }
+        let t = (edge_x - remote.0) / dx;
+        remote.1 + t * (cy - remote.1)
+    } else {
+        // Top / Bottom – port distributed along x-axis
+        let edge_y = if matches!(side, EdgeSide::Top) { node.y } else { node.y + node.height };
+        let dy = cy - remote.1;
+        if dy.abs() < 1.0 { return cx; }
+        let t = (edge_y - remote.1) / dy;
+        remote.0 + t * (cx - remote.0)
+    }
 }
 
 fn anchor_point_for_node(node: &NodeLayout, side: EdgeSide, offset: f32) -> (f32, f32) {
