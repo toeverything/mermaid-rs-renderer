@@ -69,6 +69,7 @@ th { background: #f8f8f8; font-weight: 600; }
   <li><span class="badge fixed">Fixed</span> <strong>Requirement diagrams</strong> &mdash; Element nodes forced to minimum height of Requirement nodes (168px vs needed 102px)</li>
   <li><span class="badge fixed">Fixed</span> <strong>Pie charts</strong> &mdash; Legend labels showed "{label} &mdash; {value} ({percent}%)" instead of official format "{label} [{value}]"</li>
   <li><span class="badge fixed">Fixed</span> <strong>State diagrams</strong> &mdash; Nested composites laid out flat; nodes like "Stopped" rendered inside composite boxes they don't belong to. Now processes inner composites first and pushes non-members outside bounds.</li>
+  <li><span class="badge fixed">Fixed</span> <strong>Flowchart edge routing</strong> &mdash; Port ordering used raw source coordinates, causing near-coincident sources to get misleading port assignments. Now uses approach-angle heuristic (dx/|dy|) so edges entering a node are ordered by their actual approach direction. Also increased port padding to keep ports further from node edges.</li>
 </ul>
 </div>
 
