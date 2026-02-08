@@ -950,8 +950,9 @@ fn parse_sequence_participant(
         if id_part.is_empty() {
             return None;
         }
-        let label = strip_quotes(label_part);
-        return Some((id_part.to_string(), Some(label), shape));
+        let id = strip_quotes(label_part);
+        let display_label = strip_quotes(id_part);
+        return Some((id, Some(display_label), shape));
     }
 
     if rest.starts_with('"') && rest.ends_with('"') {
@@ -6289,12 +6290,15 @@ mod tests {
 
     #[test]
     fn parse_sequence_diagram_basic() {
-        let input = "sequenceDiagram\nparticipant Alice as A\nparticipant Bob\nA->>Bob: Hello\nBob-->>A: Hi";
+        let input = "sequenceDiagram\nparticipant A as Alice\nparticipant Bob\nA->>Bob: Hello\nBob-->>A: Hi";
         let parsed = parse_mermaid(input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::Sequence);
         assert_eq!(parsed.graph.sequence_participants.len(), 2);
         assert_eq!(parsed.graph.sequence_participants[0], "A");
         assert_eq!(parsed.graph.sequence_participants[1], "Bob");
+        // Verify the display label is "Alice" (right side of "as")
+        let node = parsed.graph.nodes.get("A").unwrap();
+        assert_eq!(node.label, "Alice");
         assert_eq!(parsed.graph.edges.len(), 2);
         assert_eq!(parsed.graph.edges[1].style, crate::ir::EdgeStyle::Dotted);
     }
