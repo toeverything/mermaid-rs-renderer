@@ -67,6 +67,8 @@ th { background: #f8f8f8; font-weight: 600; }
   <li><span class="badge fixed">Fixed</span> <strong>Block diagrams</strong> &mdash; Nodes were oversized (54px vs official 26px); reduced padding for more compact layout</li>
   <li><span class="badge fixed">Fixed</span> <strong>Gantt charts</strong> &mdash; Row height and bar height were too large; made charts more compact</li>
   <li><span class="badge fixed">Fixed</span> <strong>Requirement diagrams</strong> &mdash; Element nodes forced to minimum height of Requirement nodes (168px vs needed 102px)</li>
+  <li><span class="badge fixed">Fixed</span> <strong>Pie charts</strong> &mdash; Legend labels showed "{label} &mdash; {value} ({percent}%)" instead of official format "{label} [{value}]"</li>
+  <li><span class="badge fixed">Fixed</span> <strong>State diagrams</strong> &mdash; Nested composites laid out flat; nodes like "Stopped" rendered inside composite boxes they don't belong to. Now processes inner composites first and pushes non-members outside bounds.</li>
 </ul>
 </div>
 
@@ -77,9 +79,9 @@ th { background: #f8f8f8; font-weight: 600; }
 <tr><td>Flowchart</td><td>14</td><td class="status-good">Good</td><td>Minor edge routing differences</td></tr>
 <tr><td>Sequence</td><td>8</td><td class="status-good">Good</td><td>Alias bug fixed; minor activation box differences</td></tr>
 <tr><td>Class</td><td>6</td><td class="status-good">Good</td><td>Working correctly</td></tr>
-<tr><td>State</td><td>7</td><td class="status-good">Good</td><td>Minor fork/join rendering differences</td></tr>
+<tr><td>State</td><td>7</td><td class="status-good">Good</td><td>Nested composites fixed; minor fork/join differences</td></tr>
 <tr><td>ER</td><td>4</td><td class="status-good">Good</td><td>Cardinality markers functional</td></tr>
-<tr><td>Pie</td><td>2</td><td class="status-good">Good</td><td>Working correctly</td></tr>
+<tr><td>Pie</td><td>2</td><td class="status-good">Good</td><td>Legend format fixed to match official</td></tr>
 <tr><td>Mindmap</td><td>4</td><td class="status-good">Good</td><td>Working correctly</td></tr>
 <tr><td>Journey</td><td>3</td><td class="status-issues">Issues</td><td>Missing emotion circles for some actors</td></tr>
 <tr><td>Timeline</td><td>3</td><td class="status-issues">Issues</td><td>Simplified rendering, fewer decorative elements</td></tr>
