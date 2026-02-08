@@ -3719,7 +3719,7 @@ fn quadrant_palette(_theme: &Theme) -> Vec<String> {
 
 fn compute_gantt_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
     let padding = theme.font_size * 1.25;
-    let row_height = (theme.font_size * 2.8).max(theme.font_size + 18.0);
+    let row_height = (theme.font_size * 1.5).max(theme.font_size + 8.0);
     let label_gap = theme.font_size * 1.05;
     let default_duration = 3.0_f32;
 

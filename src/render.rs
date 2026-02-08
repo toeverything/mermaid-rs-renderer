@@ -2812,9 +2812,9 @@ fn render_gantt(
     let chart_left = layout.chart_x;
     let chart_right = layout.chart_x + layout.chart_width;
     let full_width = chart_right + layout.label_x;
-    let bar_height = (layout.row_height * 0.62)
-        .min(layout.row_height - theme.font_size * 0.35)
-        .max(theme.font_size * 0.9);
+    let bar_height = (layout.row_height * 0.82)
+        .min(layout.row_height - 4.0)
+        .max(theme.font_size * 1.1);
 
     // Title
     if let Some(ref title) = layout.title {
