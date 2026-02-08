@@ -1,3 +1,5 @@
+pub(crate) mod label_placement;
+
 use crate::config::{LayoutConfig, PieRenderMode, TreemapRenderMode};
 use crate::ir::{Direction, Graph};
 use crate::text_metrics;
@@ -42,6 +44,8 @@ pub struct EdgeLayout {
     pub start_label: Option<TextBlock>,
     pub end_label: Option<TextBlock>,
     pub label_anchor: Option<(f32, f32)>,
+    pub start_label_anchor: Option<(f32, f32)>,
+    pub end_label_anchor: Option<(f32, f32)>,
     pub points: Vec<(f32, f32)>,
     pub directed: bool,
     pub arrow_start: bool,
@@ -1633,7 +1637,7 @@ fn is_region_subgraph(sub: &crate::ir::Subgraph) -> bool {
 }
 
 pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
-    match graph.kind {
+    let mut layout = match graph.kind {
         crate::ir::DiagramKind::Sequence | crate::ir::DiagramKind::ZenUML => {
             compute_sequence_layout(graph, theme, config)
         }
@@ -1670,7 +1674,12 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         | crate::ir::DiagramKind::Requirement
         | crate::ir::DiagramKind::Packet
         | crate::ir::DiagramKind::Flowchart => compute_flowchart_layout(graph, theme, config),
-    }
+    };
+
+    // Final pass: resolve all edge label positions using collision avoidance.
+    label_placement::resolve_all_label_positions(&mut layout, theme, config);
+
+    layout
 }
 
 fn compute_error_layout(graph: &Graph, config: &LayoutConfig) -> Layout {
@@ -2199,6 +2208,8 @@ fn compute_mindmap_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -
             start_label: None,
             end_label: None,
             label_anchor: None,
+            start_label_anchor: None,
+            end_label_anchor: None,
             points: vec![from_center, to_center],
             directed: false,
             arrow_start: false,
@@ -4397,6 +4408,8 @@ fn compute_sankey_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) ->
             start_label: None,
             end_label: None,
             label_anchor: None,
+            start_label_anchor: None,
+            end_label_anchor: None,
             points: vec![(start_x, start_y), (end_x, end_y)],
             directed: false,
             arrow_start: false,
@@ -4618,6 +4631,8 @@ fn compute_architecture_layout(graph: &Graph, theme: &Theme, config: &LayoutConf
             start_label: None,
             end_label: None,
             label_anchor: None,
+            start_label_anchor: None,
+            end_label_anchor: None,
             points: vec![(start_x, start_y), (end_x, end_y)],
             directed: true,
             arrow_start: false,
@@ -4943,6 +4958,8 @@ fn compute_block_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
             start_label,
             end_label,
             label_anchor: None,
+            start_label_anchor: None,
+            end_label_anchor: None,
             points: vec![from_center, to_center],
             directed: edge.directed,
             arrow_start: edge.arrow_start,
@@ -6425,6 +6442,8 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             style: edge.style,
             override_style,
             label_anchor: label_anchors[idx],
+            start_label_anchor: None,
+            end_label_anchor: None,
         });
     }
 
@@ -7353,6 +7372,8 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
             start_label,
             end_label,
             label_anchor: None,
+            start_label_anchor: None,
+            end_label_anchor: None,
             points,
             directed: edge.directed,
             arrow_start: edge.arrow_start,

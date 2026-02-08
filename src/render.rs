@@ -2,27 +2,16 @@ use crate::config::LayoutConfig;
 #[cfg(feature = "png")]
 use crate::config::RenderConfig;
 use crate::layout::{
-    C4BoundaryLayout, C4Layout, C4RelLayout, C4ShapeLayout, EdgeLayout, ErrorLayout,
+    C4BoundaryLayout, C4Layout, C4RelLayout, C4ShapeLayout, ErrorLayout,
     GitGraphLayout, JourneyLayout, Layout, SankeyLayout, TextBlock,
 };
+use crate::layout::label_placement::edge_endpoint_label_position;
 use crate::text_metrics;
 use crate::theme::{Theme, adjust_color, parse_color_to_hsl};
 use anyhow::Result;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::path::Path;
-
-// Label placement constants
-const LABEL_PAD_X: f32 = 6.0;
-const LABEL_PAD_Y: f32 = 4.0;
-const NODE_OBSTACLE_PAD: f32 = 6.0;
-const EDGE_OBSTACLE_PAD: f32 = 6.0;
-const LABEL_STEP_NORMAL_PAD: f32 = 4.0;
-const LABEL_STEP_TANGENT_PAD: f32 = 6.0;
-const LABEL_OVERLAP_WIDE_THRESHOLD: f32 = 1e-4;
-const LABEL_ANCHOR_FRACTIONS: [f32; 3] = [0.35, 0.5, 0.65];
-const LABEL_ANCHOR_POS_EPS: f32 = 1.0;
-const LABEL_ANCHOR_DIR_EPS: f32 = 0.02;
 
 pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
     let mut svg = String::new();
@@ -760,32 +749,13 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             ));
         }
     } else {
-        let label_positions = compute_edge_label_positions(
-            &layout.edges,
-            &layout.nodes,
-            &layout.subgraphs,
-            Some((layout.width, layout.height)),
-        );
-        let edge_obstacles = build_edge_obstacles(&layout.edges, EDGE_OBSTACLE_PAD);
-        let edge_obs_rects: Vec<Rect> = edge_obstacles.iter().map(|(_, r)| *r).collect();
-        let endpoint_edge_grid = ObstacleGrid::new(48.0, &edge_obs_rects);
-        let mut endpoint_occupied = build_label_obstacles(&layout.nodes, &layout.subgraphs);
-        for pos in label_positions.values().flatten() {
-            endpoint_occupied.push((
-                pos.0 - pos.2.width / 2.0 - LABEL_PAD_X,
-                pos.1 - pos.2.height / 2.0 - LABEL_PAD_Y,
-                pos.2.width + 2.0 * LABEL_PAD_X,
-                pos.2.height + 2.0 * LABEL_PAD_Y,
-            ));
-        }
-
         let base_edge_width = match layout.kind {
             crate::ir::DiagramKind::Class
             | crate::ir::DiagramKind::State
             | crate::ir::DiagramKind::Er => 1.0,
             _ => 2.0,
         };
-        for (idx, edge) in layout.edges.iter().enumerate() {
+        for edge in layout.edges.iter() {
             let d = points_to_path(&edge.points);
             let mut stroke = theme.line_color.clone();
             let (mut dash, mut stroke_width) = match edge.style {
@@ -891,7 +861,9 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 ));
             }
 
-            if let Some((x, y, label)) = label_positions.get(&idx).and_then(|v| v.clone()) {
+            if let Some(label) = edge.label.as_ref()
+                && let Some((x, y)) = edge.label_anchor
+            {
                 let (pad_x, pad_y, fill_opacity, stroke_opacity) = match layout.kind {
                     crate::ir::DiagramKind::State => (3.0, 1.6, 0.7, 0.25),
                     crate::ir::DiagramKind::Flowchart => (4.5, 2.2, 0.95, 0.45),
@@ -922,7 +894,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     svg.push_str(&text_block_svg_with_font_size(
                         x,
                         y,
-                        &label,
+                        label,
                         theme,
                         config,
                         state_font_size,
@@ -934,7 +906,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     svg.push_str(&text_block_svg(
                         x,
                         y,
-                        &label,
+                        label,
                         theme,
                         config,
                         true,
@@ -943,12 +915,6 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 }
             }
 
-            let end_label_offset = match layout.kind {
-                crate::ir::DiagramKind::Class | crate::ir::DiagramKind::Flowchart => {
-                    (theme.font_size * 0.75).max(9.0)
-                }
-                _ => (theme.font_size * 0.6).max(8.0),
-            };
             let endpoint_label_scale = if layout.kind == crate::ir::DiagramKind::State {
                 (state_font_size / theme.font_size).min(1.0)
             } else {
@@ -968,19 +934,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 .as_deref()
                 .unwrap_or(theme.primary_text_color.as_str());
             if let Some(label) = edge.start_label.as_ref()
-                && let Some((x, y)) = edge_endpoint_label_position_with_avoid(
-                    edge,
-                    idx,
-                    true,
-                    end_label_offset,
-                    label.width * endpoint_label_scale,
-                    label.height * endpoint_label_scale,
-                    &endpoint_occupied,
-                    &ObstacleGrid::new(48.0, &endpoint_occupied),
-                    &edge_obstacles,
-                    &endpoint_edge_grid,
-                    Some((layout.width, layout.height)),
-                )
+                && let Some((x, y)) = edge.start_label_anchor
             {
                 let label_w = label.width * endpoint_label_scale;
                 let label_h = label.height * endpoint_label_scale;
@@ -997,12 +951,6 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                         endpoint_stroke_opacity
                     ));
                 }
-                endpoint_occupied.push((
-                    x - label_w / 2.0 - endpoint_pad_x,
-                    y - label_h / 2.0 - endpoint_pad_y,
-                    label_w + endpoint_pad_x * 2.0,
-                    label_h + endpoint_pad_y * 2.0,
-                ));
                 if layout.kind == crate::ir::DiagramKind::State {
                     svg.push_str(&text_block_svg_with_font_size(
                         x,
@@ -1028,19 +976,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 }
             }
             if let Some(label) = edge.end_label.as_ref()
-                && let Some((x, y)) = edge_endpoint_label_position_with_avoid(
-                    edge,
-                    idx,
-                    false,
-                    end_label_offset,
-                    label.width * endpoint_label_scale,
-                    label.height * endpoint_label_scale,
-                    &endpoint_occupied,
-                    &ObstacleGrid::new(48.0, &endpoint_occupied),
-                    &edge_obstacles,
-                    &endpoint_edge_grid,
-                    Some((layout.width, layout.height)),
-                )
+                && let Some((x, y)) = edge.end_label_anchor
             {
                 let label_w = label.width * endpoint_label_scale;
                 let label_h = label.height * endpoint_label_scale;
@@ -1057,12 +993,6 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                         endpoint_stroke_opacity
                     ));
                 }
-                endpoint_occupied.push((
-                    x - label_w / 2.0 - endpoint_pad_x,
-                    y - label_h / 2.0 - endpoint_pad_y,
-                    label_w + endpoint_pad_x * 2.0,
-                    label_h + endpoint_pad_y * 2.0,
-                ));
                 if layout.kind == crate::ir::DiagramKind::State {
                     svg.push_str(&text_block_svg_with_font_size(
                         x,
@@ -1732,13 +1662,7 @@ fn render_requirement(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> 
         ));
     }
 
-    let label_positions = compute_edge_label_positions(
-        &layout.edges,
-        &layout.nodes,
-        &layout.subgraphs,
-        Some((layout.width, layout.height)),
-    );
-    for (idx, edge) in layout.edges.iter().enumerate() {
+    for edge in layout.edges.iter() {
         let stroke = edge
             .override_style
             .stroke
@@ -1769,7 +1693,9 @@ fn render_requirement(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> 
             "<path d=\"{d}\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"{stroke_width}\"{dash}{marker_start}{marker_end} stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
         ));
 
-        if let Some((x, y, label)) = label_positions.get(&idx).and_then(|v| v.clone()) {
+        if let Some(label) = edge.label.as_ref()
+            && let Some((x, y)) = edge.label_anchor
+        {
             let pad_x = req.edge_label_padding_x;
             let pad_y = req.edge_label_padding_y;
             let rect_x = x - label.width / 2.0 - pad_x;
@@ -1790,7 +1716,7 @@ fn render_requirement(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> 
             svg.push_str(&text_block_svg(
                 x,
                 y,
-                &label,
+                label,
                 theme,
                 config,
                 true,
@@ -4679,191 +4605,6 @@ fn text_lines_svg(
     text
 }
 
-fn compute_edge_label_positions(
-    edges: &[EdgeLayout],
-    nodes: &std::collections::BTreeMap<String, crate::layout::NodeLayout>,
-    subgraphs: &[crate::layout::SubgraphLayout],
-    bounds: Option<(f32, f32)>,
-) -> HashMap<usize, Option<(f32, f32, TextBlock)>> {
-    let mut occupied: Vec<(f32, f32, f32, f32)> = build_label_obstacles(nodes, subgraphs);
-    let edge_obstacles = build_edge_obstacles(edges, EDGE_OBSTACLE_PAD);
-    let edge_obs_rects: Vec<Rect> = edge_obstacles.iter().map(|(_, r)| *r).collect();
-    let edge_grid = ObstacleGrid::new(48.0, &edge_obs_rects);
-    let mut positions = HashMap::new();
-
-    for (idx, edge) in edges.iter().enumerate() {
-        let Some(label) = edge.label.clone() else {
-            positions.insert(idx, None);
-            continue;
-        };
-        let pad_w = label.width + 2.0 * LABEL_PAD_X;
-        let pad_h = label.height + 2.0 * LABEL_PAD_Y;
-
-        // When a label dummy provided the anchor, place the label directly
-        // at the dummy center instead of searching with penalties.
-        if let Some((ax, ay)) = edge.label_anchor {
-            let clamped = if let Some(bound) = bounds {
-                clamp_label_center_to_bounds(
-                    (ax, ay),
-                    label.width,
-                    label.height,
-                    LABEL_PAD_X,
-                    LABEL_PAD_Y,
-                    bound,
-                )
-            } else {
-                (ax, ay)
-            };
-            let rect = (
-                clamped.0 - label.width / 2.0 - LABEL_PAD_X,
-                clamped.1 - label.height / 2.0 - LABEL_PAD_Y,
-                pad_w,
-                pad_h,
-            );
-            occupied.push(rect);
-            positions.insert(idx, Some((clamped.0, clamped.1, label.clone())));
-            continue;
-        }
-
-        // Rebuild node obstacle grid each iteration since occupied grows.
-        let occupied_grid = ObstacleGrid::new(48.0, &occupied);
-        let mut anchors: Vec<(f32, f32, f32, f32)> = vec![edge_label_anchor(edge)];
-        for frac in LABEL_ANCHOR_FRACTIONS {
-            if let Some(candidate) = edge_label_anchor_at_fraction(edge, frac) {
-                let duplicate = anchors.iter().any(|anchor| {
-                    (anchor.0 - candidate.0).abs() <= LABEL_ANCHOR_POS_EPS
-                        && (anchor.1 - candidate.1).abs() <= LABEL_ANCHOR_POS_EPS
-                        && (anchor.2 - candidate.2).abs() <= LABEL_ANCHOR_DIR_EPS
-                        && (anchor.3 - candidate.3).abs() <= LABEL_ANCHOR_DIR_EPS
-                });
-                if !duplicate {
-                    anchors.push(candidate);
-                }
-            }
-        }
-        let normal_steps = [0.0, 0.15, -0.15, 0.35, -0.35, 0.6, -0.6, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0];
-        let tangent_steps = [0.0, 0.2, -0.2, 0.6, -0.6, 1.2, -1.2];
-        let mut best_pos = (anchors[0].0, anchors[0].1);
-        let mut best_penalty = (f32::INFINITY, f32::INFINITY);
-        let evaluate_candidates = |anchor: (f32, f32, f32, f32),
-                                   tangents: &[f32],
-                                   normals: &[f32],
-                                   best_penalty: &mut (f32, f32),
-                                   best_pos: &mut (f32, f32)| {
-            let (anchor_x, anchor_y, dir_x, dir_y) = anchor;
-            let normal_x = -dir_y;
-            let normal_y = dir_x;
-            let step_n = if normal_x.abs() > normal_y.abs() {
-                label.width + LABEL_PAD_X + LABEL_STEP_NORMAL_PAD
-            } else {
-                label.height + LABEL_PAD_Y + LABEL_STEP_NORMAL_PAD
-            };
-            let step_t = if dir_x.abs() > dir_y.abs() {
-                label.width + LABEL_PAD_X + LABEL_STEP_TANGENT_PAD
-            } else {
-                label.height + LABEL_PAD_Y + LABEL_STEP_TANGENT_PAD
-            };
-            for t in tangents {
-                let base_x = anchor_x + dir_x * step_t * *t;
-                let base_y = anchor_y + dir_y * step_t * *t;
-                for n in normals {
-                    let x = base_x + normal_x * step_n * *n;
-                    let y = base_y + normal_y * step_n * *n;
-                    let rect = (
-                        x - label.width / 2.0 - LABEL_PAD_X,
-                        y - label.height / 2.0 - LABEL_PAD_Y,
-                        pad_w,
-                        pad_h,
-                    );
-                    let penalty = label_penalties(
-                        rect,
-                        (anchor_x, anchor_y),
-                        label.width,
-                        label.height,
-                        &occupied,
-                        &occupied_grid,
-                        &edge_obstacles,
-                        &edge_grid,
-                        idx,
-                        bounds,
-                    );
-                    if candidate_better(penalty, *best_penalty) {
-                        *best_penalty = penalty;
-                        *best_pos = (x, y);
-                    }
-                }
-            }
-        };
-        for anchor in &anchors {
-            evaluate_candidates(
-                *anchor,
-                &tangent_steps,
-                &normal_steps,
-                &mut best_penalty,
-                &mut best_pos,
-            );
-        }
-        if best_penalty.0 > LABEL_OVERLAP_WIDE_THRESHOLD {
-            let normal_steps_wide = [0.0, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0, 4.0, -4.0, 5.0, -5.0];
-            let tangent_steps_wide = [0.0, 0.6, -0.6, 1.2, -1.2, 1.8, -1.8, 2.4, -2.4];
-            for anchor in &anchors {
-                evaluate_candidates(
-                    *anchor,
-                    &tangent_steps_wide,
-                    &normal_steps_wide,
-                    &mut best_penalty,
-                    &mut best_pos,
-                );
-            }
-        }
-        let clamped_pos = if let Some(bound) = bounds {
-            clamp_label_center_to_bounds(best_pos, label.width, label.height, LABEL_PAD_X, LABEL_PAD_Y, bound)
-        } else {
-            best_pos
-        };
-        let rect = (
-            clamped_pos.0 - label.width / 2.0 - LABEL_PAD_X,
-            clamped_pos.1 - label.height / 2.0 - LABEL_PAD_Y,
-            pad_w,
-            pad_h,
-        );
-        occupied.push(rect);
-        let placed = Some((clamped_pos.0, clamped_pos.1, label.clone()));
-
-        positions.insert(idx, placed);
-    }
-
-    positions
-}
-
-fn build_label_obstacles(
-    nodes: &std::collections::BTreeMap<String, crate::layout::NodeLayout>,
-    subgraphs: &[crate::layout::SubgraphLayout],
-) -> Vec<Rect> {
-    let mut occupied: Vec<Rect> = Vec::new();
-    for node in nodes.values() {
-        if node.anchor_subgraph.is_some() || node.hidden {
-            continue;
-        }
-        occupied.push((
-            node.x - NODE_OBSTACLE_PAD,
-            node.y - NODE_OBSTACLE_PAD,
-            node.width + 2.0 * NODE_OBSTACLE_PAD,
-            node.height + 2.0 * NODE_OBSTACLE_PAD,
-        ));
-    }
-    for sub in subgraphs {
-        if sub.label.trim().is_empty() {
-            continue;
-        }
-        let width = sub.label_block.width;
-        let height = sub.label_block.height;
-        let x = sub.x + 12.0;
-        let y = sub.y + NODE_OBSTACLE_PAD;
-        occupied.push((x - LABEL_PAD_Y, y, width + 2.0 * LABEL_PAD_Y, height + LABEL_PAD_Y));
-    }
-    occupied
-}
 
 fn is_divider_line(line: &str) -> bool {
     line.trim() == "---"
@@ -5236,273 +4977,6 @@ fn render_er_node(
     svg
 }
 
-fn edge_label_anchor(edge: &EdgeLayout) -> (f32, f32, f32, f32) {
-    if edge.points.len() < 2 {
-        return (0.0, 0.0, 1.0, 0.0);
-    }
-    let segment_count = edge.points.len() - 1;
-    let mut best_idx: Option<usize> = None;
-    let mut best_len = 0.0;
-
-    let (start_idx, end_idx) = if segment_count >= 3 {
-        (1, segment_count - 1)
-    } else {
-        (0, segment_count)
-    };
-
-    for idx in start_idx..end_idx {
-        let p1 = edge.points[idx];
-        let p2 = edge.points[idx + 1];
-        let dx = p2.0 - p1.0;
-        let dy = p2.1 - p1.1;
-        let len = dx * dx + dy * dy;
-        if len > best_len {
-            best_len = len;
-            best_idx = Some(idx);
-        }
-    }
-
-    if best_idx.is_none() {
-        for idx in 0..segment_count {
-            let p1 = edge.points[idx];
-            let p2 = edge.points[idx + 1];
-            let dx = p2.0 - p1.0;
-            let dy = p2.1 - p1.1;
-            let len = dx * dx + dy * dy;
-            if len > best_len {
-                best_len = len;
-                best_idx = Some(idx);
-            }
-        }
-    }
-
-    let idx = best_idx.unwrap_or(0);
-    let p1 = edge.points[idx];
-    let p2 = edge.points[idx + 1];
-    let dx = p2.0 - p1.0;
-    let dy = p2.1 - p1.1;
-    let len = (dx * dx + dy * dy).sqrt().max(1e-3);
-    ((p1.0 + p2.0) / 2.0, (p1.1 + p2.1) / 2.0, dx / len, dy / len)
-}
-
-fn edge_label_anchor_at_fraction(edge: &EdgeLayout, t: f32) -> Option<(f32, f32, f32, f32)> {
-    if edge.points.len() < 2 {
-        return None;
-    }
-    let segment_count = edge.points.len() - 1;
-    let (mut start_idx, mut end_idx) = if segment_count >= 3 {
-        (1, segment_count - 1)
-    } else {
-        (0, segment_count)
-    };
-    if start_idx >= end_idx {
-        start_idx = 0;
-        end_idx = segment_count;
-    }
-
-    let mut total_len = 0.0f32;
-    for idx in start_idx..end_idx {
-        let p1 = edge.points[idx];
-        let p2 = edge.points[idx + 1];
-        let dx = p2.0 - p1.0;
-        let dy = p2.1 - p1.1;
-        total_len += (dx * dx + dy * dy).sqrt();
-    }
-
-    if total_len <= 1e-3 {
-        return Some(edge_label_anchor(edge));
-    }
-
-    let mut remaining = total_len * t.clamp(0.0, 1.0);
-    for idx in start_idx..end_idx {
-        let p1 = edge.points[idx];
-        let p2 = edge.points[idx + 1];
-        let dx = p2.0 - p1.0;
-        let dy = p2.1 - p1.1;
-        let seg_len = (dx * dx + dy * dy).sqrt();
-        if seg_len <= 1e-6 {
-            continue;
-        }
-        if remaining <= seg_len {
-            let alpha = (remaining / seg_len).clamp(0.0, 1.0);
-            return Some((
-                p1.0 + dx * alpha,
-                p1.1 + dy * alpha,
-                dx / seg_len,
-                dy / seg_len,
-            ));
-        }
-        remaining -= seg_len;
-    }
-
-    Some(edge_label_anchor(edge))
-}
-
-type Rect = (f32, f32, f32, f32);
-type EdgeObstacle = (usize, Rect);
-
-fn overlap_area(a: &Rect, b: &Rect) -> f32 {
-    let x0 = a.0.max(b.0);
-    let y0 = a.1.max(b.1);
-    let x1 = (a.0 + a.2).min(b.0 + b.2);
-    let y1 = (a.1 + a.3).min(b.1 + b.3);
-    let w = (x1 - x0).max(0.0);
-    let h = (y1 - y0).max(0.0);
-    w * h
-}
-
-fn outside_area(rect: &Rect, bounds: (f32, f32)) -> f32 {
-    let (w, h) = bounds;
-    let rect_area = rect.2.max(0.0) * rect.3.max(0.0);
-    if rect_area <= 0.0 {
-        return 0.0;
-    }
-    let x0 = rect.0.max(0.0);
-    let y0 = rect.1.max(0.0);
-    let x1 = (rect.0 + rect.2).min(w);
-    let y1 = (rect.1 + rect.3).min(h);
-    let inside_w = (x1 - x0).max(0.0);
-    let inside_h = (y1 - y0).max(0.0);
-    rect_area - inside_w * inside_h
-}
-
-fn clamp_label_center_to_bounds(
-    center: (f32, f32),
-    label_w: f32,
-    label_h: f32,
-    pad_x: f32,
-    pad_y: f32,
-    bounds: (f32, f32),
-) -> (f32, f32) {
-    let (w, h) = bounds;
-    if w <= 0.0 || h <= 0.0 {
-        return center;
-    }
-    let min_x = label_w * 0.5 + pad_x;
-    let min_y = label_h * 0.5 + pad_y;
-    let max_x = w - label_w * 0.5 - pad_x;
-    let max_y = h - label_h * 0.5 - pad_y;
-
-    let x = if max_x < min_x {
-        w * 0.5
-    } else {
-        center.0.clamp(min_x, max_x)
-    };
-    let y = if max_y < min_y {
-        h * 0.5
-    } else {
-        center.1.clamp(min_y, max_y)
-    };
-    (x, y)
-}
-
-/// Spatial index for fast overlap queries during label placement.
-struct ObstacleGrid {
-    cell: f32,
-    /// Maps grid cell (ix, iy) to indices into the obstacle list.
-    cells: HashMap<(i32, i32), Vec<usize>>,
-}
-
-impl ObstacleGrid {
-    fn new(cell: f32, rects: &[Rect]) -> Self {
-        let cell = cell.max(16.0);
-        let mut cells: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
-        for (i, rect) in rects.iter().enumerate() {
-            let x0 = (rect.0 / cell).floor() as i32;
-            let y0 = (rect.1 / cell).floor() as i32;
-            let x1 = ((rect.0 + rect.2) / cell).floor() as i32;
-            let y1 = ((rect.1 + rect.3) / cell).floor() as i32;
-            for ix in x0..=x1 {
-                for iy in y0..=y1 {
-                    cells.entry((ix, iy)).or_default().push(i);
-                }
-            }
-        }
-        Self { cell, cells }
-    }
-
-    /// Return indices of obstacles that could overlap with `rect`.
-    fn query(&self, rect: &Rect) -> impl Iterator<Item = usize> + '_ {
-        let x0 = (rect.0 / self.cell).floor() as i32;
-        let y0 = (rect.1 / self.cell).floor() as i32;
-        let x1 = ((rect.0 + rect.2) / self.cell).floor() as i32;
-        let y1 = ((rect.1 + rect.3) / self.cell).floor() as i32;
-        let mut seen = Vec::new();
-        (x0..=x1)
-            .flat_map(move |ix| (y0..=y1).map(move |iy| (ix, iy)))
-            .flat_map(move |key| {
-                self.cells
-                    .get(&key)
-                    .map(|v| v.as_slice())
-                    .unwrap_or(&[])
-                    .iter()
-                    .copied()
-            })
-            .filter(move |idx| {
-                if seen.contains(idx) {
-                    false
-                } else {
-                    seen.push(*idx);
-                    true
-                }
-            })
-    }
-}
-
-fn label_penalties(
-    rect: Rect,
-    anchor: (f32, f32),
-    label_w: f32,
-    label_h: f32,
-    occupied: &[Rect],
-    occupied_grid: &ObstacleGrid,
-    edge_obstacles: &[EdgeObstacle],
-    edge_grid: &ObstacleGrid,
-    edge_idx: usize,
-    bounds: Option<(f32, f32)>,
-) -> (f32, f32) {
-    let area = (label_w * label_h).max(1.0);
-    let mut overlap = 0.0;
-    for i in occupied_grid.query(&rect) {
-        overlap += overlap_area(&rect, &occupied[i]);
-    }
-    for i in edge_grid.query(&rect) {
-        let (idx, ref obs) = edge_obstacles[i];
-        if idx == edge_idx {
-            continue;
-        }
-        overlap += overlap_area(&rect, obs);
-    }
-    if let Some(bound) = bounds {
-        overlap += outside_area(&rect, bound);
-    }
-    let dx = (rect.0 + rect.2 * 0.5) - anchor.0;
-    let dy = (rect.1 + rect.3 * 0.5) - anchor.1;
-    let dist = (dx * dx + dy * dy).sqrt();
-    (overlap / area, dist / (label_w + label_h + 1.0))
-}
-
-fn candidate_better(candidate: (f32, f32), best: (f32, f32)) -> bool {
-    if candidate.0 + 1e-6 < best.0 {
-        return true;
-    }
-    (candidate.0 - best.0).abs() <= 1e-6 && candidate.1 + 1e-6 < best.1
-}
-
-fn build_edge_obstacles(edges: &[EdgeLayout], pad: f32) -> Vec<EdgeObstacle> {
-    let mut obstacles = Vec::new();
-    for (idx, edge) in edges.iter().enumerate() {
-        for segment in edge.points.windows(2) {
-            let (a, b) = (segment[0], segment[1]);
-            let min_x = a.0.min(b.0) - pad;
-            let max_x = a.0.max(b.0) + pad;
-            let min_y = a.1.min(b.1) - pad;
-            let max_y = a.1.max(b.1) + pad;
-            obstacles.push((idx, (min_x, min_y, max_x - min_x, max_y - min_y)));
-        }
-    }
-    obstacles
-}
 
 pub fn write_output_svg(svg: &str, output: Option<&Path>) -> Result<()> {
     match output {
@@ -5688,112 +5162,6 @@ fn edge_endpoint_angle(points: &[(f32, f32)], start: bool) -> f32 {
     let dx = p1.0 - p0.0;
     let dy = p1.1 - p0.1;
     dy.atan2(dx).to_degrees()
-}
-
-fn edge_endpoint_label_position(edge: &EdgeLayout, start: bool, offset: f32) -> Option<(f32, f32)> {
-    if edge.points.len() < 2 {
-        return None;
-    }
-    let (p0, p1) = if start {
-        (edge.points[0], edge.points[1])
-    } else {
-        (
-            edge.points[edge.points.len() - 1],
-            edge.points[edge.points.len() - 2],
-        )
-    };
-    let dx = p1.0 - p0.0;
-    let dy = p1.1 - p0.1;
-    let len = (dx * dx + dy * dy).sqrt();
-    if len <= f32::EPSILON {
-        return None;
-    }
-    let dir_x = dx / len;
-    let dir_y = dy / len;
-    let base_x = p0.0 + dir_x * offset * 1.4;
-    let base_y = p0.1 + dir_y * offset * 1.4;
-    let perp_x = -dir_y;
-    let perp_y = dir_x;
-    Some((base_x + perp_x * offset, base_y + perp_y * offset))
-}
-
-fn edge_endpoint_label_position_with_avoid(
-    edge: &EdgeLayout,
-    edge_idx: usize,
-    start: bool,
-    offset: f32,
-    label_w: f32,
-    label_h: f32,
-    occupied: &[Rect],
-    occupied_grid: &ObstacleGrid,
-    edge_obstacles: &[EdgeObstacle],
-    edge_grid: &ObstacleGrid,
-    bounds: Option<(f32, f32)>,
-) -> Option<(f32, f32)> {
-    if edge.points.len() < 2 {
-        return None;
-    }
-    let (p0, p1) = if start {
-        (edge.points[0], edge.points[1])
-    } else {
-        (
-            edge.points[edge.points.len() - 1],
-            edge.points[edge.points.len() - 2],
-        )
-    };
-    let dx = p1.0 - p0.0;
-    let dy = p1.1 - p0.1;
-    let len = (dx * dx + dy * dy).sqrt();
-    if len <= f32::EPSILON {
-        return None;
-    }
-    let dir_x = dx / len;
-    let dir_y = dy / len;
-    let perp_x = -dir_y;
-    let perp_y = dir_x;
-    let anchor_x = p0.0 + dir_x * offset * 1.4;
-    let anchor_y = p0.1 + dir_y * offset * 1.4;
-    let along_steps = [0.0, 0.8, -0.8, 1.6, -1.6];
-    let perp_steps = [
-        1.0, -1.0, 1.7, -1.7, 2.4, -2.4, 3.2, -3.2, 3.9, -3.9, 4.6, -4.6,
-    ];
-    let mut best_pos = (anchor_x, anchor_y);
-    let mut best_penalty = (f32::INFINITY, f32::INFINITY);
-    for along in along_steps {
-        let base_x = p0.0 + dir_x * offset * (1.4 + along);
-        let base_y = p0.1 + dir_y * offset * (1.4 + along);
-        for step in perp_steps {
-            let x = base_x + perp_x * offset * step;
-            let y = base_y + perp_y * offset * step;
-            let rect = (
-                x - label_w / 2.0 - 4.0,
-                y - label_h / 2.0 - 3.0,
-                label_w + 8.0,
-                label_h + 6.0,
-            );
-            let penalty = label_penalties(
-                rect,
-                (anchor_x, anchor_y),
-                label_w,
-                label_h,
-                occupied,
-                occupied_grid,
-                edge_obstacles,
-                edge_grid,
-                edge_idx,
-                bounds,
-            );
-            if candidate_better(penalty, best_penalty) {
-                best_penalty = penalty;
-                best_pos = (x, y);
-            }
-        }
-    }
-    if let Some(bound) = bounds {
-        let clamped = clamp_label_center_to_bounds(best_pos, label_w, label_h, 4.0, 3.0, bound);
-        return Some(clamped);
-    }
-    Some(best_pos)
 }
 
 #[cfg(feature = "png")]
