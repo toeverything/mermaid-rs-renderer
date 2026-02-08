@@ -6077,15 +6077,27 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
 
         let from_anchor = anchor_point_for_node(from, start_side, 0.0);
         let to_anchor = anchor_point_for_node(to, end_side, 0.0);
-        let start_other = if side_is_vertical(start_side) {
-            to_anchor.1
-        } else {
-            to_anchor.0
+        // Use approach-angle ordering (dx/|dy| for horizontal sides, dy/|dx|
+        // for vertical sides) instead of raw coordinates.  This prevents
+        // near-coincident source positions from producing a misleading port
+        // order when the edges approach from very different angles.
+        let start_other = {
+            let dx = to_anchor.0 - from_anchor.0;
+            let dy = to_anchor.1 - from_anchor.1;
+            if side_is_vertical(start_side) {
+                dy / dx.abs().max(1.0)
+            } else {
+                dx / dy.abs().max(1.0)
+            }
         };
-        let end_other = if side_is_vertical(end_side) {
-            from_anchor.1
-        } else {
-            from_anchor.0
+        let end_other = {
+            let dx = from_anchor.0 - to_anchor.0;
+            let dy = from_anchor.1 - to_anchor.1;
+            if side_is_vertical(end_side) {
+                dy / dx.abs().max(1.0)
+            } else {
+                dx / dy.abs().max(1.0)
+            }
         };
         port_candidates
             .entry((edge.from.clone(), start_side))

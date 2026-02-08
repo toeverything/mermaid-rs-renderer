@@ -799,7 +799,7 @@ impl Default for FlowchartLayoutConfig {
             order_passes: 4,
             port_pad_ratio: 0.2,
             port_pad_min: 4.0,
-            port_pad_max: 12.0,
+            port_pad_max: 30.0,
             port_side_bias: 0.0,
             auto_spacing: FlowchartAutoSpacingConfig::default(),
             routing: FlowchartRoutingConfig::default(),
