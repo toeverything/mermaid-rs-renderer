@@ -1,0 +1,19 @@
+C4Context
+  Person(admin, "Admin", "System administrator")
+  Person(user, "User", "End user")
+
+  Boundary(b0, "Platform") {
+    System(api, "API Gateway")
+    SystemDb(db, "PostgreSQL")
+    System(cache, "Redis Cache")
+    System(queue, "Message Queue")
+  }
+
+  System_Ext(auth, "Auth Provider", "OAuth2")
+
+  Rel(user, api, "Uses")
+  Rel(admin, api, "Manages")
+  Rel(api, db, "Queries")
+  Rel(api, cache, "Caches")
+  Rel(api, queue, "Publishes")
+  Rel(api, auth, "Authenticates")

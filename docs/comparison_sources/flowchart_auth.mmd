@@ -1,0 +1,14 @@
+flowchart TD
+  A([User Visit]) --> B{Logged in?}
+  B -->|No| C[Show Login Form]
+  C --> D{Credentials Valid?}
+  D -->|No| E[Show Error]
+  E --> C
+  D -->|Yes| F{2FA Enabled?}
+  F -->|Yes| G[Send OTP]
+  G --> H{OTP Valid?}
+  H -->|No| E
+  H -->|Yes| I[Create Session]
+  F -->|No| I
+  B -->|Yes| I
+  I --> J[Dashboard]

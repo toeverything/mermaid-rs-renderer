@@ -1,0 +1,16 @@
+gitGraph
+  commit id: "initial"
+  branch feature-a
+  commit id: "feat-a-1"
+  commit id: "feat-a-2"
+  checkout main
+  branch feature-b
+  commit id: "feat-b-1"
+  checkout main
+  branch feature-c
+  commit id: "feat-c-1"
+  commit id: "feat-c-2"
+  checkout main
+  merge feature-a
+  merge feature-b
+  merge feature-c tag: "v2.0"

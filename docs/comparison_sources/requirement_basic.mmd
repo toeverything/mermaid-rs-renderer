@@ -1,0 +1,30 @@
+    requirementDiagram
+
+    requirement login {
+    id: 1
+    text: Users must log in
+    risk: high
+    verifymethod: test
+    }
+
+    requirement session {
+    id: 2
+    text: Sessions expire after 30 min
+    risk: medium
+    verifymethod: test
+    }
+
+    requirement audit {
+    id: 3
+    text: All logins must be logged
+    risk: low
+    verifymethod: inspection
+    }
+
+    element webapp {
+    type: application
+    }
+
+    login - satisfies -> session
+    login - traces -> audit
+    webapp - satisfies -> login

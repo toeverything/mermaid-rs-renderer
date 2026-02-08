@@ -1,0 +1,13 @@
+sequenceDiagram
+  autonumber
+  participant U as User
+  participant FE as Frontend
+  participant BE as Backend
+  participant DB as Database
+
+  U->>FE: Click Submit
+  FE->>BE: POST /api/data
+  BE->>DB: INSERT INTO table
+  DB-->>BE: OK
+  BE-->>FE: 201 Created
+  FE-->>U: Show success

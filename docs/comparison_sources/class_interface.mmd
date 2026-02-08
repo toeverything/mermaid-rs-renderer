@@ -1,0 +1,23 @@
+classDiagram
+  class Shape {
+    <<interface>>
+    +area() double
+    +perimeter() double
+  }
+  class Circle {
+    -double radius
+    +area() double
+    +perimeter() double
+  }
+  class Rectangle {
+    -double width
+    -double height
+    +area() double
+    +perimeter() double
+  }
+  class Square {
+    +Square(double side)
+  }
+  Shape <|.. Circle
+  Shape <|.. Rectangle
+  Rectangle <|-- Square

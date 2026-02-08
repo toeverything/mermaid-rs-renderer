@@ -1,0 +1,38 @@
+classDiagram
+  class User {
+    +int id
+    +String name
+    +String email
+    +login()
+    +logout()
+  }
+  class Order {
+    +int id
+    +Date date
+    +double total
+    +addItem()
+    +removeItem()
+  }
+  class Product {
+    +int id
+    +String name
+    +double price
+  }
+  class Payment {
+    <<abstract>>
+    +double amount
+    +process()
+  }
+  class CreditCard {
+    +String cardNumber
+    +process()
+  }
+  class PayPal {
+    +String email
+    +process()
+  }
+  User "1" --> "*" Order : places
+  Order "*" --> "*" Product : contains
+  Order "1" --> "1" Payment : has
+  Payment <|-- CreditCard
+  Payment <|-- PayPal

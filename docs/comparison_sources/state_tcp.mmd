@@ -1,0 +1,14 @@
+stateDiagram-v2
+  [*] --> CLOSED
+  CLOSED --> LISTEN : passive open
+  CLOSED --> SYN_SENT : active open / SYN
+  LISTEN --> SYN_RCVD : SYN / SYN+ACK
+  SYN_SENT --> ESTABLISHED : SYN+ACK / ACK
+  SYN_RCVD --> ESTABLISHED : ACK
+  ESTABLISHED --> FIN_WAIT_1 : close / FIN
+  ESTABLISHED --> CLOSE_WAIT : FIN / ACK
+  FIN_WAIT_1 --> FIN_WAIT_2 : ACK
+  FIN_WAIT_2 --> TIME_WAIT : FIN / ACK
+  CLOSE_WAIT --> LAST_ACK : close / FIN
+  LAST_ACK --> CLOSED : ACK
+  TIME_WAIT --> CLOSED : timeout

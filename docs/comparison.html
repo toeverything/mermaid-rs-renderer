@@ -22,11 +22,20 @@ h2 { border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-top: 40px; }
 </head>
 <body>
 <h1>mmdr vs mermaid-cli Visual Comparison</h1>
-<p class="stats">Comparing output quality between mmdr (Rust) and mermaid-cli (Node.js + Chromium)<br>Last regenerated: <span id="regen-ts" data-regen="1970-01-01T00:00:00Z">1970-01-01 00:00 UTC</span> (<span id="regen-ago">just now</span> ago)</p>
+<p class="stats">Comparing output quality between mmdr (Rust) and mermaid-cli (Node.js + Chromium)<br>Last regenerated: <span id="regen-ts" data-regen="2026-02-08T03:14:43Z">2026-02-08 03:14 UTC</span> (<span id="regen-ago">just now</span> ago)</p>
 
 <h2>Changelog</h2>
 <ul class="changelog">
-<li>Run scripts/update_comparison_meta.py to refresh.</li>
+<li>2026-02-07 5b7ae3b Optimize label placement with spatial index and consolidate measurements</li>
+<li>2026-02-07 b0ffff0 Add white backgrounds to benchmark SVG charts</li>
+<li>2026-02-07 176ecc8 Release v0.2.0</li>
+<li>2026-02-07 fcd4d9b Fix quoted edge labels, node overlaps, and label placement</li>
+<li>2026-02-07 2d8b8a0 Expand benchmark infrastructure and regenerate comparison docs</li>
+<li>2026-02-07 1c1f1b0 Improve flowchart layout quality and edge label placement</li>
+<li>2026-02-05 d6d477e Regenerate benchmark and comparison docs</li>
+<li>2026-02-03 9d6790b Regenerate comparison svgs</li>
+<li>2026-02-03 2d7e0ba Prefer in-bar gantt labels when they fit</li>
+<li>2026-02-03 6022b4b Label gantt bars and resize state markers</li>
 </ul>
 
 <h2>Flowchart</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>flowchart LR
@@ -35,7 +44,53 @@ h2 { border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-top: 40px; }
   B --&gt;|no| D[\\Skip\\]
   C --&gt; E[[End]]
   D --&gt; E
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/flowchart_basic_mmdr.svg?v=12" alt="mmdr flowchart_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/flowchart_basic_official.svg?v=12" alt="official flowchart_basic"></div></div><h3 class="example-title">Subgraph</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>flowchart LR
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/flowchart_basic_mmdr.svg?v=14" alt="mmdr flowchart_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/flowchart_basic_official.svg?v=14" alt="official flowchart_basic"></div></div><h3 class="example-title">Top-Down</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>flowchart TD
+  Start([Start]) --&gt; Input[/Read Input/]
+  Input --&gt; Check{Valid?}
+  Check --&gt;|Yes| Process[Process Data]
+  Check --&gt;|No| Error[Show Error]
+  Error --&gt; Input
+  Process --&gt; Save[(Save to DB)]
+  Save --&gt; Done([End])
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/flowchart_td_mmdr.svg?v=14" alt="mmdr flowchart_td"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/flowchart_td_official.svg?v=14" alt="official flowchart_td"></div></div><h3 class="example-title">All Shapes</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>flowchart TD
+  A([Stadium]) --&gt; B[[Subroutine]]
+  B --&gt; C[(Cylinder)]
+  C --&gt; D((Circle))
+  D --&gt; E{Diamond}
+  E --&gt; F{{Hexagon}}
+  F --&gt; G[/Parallelogram/]
+  G --&gt; H[\Parallelogram Alt\]
+  H --&gt; I[/Trapezoid\]
+  I --&gt; J[\Trapezoid Alt/]
+  J --&gt; K&gt;Asymmetric]
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/flowchart_shapes_mmdr.svg?v=14" alt="mmdr flowchart_shapes"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/flowchart_shapes_official.svg?v=14" alt="official flowchart_shapes"></div></div><h3 class="example-title">Edge Types</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>flowchart LR
+  A[Solid] --&gt; B[Arrow]
+  C[Dotted] -.-&gt; D[Arrow]
+  E[Thick] ==&gt; F[Arrow]
+  G[Bidirectional] &lt;--&gt; H[Both]
+  I[Undirected] --- J[Line]
+  K[Dotted Line] -.- L[No Arrow]
+  M[Thick Line] === N[No Arrow]
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/flowchart_edges_mmdr.svg?v=14" alt="mmdr flowchart_edges"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/flowchart_edges_official.svg?v=14" alt="official flowchart_edges"></div></div><h3 class="example-title">Edge Labels</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>flowchart LR
+  A[Client] --&gt;|POST /login| B[API Gateway]
+  B --&gt;|Forward request| C[Auth Service]
+  C --&gt;|Query credentials| D[(User DB)]
+  D --&gt;|Return user| C
+  C --&gt;|Generate token| B
+  B --&gt;|Set cookie &amp;\nreturn 200| A
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/flowchart_labels_mmdr.svg?v=14" alt="mmdr flowchart_labels"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/flowchart_labels_official.svg?v=14" alt="official flowchart_labels"></div></div><h3 class="example-title">Custom Styles</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>flowchart LR
+  classDef hot fill:#f00,stroke:#000,color:#fff,stroke-width:2
+  classDef cool fill:#00f,stroke:#0ff,color:#fff
+
+  A[Alpha] --&gt; B[Beta]
+  C[Gamma] -.-&gt; D[Delta]
+
+  class A hot
+  class C cool
+
+  style B fill:#0f0,stroke:#090,stroke-width:3,color:#111
+  linkStyle 1 stroke:#ff0,stroke-width:4,stroke-dasharray:5 5
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/flowchart_styles_mmdr.svg?v=14" alt="mmdr flowchart_styles"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/flowchart_styles_official.svg?v=14" alt="official flowchart_styles"></div></div><h3 class="example-title">Subgraph</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>flowchart LR
   subgraph GroupA[&quot;Alpha Group&quot;]
     A1[One] --&gt; A2[Two]
   end
@@ -43,19 +98,118 @@ h2 { border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-top: 40px; }
     B1[Three] --&gt; B2[Four]
   end
   A2 --&gt; B1
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/flowchart_subgraph_mmdr.svg?v=12" alt="mmdr flowchart_subgraph"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/flowchart_subgraph_official.svg?v=12" alt="official flowchart_subgraph"></div></div><h3 class="example-title">Branches</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>flowchart TD
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/flowchart_subgraph_mmdr.svg?v=14" alt="mmdr flowchart_subgraph"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/flowchart_subgraph_official.svg?v=14" alt="official flowchart_subgraph"></div></div><h3 class="example-title">Subgraph Directions</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>flowchart TD
+  subgraph One[&quot;LR subgraph&quot;]
+    direction LR
+    A[Alpha] --&gt; B[Beta] --&gt; C[Gamma]
+  end
+  subgraph Two[&quot;TB subgraph&quot;]
+    direction TB
+    D[Delta] --&gt; E[Epsilon]
+  end
+  C --&gt; D
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/flowchart_subgraph_dir_mmdr.svg?v=14" alt="mmdr flowchart_subgraph_dir"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/flowchart_subgraph_dir_official.svg?v=14" alt="official flowchart_subgraph_dir"></div></div><h3 class="example-title">Branches</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>flowchart TD
   Start((Start)) --&gt; A[Collect]
   A --&gt; B{Valid?}
   B --&gt;|Yes| C[Process]
   B --&gt;|No| D[Reject]
   C --&gt; E((Done))
   D --&gt; E
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/flowchart_ports_mmdr.svg?v=12" alt="mmdr flowchart_ports"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/flowchart_ports_official.svg?v=12" alt="official flowchart_ports"></div></div><h2>Sequence Diagram</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>sequenceDiagram
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/flowchart_ports_mmdr.svg?v=14" alt="mmdr flowchart_ports"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/flowchart_ports_official.svg?v=14" alt="official flowchart_ports"></div></div><h3 class="example-title">Cycles</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>flowchart TD
+  A[Start] --&gt; B{Decide}
+  B --&gt;|yes| C[Do work]
+  C --&gt; D{More?}
+  D --&gt;|yes| B
+  D --&gt;|no| E[End]
+
+  subgraph LoopBlock
+    direction LR
+    F[One] --&gt; G[Two]
+    G --&gt; H[Three]
+    H --&gt; F
+  end
+
+  E --&gt; F
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/flowchart_cycles_mmdr.svg?v=14" alt="mmdr flowchart_cycles"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/flowchart_cycles_official.svg?v=14" alt="official flowchart_cycles"></div></div><h3 class="example-title">Dense Graph</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>flowchart LR
+  A((A)) --&gt; B((B))
+  A --&gt; C((C))
+  A --&gt; D((D))
+  B --&gt; E((E))
+  C --&gt; E
+  D --&gt; E
+  B --&gt; F((F))
+  C --&gt; F
+  D --&gt; F
+  E --&gt; G((G))
+  F --&gt; G
+  G --&gt; H((H))
+  B --&gt; H
+  C --&gt; H
+  D --&gt; H
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/flowchart_dense_mmdr.svg?v=14" alt="mmdr flowchart_dense"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/flowchart_dense_official.svg?v=14" alt="official flowchart_dense"></div></div><h3 class="example-title">Complex Pipeline</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>flowchart TD
+  subgraph Ingest
+    A[Source] --&gt; B{Validate}
+    B --&gt;|ok| C[Normalize]
+    B --&gt;|fail| D[Reject]
+  end
+
+  subgraph Process
+    C --&gt; E[Queue]
+    E --&gt; F[Worker 1]
+    E --&gt; G[Worker 2]
+    E --&gt; H[Worker 3]
+    F --&gt; I[Aggregate]
+    G --&gt; I
+    H --&gt; I
+  end
+
+  subgraph Output
+    I --&gt; J{Route}
+    J --&gt;|fast| K[Cache]
+    J --&gt;|slow| L[Archive]
+    K --&gt; M[Notify]
+    L --&gt; M
+  end
+
+  D --&gt; M
+  A -. retry .-&gt; E
+  C --&gt; J
+  G -. audit .-&gt; D
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/flowchart_complex_mmdr.svg?v=14" alt="mmdr flowchart_complex"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/flowchart_complex_official.svg?v=14" alt="official flowchart_complex"></div></div><h3 class="example-title">CI/CD Pipeline</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>flowchart LR
+  A[Push to Git] --&gt; B{CI Triggered}
+  B --&gt; C[Lint]
+  B --&gt; D[Unit Tests]
+  B --&gt; E[Build]
+  C --&gt; F{All Pass?}
+  D --&gt; F
+  E --&gt; F
+  F --&gt;|Yes| G[Deploy to Staging]
+  F --&gt;|No| H[Notify Developer]
+  G --&gt; I{QA Approved?}
+  I --&gt;|Yes| J[Deploy to Production]
+  I --&gt;|No| H
+  J --&gt; K[Monitor]
+  K --&gt;|Alert| H
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/flowchart_cicd_mmdr.svg?v=14" alt="mmdr flowchart_cicd"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/flowchart_cicd_official.svg?v=14" alt="official flowchart_cicd"></div></div><h3 class="example-title">Auth Flow</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>flowchart TD
+  A([User Visit]) --&gt; B{Logged in?}
+  B --&gt;|No| C[Show Login Form]
+  C --&gt; D{Credentials Valid?}
+  D --&gt;|No| E[Show Error]
+  E --&gt; C
+  D --&gt;|Yes| F{2FA Enabled?}
+  F --&gt;|Yes| G[Send OTP]
+  G --&gt; H{OTP Valid?}
+  H --&gt;|No| E
+  H --&gt;|Yes| I[Create Session]
+  F --&gt;|No| I
+  B --&gt;|Yes| I
+  I --&gt; J[Dashboard]
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/flowchart_auth_mmdr.svg?v=14" alt="mmdr flowchart_auth"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/flowchart_auth_official.svg?v=14" alt="official flowchart_auth"></div></div><h2>Sequence Diagram</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>sequenceDiagram
   participant Alice
   participant Bob
   Alice-&gt;&gt;Bob: Hello Bob
   Bob--&gt;&gt;Alice: Hi Alice
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/sequence_basic_mmdr.svg?v=12" alt="mmdr sequence_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/sequence_basic_official.svg?v=12" alt="official sequence_basic"></div></div><h3 class="example-title">Frames</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>sequenceDiagram
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/sequence_basic_mmdr.svg?v=14" alt="mmdr sequence_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/sequence_basic_official.svg?v=14" alt="official sequence_basic"></div></div><h3 class="example-title">Frames</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>sequenceDiagram
   participant Client
   participant API
   participant DB
@@ -72,7 +226,7 @@ h2 { border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-top: 40px; }
     API--&gt;&gt;Client: 500 Error
   end
   deactivate API
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/sequence_frames_mmdr.svg?v=12" alt="mmdr sequence_frames"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/sequence_frames_official.svg?v=12" alt="official sequence_frames"></div></div><h3 class="example-title">Collaboration</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>sequenceDiagram
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/sequence_frames_mmdr.svg?v=14" alt="mmdr sequence_frames"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/sequence_frames_official.svg?v=14" alt="official sequence_frames"></div></div><h3 class="example-title">Collaboration</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>sequenceDiagram
   participant User
   participant Web
   participant API
@@ -80,32 +234,202 @@ h2 { border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-top: 40px; }
   Web-&gt;&gt;API: Fetch profile
   API--&gt;&gt;Web: Profile data
   Web--&gt;&gt;User: Render screen
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/sequence_collab_mmdr.svg?v=12" alt="mmdr sequence_collab"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/sequence_collab_official.svg?v=12" alt="official sequence_collab"></div></div><h2>Class Diagram</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>classDiagram
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/sequence_collab_mmdr.svg?v=14" alt="mmdr sequence_collab"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/sequence_collab_official.svg?v=14" alt="official sequence_collab"></div></div><h3 class="example-title">Loops &amp; Par</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>sequenceDiagram
+  participant C as Client
+  participant S as Server
+  participant DB
+
+  C-&gt;&gt;S: Connect
+  loop Health Check
+    S-&gt;&gt;DB: Ping
+    DB--&gt;&gt;S: Pong
+  end
+  opt Has Cache
+    S-&gt;&gt;C: Cached Response
+  end
+  par Task A
+    S-&gt;&gt;DB: Query A
+  and Task B
+    S-&gt;&gt;DB: Query B
+  end
+  DB--&gt;&gt;S: Results
+  S--&gt;&gt;C: Response
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/sequence_loops_mmdr.svg?v=14" alt="mmdr sequence_loops"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/sequence_loops_official.svg?v=14" alt="official sequence_loops"></div></div><h3 class="example-title">Notes</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>sequenceDiagram
+  participant A as Alice
+  participant B as Bob
+  participant C as Carol
+
+  Note over A: Alice starts
+  A-&gt;&gt;B: Hello Bob
+  Note over A,B: Handshake
+  B-&gt;&gt;C: Introduce Alice
+  Note right of C: Carol thinks
+  C--&gt;&gt;A: Nice to meet you
+  Note over A,C: All connected
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/sequence_notes_mmdr.svg?v=14" alt="mmdr sequence_notes"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/sequence_notes_official.svg?v=14" alt="official sequence_notes"></div></div><h3 class="example-title">Autonumber</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>sequenceDiagram
+  autonumber
+  participant U as User
+  participant FE as Frontend
+  participant BE as Backend
+  participant DB as Database
+
+  U-&gt;&gt;FE: Click Submit
+  FE-&gt;&gt;BE: POST /api/data
+  BE-&gt;&gt;DB: INSERT INTO table
+  DB--&gt;&gt;BE: OK
+  BE--&gt;&gt;FE: 201 Created
+  FE--&gt;&gt;U: Show success
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/sequence_autonumber_mmdr.svg?v=14" alt="mmdr sequence_autonumber"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/sequence_autonumber_official.svg?v=14" alt="official sequence_autonumber"></div></div><h3 class="example-title">OAuth Flow</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>sequenceDiagram
+  participant U as User
+  participant App as Application
+  participant Auth as Auth Server
+  participant API as Resource API
+
+  U-&gt;&gt;App: Click Login
+  App-&gt;&gt;Auth: Authorization Request
+  Auth-&gt;&gt;U: Login Page
+  U-&gt;&gt;Auth: Enter Credentials
+  Auth-&gt;&gt;App: Authorization Code
+  App-&gt;&gt;Auth: Exchange Code for Token
+  Auth-&gt;&gt;App: Access Token + Refresh Token
+  App-&gt;&gt;API: API Request + Access Token
+  API-&gt;&gt;App: Protected Resource
+  App-&gt;&gt;U: Display Data
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/sequence_oauth_mmdr.svg?v=14" alt="mmdr sequence_oauth"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/sequence_oauth_official.svg?v=14" alt="official sequence_oauth"></div></div><h3 class="example-title">Microservices</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>sequenceDiagram
+  participant GW as API Gateway
+  participant US as User Service
+  participant OS as Order Service
+  participant PS as Payment Service
+  participant NS as Notification Service
+  participant Q as Message Queue
+
+  GW-&gt;&gt;US: Authenticate
+  US--&gt;&gt;GW: Token Valid
+  GW-&gt;&gt;OS: Create Order
+  activate OS
+  OS-&gt;&gt;PS: Process Payment
+  activate PS
+  PS--&gt;&gt;OS: Payment OK
+  deactivate PS
+  OS-&gt;&gt;Q: Publish OrderCreated
+  Q--&gt;&gt;NS: OrderCreated Event
+  NS-&gt;&gt;NS: Send Email
+  OS--&gt;&gt;GW: Order Confirmed
+  deactivate OS
+  GW--&gt;&gt;GW: Return Response
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/sequence_microservice_mmdr.svg?v=14" alt="mmdr sequence_microservice"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/sequence_microservice_official.svg?v=14" alt="official sequence_microservice"></div></div><h2>Class Diagram</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>classDiagram
 class Animal {
 +String name
 +eat()
 }
 class Dog
 Animal &lt;|-- Dog : inherits
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/class_basic_mmdr.svg?v=12" alt="mmdr class_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/class_basic_official.svg?v=12" alt="official class_basic"></div></div><h3 class="example-title">Multiplicity</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>classDiagram
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/class_basic_mmdr.svg?v=14" alt="mmdr class_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/class_basic_official.svg?v=14" alt="official class_basic"></div></div><h3 class="example-title">Multiplicity</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>classDiagram
 Class01 &quot;1&quot; *-- &quot;many&quot; Class02 : contains
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/class_multiplicity_mmdr.svg?v=12" alt="mmdr class_multiplicity"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/class_multiplicity_official.svg?v=12" alt="official class_multiplicity"></div></div><h3 class="example-title">Relations</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>classDiagram
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/class_multiplicity_mmdr.svg?v=14" alt="mmdr class_multiplicity"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/class_multiplicity_official.svg?v=14" alt="official class_multiplicity"></div></div><h3 class="example-title">Relations</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>classDiagram
 class Order
 class Item
 class Customer
 Customer &quot;1&quot; --&gt; &quot;many&quot; Order
 Order &quot;1&quot; --&gt; &quot;many&quot; Item
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/class_relations_mmdr.svg?v=12" alt="mmdr class_relations"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/class_relations_official.svg?v=12" alt="official class_relations"></div></div><h2>State Diagram</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>stateDiagram-v2
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/class_relations_mmdr.svg?v=14" alt="mmdr class_relations"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/class_relations_official.svg?v=14" alt="official class_relations"></div></div><h3 class="example-title">Interfaces</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>classDiagram
+  class Shape {
+    &lt;&lt;interface&gt;&gt;
+    +area() double
+    +perimeter() double
+  }
+  class Circle {
+    -double radius
+    +area() double
+    +perimeter() double
+  }
+  class Rectangle {
+    -double width
+    -double height
+    +area() double
+    +perimeter() double
+  }
+  class Square {
+    +Square(double side)
+  }
+  Shape &lt;|.. Circle
+  Shape &lt;|.. Rectangle
+  Rectangle &lt;|-- Square
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/class_interface_mmdr.svg?v=14" alt="mmdr class_interface"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/class_interface_official.svg?v=14" alt="official class_interface"></div></div><h3 class="example-title">E-Commerce Model</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>classDiagram
+  class User {
+    +int id
+    +String name
+    +String email
+    +login()
+    +logout()
+  }
+  class Order {
+    +int id
+    +Date date
+    +double total
+    +addItem()
+    +removeItem()
+  }
+  class Product {
+    +int id
+    +String name
+    +double price
+  }
+  class Payment {
+    &lt;&lt;abstract&gt;&gt;
+    +double amount
+    +process()
+  }
+  class CreditCard {
+    +String cardNumber
+    +process()
+  }
+  class PayPal {
+    +String email
+    +process()
+  }
+  User &quot;1&quot; --&gt; &quot;*&quot; Order : places
+  Order &quot;*&quot; --&gt; &quot;*&quot; Product : contains
+  Order &quot;1&quot; --&gt; &quot;1&quot; Payment : has
+  Payment &lt;|-- CreditCard
+  Payment &lt;|-- PayPal
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/class_full_mmdr.svg?v=14" alt="mmdr class_full"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/class_full_official.svg?v=14" alt="official class_full"></div></div><h3 class="example-title">Observer Pattern</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>classDiagram
+  class Subject {
+    &lt;&lt;interface&gt;&gt;
+    +attach(Observer)
+    +detach(Observer)
+    +notify()
+  }
+  class Observer {
+    &lt;&lt;interface&gt;&gt;
+    +update()
+  }
+  class ConcreteSubject {
+    -state
+    +getState()
+    +setState()
+  }
+  class ConcreteObserverA {
+    +update()
+  }
+  class ConcreteObserverB {
+    +update()
+  }
+  Subject &lt;|.. ConcreteSubject
+  Observer &lt;|.. ConcreteObserverA
+  Observer &lt;|.. ConcreteObserverB
+  Subject o-- Observer : observers
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/class_patterns_mmdr.svg?v=14" alt="mmdr class_patterns"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/class_patterns_official.svg?v=14" alt="official class_patterns"></div></div><h2>State Diagram</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>stateDiagram-v2
 [*] --&gt; Idle
 Idle --&gt; Active : start
 state &quot;Waiting&quot; as Wait
 Wait --&gt; Active
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/state_basic_mmdr.svg?v=12" alt="mmdr state_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/state_basic_official.svg?v=12" alt="official state_basic"></div></div><h3 class="example-title">With Note</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>stateDiagram-v2
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/state_basic_mmdr.svg?v=14" alt="mmdr state_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/state_basic_official.svg?v=14" alt="official state_basic"></div></div><h3 class="example-title">With Note</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>stateDiagram-v2
 [*] --&gt; Idle
 Idle --&gt; Active
 note right of Active: Running
 Active --&gt; [*]
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/state_note_mmdr.svg?v=12" alt="mmdr state_note"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/state_note_official.svg?v=12" alt="official state_note"></div></div><h3 class="example-title">Composite</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>stateDiagram-v2
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/state_note_mmdr.svg?v=14" alt="mmdr state_note"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/state_note_official.svg?v=14" alt="official state_note"></div></div><h3 class="example-title">Composite</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>stateDiagram-v2
 [*] --&gt; Idle
 Idle --&gt; Working : start
 state Working {
@@ -113,7 +437,59 @@ state Working {
   TaskA --&gt; TaskB
 }
 Working --&gt; [*]
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/state_parallel_mmdr.svg?v=12" alt="mmdr state_parallel"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/state_parallel_official.svg?v=12" alt="official state_parallel"></div></div><h2>ER Diagram</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>erDiagram
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/state_parallel_mmdr.svg?v=14" alt="mmdr state_parallel"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/state_parallel_official.svg?v=14" alt="official state_parallel"></div></div><h3 class="example-title">Lifecycle</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>stateDiagram-v2
+  [*] --&gt; Draft
+  Draft --&gt; Review : submit
+  Review --&gt; Approved : approve
+  Review --&gt; Rejected : reject
+  Approved --&gt; Published : publish
+  Rejected --&gt; Draft : revise
+  Published --&gt; Archived : archive
+  Published --&gt; [*]
+  Archived --&gt; [*]
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/state_choice_mmdr.svg?v=14" alt="mmdr state_choice"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/state_choice_official.svg?v=14" alt="official state_choice"></div></div><h3 class="example-title">Deeply Nested</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>stateDiagram-v2
+  [*] --&gt; Active
+  state Active {
+    [*] --&gt; Running
+    Running --&gt; Paused : pause
+    Paused --&gt; Running : resume
+    state Running {
+      [*] --&gt; Processing
+      Processing --&gt; Waiting : yield
+      Waiting --&gt; Processing : wake
+    }
+  }
+  Active --&gt; Stopped : stop
+  Stopped --&gt; Active : restart
+  Stopped --&gt; [*]
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/state_nested_mmdr.svg?v=14" alt="mmdr state_nested"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/state_nested_official.svg?v=14" alt="official state_nested"></div></div><h3 class="example-title">Fork/Join</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>stateDiagram-v2
+  [*] --&gt; Ready
+  Ready --&gt; Active
+  state Active {
+    [*] --&gt; TaskA
+    [*] --&gt; TaskB
+    [*] --&gt; TaskC
+    TaskA --&gt; [*]
+    TaskB --&gt; [*]
+    TaskC --&gt; [*]
+  }
+  Active --&gt; Done
+  Done --&gt; [*]
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/state_fork_mmdr.svg?v=14" alt="mmdr state_fork"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/state_fork_official.svg?v=14" alt="official state_fork"></div></div><h3 class="example-title">TCP States</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>stateDiagram-v2
+  [*] --&gt; CLOSED
+  CLOSED --&gt; LISTEN : passive open
+  CLOSED --&gt; SYN_SENT : active open / SYN
+  LISTEN --&gt; SYN_RCVD : SYN / SYN+ACK
+  SYN_SENT --&gt; ESTABLISHED : SYN+ACK / ACK
+  SYN_RCVD --&gt; ESTABLISHED : ACK
+  ESTABLISHED --&gt; FIN_WAIT_1 : close / FIN
+  ESTABLISHED --&gt; CLOSE_WAIT : FIN / ACK
+  FIN_WAIT_1 --&gt; FIN_WAIT_2 : ACK
+  FIN_WAIT_2 --&gt; TIME_WAIT : FIN / ACK
+  CLOSE_WAIT --&gt; LAST_ACK : close / FIN
+  LAST_ACK --&gt; CLOSED : ACK
+  TIME_WAIT --&gt; CLOSED : timeout
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/state_tcp_mmdr.svg?v=14" alt="mmdr state_tcp"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/state_tcp_official.svg?v=14" alt="official state_tcp"></div></div><h2>ER Diagram</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>erDiagram
 CUSTOMER ||--o{ ORDER : places
 CUSTOMER {
 string id
@@ -123,7 +499,7 @@ ORDER {
 string id
 date created_at
 }
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/er_basic_mmdr.svg?v=12" alt="mmdr er_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/er_basic_official.svg?v=12" alt="official er_basic"></div></div><h3 class="example-title">Extended</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>erDiagram
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/er_basic_mmdr.svg?v=14" alt="mmdr er_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/er_basic_official.svg?v=14" alt="official er_basic"></div></div><h3 class="example-title">Extended</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>erDiagram
 USER ||--o{ POST : writes
 USER ||--o{ SESSION : has
 POST ||--o{ COMMENT : receives
@@ -148,23 +524,105 @@ SESSION {
   string user_id FK
   date created_at
 }
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/er_extended_mmdr.svg?v=12" alt="mmdr er_extended"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/er_extended_official.svg?v=12" alt="official er_extended"></div></div><h2>Pie Chart</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>pie showData
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/er_extended_mmdr.svg?v=14" alt="mmdr er_extended"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/er_extended_official.svg?v=14" alt="official er_extended"></div></div><h3 class="example-title">E-Commerce</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>erDiagram
+  CUSTOMER ||--o{ ORDER : places
+  ORDER ||--|{ LINE_ITEM : contains
+  PRODUCT ||--o{ LINE_ITEM : &quot;is in&quot;
+  CUSTOMER {
+    int id PK
+    string name
+    string email UK
+    string phone
+  }
+  ORDER {
+    int id PK
+    int customer_id FK
+    date order_date
+    string status
+    float total
+  }
+  LINE_ITEM {
+    int id PK
+    int order_id FK
+    int product_id FK
+    int quantity
+    float unit_price
+  }
+  PRODUCT {
+    int id PK
+    string name
+    string category
+    float price
+    int stock
+  }
+  PRODUCT }o--|| CATEGORY : &quot;belongs to&quot;
+  CATEGORY {
+    int id PK
+    string name
+    string description
+  }
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/er_ecommerce_mmdr.svg?v=14" alt="mmdr er_ecommerce"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/er_ecommerce_official.svg?v=14" alt="official er_ecommerce"></div></div><h3 class="example-title">Blog Platform</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>erDiagram
+  AUTHOR ||--o{ ARTICLE : writes
+  ARTICLE ||--o{ TAG_MAP : has
+  TAG ||--o{ TAG_MAP : &quot;used in&quot;
+  ARTICLE ||--o{ COMMENT : receives
+  READER ||--o{ COMMENT : posts
+  READER ||--o{ SUBSCRIPTION : subscribes
+  AUTHOR ||--o{ SUBSCRIPTION : &quot;subscribed to&quot;
+
+  AUTHOR {
+    int id PK
+    string name
+    string bio
+    string avatar_url
+  }
+  ARTICLE {
+    int id PK
+    int author_id FK
+    string title
+    text content
+    date published_at
+    string status
+  }
+  TAG {
+    int id PK
+    string name UK
+  }
+  TAG_MAP {
+    int article_id FK
+    int tag_id FK
+  }
+  COMMENT {
+    int id PK
+    int article_id FK
+    int reader_id FK
+    text body
+    date created_at
+  }
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/er_blog_mmdr.svg?v=14" alt="mmdr er_blog"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/er_blog_official.svg?v=14" alt="official er_blog"></div></div><h2>Pie Chart</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>pie showData
   title Pets
   &quot;Dogs&quot; : 10
   Cats : 5
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/pie_basic_mmdr.svg?v=12" alt="mmdr pie_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/pie_basic_official.svg?v=12" alt="official pie_basic"></div></div><h3 class="example-title">Segments</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>pie showData
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/pie_basic_mmdr.svg?v=14" alt="mmdr pie_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/pie_basic_official.svg?v=14" alt="official pie_basic"></div></div><h3 class="example-title">Segments</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>pie showData
   title Platforms
   &quot;Web&quot; : 45
   &quot;iOS&quot; : 25
   &quot;Android&quot; : 20
   &quot;Desktop&quot; : 10
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/pie_segments_mmdr.svg?v=12" alt="mmdr pie_segments"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/pie_segments_official.svg?v=12" alt="official pie_segments"></div></div><h2>Gantt Chart</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>gantt
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/pie_segments_mmdr.svg?v=14" alt="mmdr pie_segments"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/pie_segments_official.svg?v=14" alt="official pie_segments"></div></div><h3 class="example-title">Browser Share</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>pie showData title Browser Market Share
+  &quot;Chrome&quot; : 65
+  &quot;Safari&quot; : 19
+  &quot;Firefox&quot; : 4
+  &quot;Edge&quot; : 4
+  &quot;Opera&quot; : 3
+  &quot;Other&quot; : 5
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/pie_multicolor_mmdr.svg?v=14" alt="mmdr pie_multicolor"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/pie_multicolor_official.svg?v=14" alt="official pie_multicolor"></div></div><h2>Gantt Chart</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>gantt
   title Plan
   dateFormat  YYYY-MM-DD
   section Alpha
   Task A : done, a1, 2026-01-01, 5d
   Task B : after a1, 3d
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/gantt_basic_mmdr.svg?v=12" alt="mmdr gantt_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/gantt_basic_official.svg?v=12" alt="official gantt_basic"></div></div><h3 class="example-title">Release Plan</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>gantt
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/gantt_basic_mmdr.svg?v=14" alt="mmdr gantt_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/gantt_basic_official.svg?v=14" alt="official gantt_basic"></div></div><h3 class="example-title">Release Plan</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>gantt
   title Release Plan
   dateFormat  YYYY-MM-DD
   section Design
@@ -176,12 +634,53 @@ SESSION {
   section Launch
   QA : 2026-01-20, 4d
   Release : milestone, 2026-01-26, 0d
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/gantt_release_mmdr.svg?v=12" alt="mmdr gantt_release"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/gantt_release_official.svg?v=12" alt="official gantt_release"></div></div><h2>Mindmap</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>mindmap
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/gantt_release_mmdr.svg?v=14" alt="mmdr gantt_release"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/gantt_release_official.svg?v=14" alt="official gantt_release"></div></div><h3 class="example-title">Full Project</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>gantt
+  title Project Timeline
+  dateFormat YYYY-MM-DD
+  excludes weekends
+
+  section Planning
+    Requirements     :done, req, 2024-01-01, 14d
+    Architecture     :done, arch, after req, 7d
+    Design Review    :milestone, m1, after arch, 0d
+
+  section Development
+    Backend API      :active, api, after arch, 21d
+    Frontend UI      :active, ui, after arch, 28d
+    Database Schema  :crit, db, after arch, 14d
+    Integration      :int, after api, 14d
+
+  section Testing
+    Unit Tests       :test1, after api, 7d
+    E2E Tests        :test2, after int, 10d
+    Performance      :test3, after test2, 5d
+
+  section Release
+    Staging Deploy   :stage, after test3, 3d
+    Production       :milestone, m2, after stage, 0d
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/gantt_full_mmdr.svg?v=14" alt="mmdr gantt_full"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/gantt_full_official.svg?v=14" alt="official gantt_full"></div></div><h3 class="example-title">Sprint Plan</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>gantt
+  title Sprint Plan
+  dateFormat YYYY-MM-DD
+
+  section Backend
+    Auth module     :a1, 2024-03-01, 5d
+    API endpoints   :a2, after a1, 3d
+    Data migration  :a3, after a2, 4d
+
+  section Frontend
+    Login page      :b1, 2024-03-01, 3d
+    Dashboard       :b2, after b1, 5d
+    Settings        :b3, after b2, 2d
+
+  section DevOps
+    CI pipeline     :c1, 2024-03-01, 2d
+    Deploy scripts  :c2, after c1, 2d
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/gantt_sections_mmdr.svg?v=14" alt="mmdr gantt_sections"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/gantt_sections_official.svg?v=14" alt="official gantt_sections"></div></div><h2>Mindmap</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>mindmap
   root((Root))
     Child A
     Child B
       Grandchild
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/mindmap_basic_mmdr.svg?v=12" alt="mmdr mindmap_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/mindmap_basic_official.svg?v=12" alt="official mindmap_basic"></div></div><h3 class="example-title">Deep</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>mindmap
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/mindmap_basic_mmdr.svg?v=14" alt="mmdr mindmap_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/mindmap_basic_official.svg?v=14" alt="official mindmap_basic"></div></div><h3 class="example-title">Deep</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>mindmap
   root((Project))
     Planning
       Scope
@@ -194,11 +693,40 @@ SESSION {
     Launch
       Beta
       GA
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/mindmap_deep_mmdr.svg?v=12" alt="mmdr mindmap_deep"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/mindmap_deep_official.svg?v=12" alt="official mindmap_deep"></div></div><h2>Timeline</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>timeline
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/mindmap_deep_mmdr.svg?v=14" alt="mmdr mindmap_deep"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/mindmap_deep_official.svg?v=14" alt="official mindmap_deep"></div></div><h3 class="example-title">Project Structure</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>mindmap
+  root((Project))
+    Frontend
+      React
+        Components
+        Hooks
+        State Management
+      Styling
+        CSS Modules
+        Tailwind
+    Backend
+      Node.js
+        Express
+        Middleware
+      Database
+        PostgreSQL
+        Redis
+    DevOps
+      CI/CD
+      Docker
+      Kubernetes
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/mindmap_project_mmdr.svg?v=14" alt="mmdr mindmap_project"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/mindmap_project_official.svg?v=14" alt="official mindmap_project"></div></div><h3 class="example-title">Node Shapes</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>mindmap
+  root((Central Topic))
+    (Rounded)
+      [Square]
+      ((Circle))
+    )Cloud(
+      ))Bang((
+    {{Hexagon}}
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/mindmap_shapes_mmdr.svg?v=14" alt="mmdr mindmap_shapes"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/mindmap_shapes_official.svg?v=14" alt="official mindmap_shapes"></div></div><h2>Timeline</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>timeline
   title History
   2020 : Launch
   2021 : Growth
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/timeline_basic_mmdr.svg?v=12" alt="mmdr timeline_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/timeline_basic_official.svg?v=12" alt="official timeline_basic"></div></div><h3 class="example-title">Phases</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>timeline
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/timeline_basic_mmdr.svg?v=14" alt="mmdr timeline_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/timeline_basic_official.svg?v=14" alt="official timeline_basic"></div></div><h3 class="example-title">Phases</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>timeline
   title Product Timeline
   section Phase 1
     2022 : MVP
@@ -206,12 +734,34 @@ SESSION {
   section Phase 2
     2024 : Launch
     2025 : Growth
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/timeline_release_mmdr.svg?v=12" alt="mmdr timeline_release"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/timeline_release_official.svg?v=12" alt="official timeline_release"></div></div><h2>User Journey</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>journey
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/timeline_release_mmdr.svg?v=14" alt="mmdr timeline_release"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/timeline_release_official.svg?v=14" alt="official timeline_release"></div></div><h3 class="example-title">Computing History</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>timeline
+  title History of Computing
+  section Early Era
+    1940s : ENIAC built
+          : First programmable computer
+    1950s : FORTRAN created
+          : First high-level language
+  section Personal Computing
+    1970s : Apple II released
+          : Commodore PET
+    1980s : IBM PC launched
+          : Macintosh introduced
+  section Internet Age
+    1990s : World Wide Web
+          : Amazon founded
+    2000s : Google IPO
+          : iPhone released
+  section Modern Era
+    2010s : Cloud computing boom
+          : AI renaissance
+    2020s : GPT revolution
+          : Quantum progress
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/timeline_detailed_mmdr.svg?v=14" alt="mmdr timeline_detailed"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/timeline_detailed_official.svg?v=14" alt="official timeline_detailed"></div></div><h2>User Journey</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>journey
   title My Journey
   section Start
     Step one: 5: Alice
     Step two: 3: Alice, Bob
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/journey_basic_mmdr.svg?v=12" alt="mmdr journey_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/journey_basic_official.svg?v=12" alt="official journey_basic"></div></div><h3 class="example-title">Team</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>journey
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/journey_basic_mmdr.svg?v=14" alt="mmdr journey_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/journey_basic_official.svg?v=14" alt="official journey_basic"></div></div><h3 class="example-title">Team</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>journey
   title Onboarding
   section Signup
     Create account: 5: Alice
@@ -219,14 +769,29 @@ SESSION {
   section Setup
     Connect data: 3: Alice, Bob
     Configure alerts: 2: Bob
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/journey_team_mmdr.svg?v=12" alt="mmdr journey_team"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/journey_team_official.svg?v=12" alt="official journey_team"></div></div><h2>Git Graph</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>gitGraph
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/journey_team_mmdr.svg?v=14" alt="mmdr journey_team"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/journey_team_official.svg?v=14" alt="official journey_team"></div></div><h3 class="example-title">Shopping Experience</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>journey
+  title Online Shopping Experience
+  section Discovery
+    Search for product: 5: Customer
+    Browse categories: 3: Customer
+    Read reviews: 4: Customer
+  section Purchase
+    Add to cart: 5: Customer
+    Enter shipping info: 2: Customer
+    Payment: 3: Customer, Payment System
+    Order confirmation: 5: Customer, Email System
+  section Delivery
+    Track package: 4: Customer, Logistics
+    Receive delivery: 5: Customer, Logistics
+    Leave review: 3: Customer
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/journey_shopping_mmdr.svg?v=14" alt="mmdr journey_shopping"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/journey_shopping_official.svg?v=14" alt="official journey_shopping"></div></div><h2>Git Graph</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>gitGraph
   commit
   branch feature
   checkout feature
   commit id:&quot;F1&quot;
   checkout main
   merge feature
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/gitgraph_basic_mmdr.svg?v=12" alt="mmdr gitgraph_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/gitgraph_basic_official.svg?v=12" alt="official gitgraph_basic"></div></div><h3 class="example-title">Branching</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>gitGraph
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/gitgraph_basic_mmdr.svg?v=14" alt="mmdr gitgraph_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/gitgraph_basic_official.svg?v=14" alt="official gitgraph_basic"></div></div><h3 class="example-title">Branching</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>gitGraph
   commit id:&quot;Init&quot;
   branch feature
   checkout feature
@@ -236,17 +801,62 @@ SESSION {
   commit id:&quot;M1&quot;
   merge feature
   commit id:&quot;Release&quot;
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/gitgraph_branching_mmdr.svg?v=12" alt="mmdr gitgraph_branching"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/gitgraph_branching_official.svg?v=12" alt="official gitgraph_branching"></div></div><h2>XY Chart</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>xychart-beta
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/gitgraph_branching_mmdr.svg?v=14" alt="mmdr gitgraph_branching"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/gitgraph_branching_official.svg?v=14" alt="official gitgraph_branching"></div></div><h3 class="example-title">Release Flow</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>gitGraph
+  commit id: &quot;init&quot;
+  commit id: &quot;add readme&quot;
+  branch develop
+  commit id: &quot;setup ci&quot;
+  branch feature/auth
+  commit id: &quot;login page&quot;
+  commit id: &quot;auth api&quot;
+  checkout develop
+  merge feature/auth
+  branch feature/dashboard
+  commit id: &quot;dashboard ui&quot;
+  commit id: &quot;charts&quot;
+  checkout develop
+  merge feature/dashboard
+  checkout main
+  merge develop tag: &quot;v1.0&quot;
+  commit id: &quot;hotfix&quot;
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/gitgraph_release_mmdr.svg?v=14" alt="mmdr gitgraph_release"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/gitgraph_release_official.svg?v=14" alt="official gitgraph_release"></div></div><h3 class="example-title">Parallel Branches</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>gitGraph
+  commit id: &quot;initial&quot;
+  branch feature-a
+  commit id: &quot;feat-a-1&quot;
+  commit id: &quot;feat-a-2&quot;
+  checkout main
+  branch feature-b
+  commit id: &quot;feat-b-1&quot;
+  checkout main
+  branch feature-c
+  commit id: &quot;feat-c-1&quot;
+  commit id: &quot;feat-c-2&quot;
+  checkout main
+  merge feature-a
+  merge feature-b
+  merge feature-c tag: &quot;v2.0&quot;
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/gitgraph_parallel_mmdr.svg?v=14" alt="mmdr gitgraph_parallel"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/gitgraph_parallel_official.svg?v=14" alt="official gitgraph_parallel"></div></div><h2>XY Chart</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>xychart-beta
   x-axis [Q1, Q2]
   y-axis Units
   bar [10, 20]
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/xychart_basic_mmdr.svg?v=12" alt="mmdr xychart_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/xychart_basic_official.svg?v=12" alt="official xychart_basic"></div></div><h3 class="example-title">Series</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>xychart-beta
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/xychart_basic_mmdr.svg?v=14" alt="mmdr xychart_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/xychart_basic_official.svg?v=14" alt="official xychart_basic"></div></div><h3 class="example-title">Series</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>xychart-beta
   title &quot;Sales&quot;
   x-axis [Q1, Q2, Q3, Q4]
   y-axis &quot;Units&quot; 0 --&gt; 100
   bar &quot;Product A&quot; [20, 30, 40, 60]
   line &quot;Product B&quot; [15, 25, 35, 50]
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/xychart_series_mmdr.svg?v=12" alt="mmdr xychart_series"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/xychart_series_official.svg?v=12" alt="official xychart_series"></div></div><h2>Quadrant Chart</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>quadrantChart
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/xychart_series_mmdr.svg?v=14" alt="mmdr xychart_series"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/xychart_series_official.svg?v=14" alt="official xychart_series"></div></div><h3 class="example-title">Line Chart</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>xychart-beta
+  title &quot;Monthly Revenue (2024)&quot;
+  x-axis [Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, Oct, Nov, Dec]
+  y-axis &quot;Revenue ($K)&quot; 0 --&gt; 500
+  line [120, 145, 160, 190, 220, 250, 280, 310, 290, 330, 370, 420]
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/xychart_line_mmdr.svg?v=14" alt="mmdr xychart_line"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/xychart_line_official.svg?v=14" alt="official xychart_line"></div></div><h3 class="example-title">Bar + Line</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>xychart-beta
+  title &quot;Sales vs Target&quot;
+  x-axis [Q1, Q2, Q3, Q4]
+  y-axis &quot;Units&quot; 0 --&gt; 1000
+  bar [500, 650, 700, 850]
+  line [600, 600, 750, 800]
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/xychart_mixed_mmdr.svg?v=14" alt="mmdr xychart_mixed"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/xychart_mixed_official.svg?v=14" alt="official xychart_mixed"></div></div><h2>Quadrant Chart</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>quadrantChart
   title Sample
   x-axis Low Reach --&gt; High Reach
   y-axis Low Engagement --&gt; High Engagement
@@ -256,7 +866,7 @@ SESSION {
   quadrant-4 Re-evaluate
   A : [0.2, 0.8]
   B : [0.7, 0.3]
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/quadrant_basic_mmdr.svg?v=12" alt="mmdr quadrant_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/quadrant_basic_official.svg?v=12" alt="official quadrant_basic"></div></div><h3 class="example-title">Strategy</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>quadrantChart
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/quadrant_basic_mmdr.svg?v=14" alt="mmdr quadrant_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/quadrant_basic_official.svg?v=14" alt="official quadrant_basic"></div></div><h3 class="example-title">Strategy</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>quadrantChart
   title Strategy
   x-axis Low Effort --&gt; High Effort
   y-axis Low Impact --&gt; High Impact
@@ -268,7 +878,146 @@ SESSION {
   Beta : [0.7, 0.8]
   Gamma : [0.3, 0.3]
   Delta : [0.8, 0.2]
-</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/quadrant_strategy_mmdr.svg?v=12" alt="mmdr quadrant_strategy"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/quadrant_strategy_official.svg?v=12" alt="official quadrant_strategy"></div></div>
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/quadrant_strategy_mmdr.svg?v=14" alt="mmdr quadrant_strategy"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/quadrant_strategy_official.svg?v=14" alt="official quadrant_strategy"></div></div><h3 class="example-title">Technology Radar</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>quadrantChart
+  title Technology Radar
+  x-axis Low Maturity --&gt; High Maturity
+  y-axis Low Impact --&gt; High Impact
+  quadrant-1 Adopt
+  quadrant-2 Trial
+  quadrant-3 Assess
+  quadrant-4 Hold
+  Kubernetes : [0.8, 0.9]
+  Rust : [0.5, 0.7]
+  WebAssembly : [0.3, 0.8]
+  GraphQL : [0.7, 0.6]
+  Deno : [0.2, 0.4]
+  HTMX : [0.3, 0.5]
+  Svelte : [0.5, 0.5]
+  Zig : [0.15, 0.3]
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/quadrant_tech_mmdr.svg?v=14" alt="mmdr quadrant_tech"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/quadrant_tech_official.svg?v=14" alt="official quadrant_tech"></div></div><h2>C4 Diagram</h2><h3 class="example-title">Context</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>C4Context
+  Person(user, &quot;User&quot;, &quot;A customer&quot;)
+  System(webapp, &quot;Web App&quot;, &quot;Main application&quot;)
+  SystemDb(db, &quot;Database&quot;, &quot;Stores data&quot;)
+  System_Ext(email, &quot;Email Service&quot;, &quot;Sends emails&quot;)
+
+  Rel(user, webapp, &quot;Uses&quot;, &quot;HTTPS&quot;)
+  Rel(webapp, db, &quot;Reads/Writes&quot;)
+  Rel(webapp, email, &quot;Sends via&quot;, &quot;SMTP&quot;)
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/c4_basic_mmdr.svg?v=14" alt="mmdr c4_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/c4_basic_official.svg?v=14" alt="official c4_basic"></div></div><h3 class="example-title">Container</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>C4Context
+  Person(admin, &quot;Admin&quot;, &quot;System administrator&quot;)
+  Person(user, &quot;User&quot;, &quot;End user&quot;)
+
+  Boundary(b0, &quot;Platform&quot;) {
+    System(api, &quot;API Gateway&quot;)
+    SystemDb(db, &quot;PostgreSQL&quot;)
+    System(cache, &quot;Redis Cache&quot;)
+    System(queue, &quot;Message Queue&quot;)
+  }
+
+  System_Ext(auth, &quot;Auth Provider&quot;, &quot;OAuth2&quot;)
+
+  Rel(user, api, &quot;Uses&quot;)
+  Rel(admin, api, &quot;Manages&quot;)
+  Rel(api, db, &quot;Queries&quot;)
+  Rel(api, cache, &quot;Caches&quot;)
+  Rel(api, queue, &quot;Publishes&quot;)
+  Rel(api, auth, &quot;Authenticates&quot;)
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/c4_container_mmdr.svg?v=14" alt="mmdr c4_container"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/c4_container_official.svg?v=14" alt="official c4_container"></div></div><h2>Sankey Diagram</h2><h3 class="example-title">Energy Flow</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>sankey-beta
+  Agricultural waste,Bio-conversion,124.729
+  Bio-conversion,Liquid,0.597
+  Bio-conversion,Losses,26.862
+  Bio-conversion,Solid,280.322
+  Bio-conversion,Gas,81.144
+  Solid,Over generation / exports,0.001
+  Liquid,Industry,121.066
+  Gas,Heating and cooling,79.329
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/sankey_basic_mmdr.svg?v=14" alt="mmdr sankey_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/sankey_basic_official.svg?v=14" alt="official sankey_basic"></div></div><h2>Block Diagram</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>block-beta
+  columns 3
+  A[&quot;Frontend&quot;] B[&quot;API&quot;] C[&quot;Database&quot;]
+  D[&quot;Cache&quot;]:2 E[&quot;Queue&quot;]
+  F[&quot;Monitor&quot;]:3
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/block_basic_mmdr.svg?v=14" alt="mmdr block_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/block_basic_official.svg?v=14" alt="official block_basic"></div></div><h2>Packet Diagram</h2><h3 class="example-title">IPv4 Header</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>packet-beta
+  0-3: &quot;Version&quot;
+  4-7: &quot;IHL&quot;
+  8-15: &quot;Type of Service&quot;
+  16-31: &quot;Total Length&quot;
+  32-47: &quot;Identification&quot;
+  48-50: &quot;Flags&quot;
+  51-63: &quot;Fragment Offset&quot;
+  64-71: &quot;TTL&quot;
+  72-79: &quot;Protocol&quot;
+  80-95: &quot;Header Checksum&quot;
+  96-127: &quot;Source Address&quot;
+  128-159: &quot;Destination Address&quot;
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/packet_basic_mmdr.svg?v=14" alt="mmdr packet_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/packet_basic_official.svg?v=14" alt="official packet_basic"></div></div><h2>Kanban Board</h2><h3 class="example-title">Sprint Board</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>kanban
+  Backlog
+    id1[Design new landing page]
+    id2[Fix login bug]
+  todo[To Do]
+    id3[Write API tests]
+    id4[Update dependencies]
+  doing[In Progress]
+    id5[Implement auth flow]
+  review[Code Review]
+    id6[Refactor database layer]
+  done[Done]
+    id7[Setup CI/CD pipeline]
+    id8[Deploy v1.0]
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/kanban_basic_mmdr.svg?v=14" alt="mmdr kanban_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/kanban_basic_official.svg?v=14" alt="official kanban_basic"></div></div><h2>Requirement Diagram</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>requirementDiagram
+
+    requirement login {
+    id: 1
+    text: Users must log in
+    risk: high
+    verifymethod: test
+    }
+
+    requirement session {
+    id: 2
+    text: Sessions expire after 30 min
+    risk: medium
+    verifymethod: test
+    }
+
+    requirement audit {
+    id: 3
+    text: All logins must be logged
+    risk: low
+    verifymethod: inspection
+    }
+
+    element webapp {
+    type: application
+    }
+
+    login - satisfies -&gt; session
+    login - traces -&gt; audit
+    webapp - satisfies -&gt; login
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/requirement_basic_mmdr.svg?v=14" alt="mmdr requirement_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/requirement_basic_official.svg?v=14" alt="official requirement_basic"></div></div><h2>Architecture Diagram</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>architecture-beta
+  group api(cloud)[Cloud Platform]
+
+  service gateway(internet)[API Gateway] in api
+  service app(server)[App Server] in api
+  service db(database)[Database] in api
+  service cache(database)[Cache] in api
+
+  gateway:R --&gt; L:app
+  app:R --&gt; L:db
+  app:B --&gt; T:cache
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/architecture_basic_mmdr.svg?v=14" alt="mmdr architecture_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/architecture_basic_official.svg?v=14" alt="official architecture_basic"></div></div><h2>Radar Chart</h2><h3 class="example-title">Comparison</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>radar-beta
+  axis Speed, Reliability, Scalability, Security, Usability
+  curve &quot;Product A&quot; { 4, 3, 5, 4, 3 }
+  curve &quot;Product B&quot; { 3, 5, 3, 5, 4 }
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/radar_basic_mmdr.svg?v=14" alt="mmdr radar_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/radar_basic_official.svg?v=14" alt="official radar_basic"></div></div><h2>Treemap</h2><h3 class="example-title">Revenue</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>treemap-beta
+  Revenue
+    Product Sales: 450
+      Hardware: 200
+      Software: 250
+    Services: 300
+      Consulting: 180
+      Support: 120
+    Licensing: 150
+</pre></div><div class="panel mmdr"><h3>mmdr</h3><img src="comparisons/treemap_basic_mmdr.svg?v=14" alt="mmdr treemap_basic"></div><div class="panel official"><h3>mermaid-cli</h3><img src="comparisons/treemap_basic_official.svg?v=14" alt="official treemap_basic"></div></div>
 
 <script>
 (() => {

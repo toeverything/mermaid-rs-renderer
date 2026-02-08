@@ -1,0 +1,15 @@
+stateDiagram-v2
+  [*] --> Active
+  state Active {
+    [*] --> Running
+    Running --> Paused : pause
+    Paused --> Running : resume
+    state Running {
+      [*] --> Processing
+      Processing --> Waiting : yield
+      Waiting --> Processing : wake
+    }
+  }
+  Active --> Stopped : stop
+  Stopped --> Active : restart
+  Stopped --> [*]

@@ -1,0 +1,9 @@
+C4Context
+  Person(user, "User", "A customer")
+  System(webapp, "Web App", "Main application")
+  SystemDb(db, "Database", "Stores data")
+  System_Ext(email, "Email Service", "Sends emails")
+
+  Rel(user, webapp, "Uses", "HTTPS")
+  Rel(webapp, db, "Reads/Writes")
+  Rel(webapp, email, "Sends via", "SMTP")

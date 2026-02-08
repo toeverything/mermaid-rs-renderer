@@ -1,0 +1,7 @@
+flowchart LR
+  A[Client] -->|POST /login| B[API Gateway]
+  B -->|Forward request| C[Auth Service]
+  C -->|Query credentials| D[(User DB)]
+  D -->|Return user| C
+  C -->|Generate token| B
+  B -->|Set cookie &\nreturn 200| A

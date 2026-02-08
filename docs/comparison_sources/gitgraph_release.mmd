@@ -1,0 +1,18 @@
+gitGraph
+  commit id: "init"
+  commit id: "add readme"
+  branch develop
+  commit id: "setup ci"
+  branch feature/auth
+  commit id: "login page"
+  commit id: "auth api"
+  checkout develop
+  merge feature/auth
+  branch feature/dashboard
+  commit id: "dashboard ui"
+  commit id: "charts"
+  checkout develop
+  merge feature/dashboard
+  checkout main
+  merge develop tag: "v1.0"
+  commit id: "hotfix"

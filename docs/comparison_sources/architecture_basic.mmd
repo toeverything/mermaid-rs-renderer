@@ -1,0 +1,11 @@
+architecture-beta
+  group api(cloud)[Cloud Platform]
+
+  service gateway(internet)[API Gateway] in api
+  service app(server)[App Server] in api
+  service db(database)[Database] in api
+  service cache(database)[Cache] in api
+
+  gateway:R --> L:app
+  app:R --> L:db
+  app:B --> T:cache

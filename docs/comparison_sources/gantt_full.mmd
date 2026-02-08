@@ -1,0 +1,24 @@
+gantt
+  title Project Timeline
+  dateFormat YYYY-MM-DD
+  excludes weekends
+
+  section Planning
+    Requirements     :done, req, 2024-01-01, 14d
+    Architecture     :done, arch, after req, 7d
+    Design Review    :milestone, m1, after arch, 0d
+
+  section Development
+    Backend API      :active, api, after arch, 21d
+    Frontend UI      :active, ui, after arch, 28d
+    Database Schema  :crit, db, after arch, 14d
+    Integration      :int, after api, 14d
+
+  section Testing
+    Unit Tests       :test1, after api, 7d
+    E2E Tests        :test2, after int, 10d
+    Performance      :test3, after test2, 5d
+
+  section Release
+    Staging Deploy   :stage, after test3, 3d
+    Production       :milestone, m2, after stage, 0d

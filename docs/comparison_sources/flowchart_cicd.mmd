@@ -1,0 +1,15 @@
+flowchart LR
+  A[Push to Git] --> B{CI Triggered}
+  B --> C[Lint]
+  B --> D[Unit Tests]
+  B --> E[Build]
+  C --> F{All Pass?}
+  D --> F
+  E --> F
+  F -->|Yes| G[Deploy to Staging]
+  F -->|No| H[Notify Developer]
+  G --> I{QA Approved?}
+  I -->|Yes| J[Deploy to Production]
+  I -->|No| H
+  J --> K[Monitor]
+  K -->|Alert| H
