@@ -208,3 +208,70 @@ fn max_label_width_px(
     let avg_char = average_char_width(font_family, font_size, fast_metrics);
     (max_chars.max(1) as f32) * avg_char
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn split_lines_handles_br_tags() {
+        assert_eq!(split_lines("a<br/>b"), vec!["a", "b"]);
+        assert_eq!(split_lines("a<br>b"), vec!["a", "b"]);
+        assert_eq!(split_lines("a\\nb"), vec!["a", "b"]);
+    }
+
+    #[test]
+    fn split_lines_trims_whitespace() {
+        assert_eq!(split_lines("  hello  \n  world  "), vec!["hello", "world"]);
+    }
+
+    #[test]
+    fn char_width_factor_returns_positive_values() {
+        for ch in ['a', 'Z', ' ', '0', '@', '\u{4e2d}'] {
+            assert!(char_width_factor(ch) > 0.0, "char {:?} has zero width", ch);
+        }
+    }
+
+    #[test]
+    fn fallback_text_width_scales_with_font_size() {
+        let w16 = fallback_text_width("Hello", 16.0);
+        let w32 = fallback_text_width("Hello", 32.0);
+        assert!((w32 - w16 * 2.0).abs() < 0.01, "width should double with font size");
+    }
+
+    #[test]
+    fn wrap_line_does_not_wrap_short_text() {
+        let result = wrap_line("short", 1000.0, 16.0, "sans-serif", true);
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn wrap_line_splits_long_text() {
+        let result = wrap_line(
+            "this is a rather long line that should be wrapped",
+            100.0,
+            16.0,
+            "sans-serif",
+            true,
+        );
+        assert!(result.len() > 1, "expected wrapping, got {:?}", result);
+    }
+
+    #[test]
+    fn measure_label_produces_nonempty_block() {
+        let theme = Theme::modern();
+        let config = LayoutConfig::default();
+        let block = measure_label("Hello world", &theme, &config);
+        assert!(!block.lines.is_empty());
+        assert!(block.width > 0.0);
+        assert!(block.height > 0.0);
+    }
+
+    #[test]
+    fn measure_label_empty_string_produces_single_line() {
+        let theme = Theme::modern();
+        let config = LayoutConfig::default();
+        let block = measure_label("", &theme, &config);
+        assert_eq!(block.lines.len(), 1);
+    }
+}

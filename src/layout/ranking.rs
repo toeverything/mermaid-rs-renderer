@@ -260,3 +260,103 @@ pub(super) fn compute_ranks_subset(
 
     ranks
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn edge(from: &str, to: &str) -> crate::ir::Edge {
+        crate::ir::Edge {
+            from: from.to_string(),
+            to: to.to_string(),
+            label: None,
+            start_label: None,
+            end_label: None,
+            directed: true,
+            arrow_start: false,
+            arrow_end: true,
+            arrow_start_kind: None,
+            arrow_end_kind: None,
+            start_decoration: None,
+            end_decoration: None,
+            style: crate::ir::EdgeStyle::Solid,
+        }
+    }
+
+    #[test]
+    fn compute_ranks_linear_chain() {
+        let nodes = vec!["A".into(), "B".into(), "C".into()];
+        let edges = vec![edge("A", "B"), edge("B", "C")];
+        let ranks = compute_ranks_subset(&nodes, &edges, &HashMap::new());
+        assert_eq!(ranks["A"], 0);
+        assert_eq!(ranks["B"], 1);
+        assert_eq!(ranks["C"], 2);
+    }
+
+    #[test]
+    fn compute_ranks_diamond() {
+        let nodes = vec!["A".into(), "B".into(), "C".into(), "D".into()];
+        let edges = vec![edge("A", "B"), edge("A", "C"), edge("B", "D"), edge("C", "D")];
+        let ranks = compute_ranks_subset(&nodes, &edges, &HashMap::new());
+        assert_eq!(ranks["A"], 0);
+        assert_eq!(ranks["B"], 1);
+        assert_eq!(ranks["C"], 1);
+        assert_eq!(ranks["D"], 2);
+    }
+
+    #[test]
+    fn compute_ranks_handles_cycle() {
+        let nodes = vec!["A".into(), "B".into(), "C".into()];
+        let edges = vec![edge("A", "B"), edge("B", "C"), edge("C", "A")];
+        let ranks = compute_ranks_subset(&nodes, &edges, &HashMap::new());
+        // All nodes should get a rank (cycle doesn't cause infinite loop)
+        assert_eq!(ranks.len(), 3);
+    }
+
+    #[test]
+    fn compute_ranks_disconnected_nodes() {
+        let nodes = vec!["A".into(), "B".into(), "C".into()];
+        let edges = vec![edge("A", "B")];
+        let ranks = compute_ranks_subset(&nodes, &edges, &HashMap::new());
+        assert_eq!(ranks["A"], 0);
+        assert_eq!(ranks["B"], 1);
+        assert_eq!(ranks["C"], 0); // disconnected → rank 0
+    }
+
+    #[test]
+    fn median_position_with_no_neighbors() {
+        let neighbors: HashMap<String, Vec<String>> = HashMap::new();
+        let positions: HashMap<String, usize> = HashMap::new();
+        let current: HashMap<String, usize> = [("X".to_string(), 3)].into();
+        assert_eq!(median_position("X", &neighbors, &positions, &current), 3.0);
+    }
+
+    #[test]
+    fn median_position_odd_count() {
+        let neighbors: HashMap<String, Vec<String>> =
+            [("X".to_string(), vec!["A".into(), "B".into(), "C".into()])].into();
+        let positions: HashMap<String, usize> =
+            [("A".into(), 1), ("B".into(), 5), ("C".into(), 9)].into();
+        let current: HashMap<String, usize> = [("X".to_string(), 0)].into();
+        assert_eq!(median_position("X", &neighbors, &positions, &current), 5.0);
+    }
+
+    #[test]
+    fn order_rank_nodes_reduces_crossings() {
+        // A→D, B→E, C→F — rank1 starts in wrong order [F,D,E]
+        // median-based ordering should move D before E before F
+        let edges = vec![edge("A", "D"), edge("B", "E"), edge("C", "F")];
+        let mut rank_nodes = vec![
+            vec!["A".into(), "B".into(), "C".into()],
+            vec!["F".into(), "D".into(), "E".into()],
+        ];
+        order_rank_nodes(&mut rank_nodes, &edges, &HashMap::new(), 3);
+        // D should end up before E which should be before F
+        let pos_d = rank_nodes[1].iter().position(|n| n == "D").unwrap();
+        let pos_e = rank_nodes[1].iter().position(|n| n == "E").unwrap();
+        let pos_f = rank_nodes[1].iter().position(|n| n == "F").unwrap();
+        assert!(pos_d < pos_e, "D should precede E, got {:?}", rank_nodes[1]);
+        assert!(pos_e < pos_f, "E should precede F, got {:?}", rank_nodes[1]);
+    }
+}

@@ -792,3 +792,115 @@ fn edge_endpoint_label_position_with_avoid(
     }
     Some(best_pos)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overlap_area_no_overlap() {
+        let a: Rect = (0.0, 0.0, 10.0, 10.0);
+        let b: Rect = (20.0, 20.0, 10.0, 10.0);
+        assert_eq!(overlap_area(&a, &b), 0.0);
+    }
+
+    #[test]
+    fn overlap_area_partial_overlap() {
+        let a: Rect = (0.0, 0.0, 10.0, 10.0);
+        let b: Rect = (5.0, 5.0, 10.0, 10.0);
+        assert_eq!(overlap_area(&a, &b), 25.0);
+    }
+
+    #[test]
+    fn overlap_area_contained() {
+        let a: Rect = (0.0, 0.0, 20.0, 20.0);
+        let b: Rect = (5.0, 5.0, 5.0, 5.0);
+        assert_eq!(overlap_area(&a, &b), 25.0);
+    }
+
+    #[test]
+    fn outside_area_fully_inside() {
+        let rect: Rect = (10.0, 10.0, 20.0, 20.0);
+        assert_eq!(outside_area(&rect, (100.0, 100.0)), 0.0);
+    }
+
+    #[test]
+    fn outside_area_partially_outside() {
+        let rect: Rect = (90.0, 0.0, 20.0, 10.0);
+        // 10 pixels overhang on x, so 10*10 = 100 pixels outside
+        assert_eq!(outside_area(&rect, (100.0, 100.0)), 100.0);
+    }
+
+    #[test]
+    fn outside_area_fully_outside() {
+        let rect: Rect = (200.0, 200.0, 10.0, 10.0);
+        assert_eq!(outside_area(&rect, (100.0, 100.0)), 100.0);
+    }
+
+    #[test]
+    fn clamp_label_center_stays_inside() {
+        // Label 20x10 with 2px padding, bounds 100x100
+        let result = clamp_label_center_to_bounds((5.0, 5.0), 20.0, 10.0, 2.0, 2.0, (100.0, 100.0));
+        assert!(result.0 >= 12.0, "x should be clamped away from left edge");
+        assert!(result.1 >= 7.0, "y should be clamped away from top edge");
+    }
+
+    #[test]
+    fn clamp_label_center_no_op_when_inside() {
+        let result = clamp_label_center_to_bounds((50.0, 50.0), 20.0, 10.0, 2.0, 2.0, (100.0, 100.0));
+        assert_eq!(result, (50.0, 50.0));
+    }
+
+    #[test]
+    fn obstacle_grid_query_finds_nearby_rect() {
+        let rects = vec![(10.0, 10.0, 30.0, 30.0)];
+        let grid = ObstacleGrid::new(20.0, &rects);
+        let hits: Vec<usize> = grid.query(&(15.0, 15.0, 5.0, 5.0)).collect();
+        assert!(hits.contains(&0), "grid should find overlapping rect");
+    }
+
+    #[test]
+    fn obstacle_grid_query_misses_distant_rect() {
+        let rects = vec![(10.0, 10.0, 30.0, 30.0)];
+        let grid = ObstacleGrid::new(20.0, &rects);
+        let hits: Vec<usize> = grid.query(&(200.0, 200.0, 5.0, 5.0)).collect();
+        assert!(hits.is_empty(), "grid should not find distant rect");
+    }
+
+    #[test]
+    fn obstacle_grid_insert_finds_new_item() {
+        let initial: Vec<Rect> = vec![];
+        let mut grid = ObstacleGrid::new(20.0, &initial);
+        let new_rect: Rect = (50.0, 50.0, 10.0, 10.0);
+        grid.insert(0, &new_rect);
+        let hits: Vec<usize> = grid.query(&(55.0, 55.0, 1.0, 1.0)).collect();
+        assert!(hits.contains(&0));
+    }
+
+    #[test]
+    fn edge_label_anchor_midpoint() {
+        let edge = EdgeLayout {
+            from: "A".into(),
+            to: "B".into(),
+            points: vec![(0.0, 0.0), (100.0, 0.0)],
+            label: None,
+            start_label: None,
+            end_label: None,
+            label_anchor: None,
+            start_label_anchor: None,
+            end_label_anchor: None,
+            directed: true,
+            arrow_end: true,
+            arrow_start: false,
+            arrow_end_kind: None,
+            arrow_start_kind: None,
+            end_decoration: None,
+            start_decoration: None,
+            style: crate::ir::EdgeStyle::Solid,
+            override_style: crate::ir::EdgeStyleOverride::default(),
+        };
+        let (x, y, _dx, _dy) = edge_label_anchor(&edge);
+        assert!((x - 50.0).abs() < 1.0, "midpoint x should be ~50, got {}", x);
+        assert!((y - 0.0).abs() < 1.0, "midpoint y should be ~0, got {}", y);
+    }
+}
