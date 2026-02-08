@@ -1301,7 +1301,7 @@ pub(super) fn route_edge_with_avoidance(
     );
 
     // Fall back to orthogonal routing with control points
-    let step = ctx.config.node_spacing.max(16.0) * 0.6;
+    let step = ctx.config.node_spacing.max(ORTHO_STEP_MIN_SPACING) * ROUTING_PAD_RATIO;
     let mut offsets = vec![ctx.base_offset];
     for i in 1..=6 {
         let delta = step * i as f32;
@@ -1314,7 +1314,7 @@ pub(super) fn route_edge_with_avoidance(
     } else {
         (route_end.0 - route_start.0).abs()
     };
-    let use_channel_candidates = cross_axis_delta > step * 0.75 && ctx.obstacles.len() > 10;
+    let use_channel_candidates = cross_axis_delta > step * CHANNEL_CANDIDATE_RATIO && ctx.obstacles.len() > 10;
 
     for (offset_rank, offset) in offsets.iter().copied().enumerate() {
         if is_horizontal(ctx.direction) {
@@ -1504,7 +1504,7 @@ pub(super) fn route_edge_with_avoidance(
         if let Some(points) = candidates.get(best_idx) {
             let overlap = occ.overlap_count(points);
             let path_len = path_length(points);
-            let overlap_trigger = ((path_len / occ.cell) * 0.35).max(4.0).ceil() as u32;
+            let overlap_trigger = ((path_len / occ.cell) * OVERLAP_TRIGGER_RATIO).max(OVERLAP_TRIGGER_MIN).ceil() as u32;
             if overlap >= overlap_trigger {
                 needs_detour = true;
             }
@@ -1801,7 +1801,7 @@ pub(super) fn route_self_loop(
     direction: Direction,
     config: &LayoutConfig,
 ) -> Vec<(f32, f32)> {
-    let pad = config.node_spacing.max(20.0) * 0.6;
+    let pad = config.node_spacing.max(ROUTING_PAD_MIN_SPACING) * ROUTING_PAD_RATIO;
     if is_horizontal(direction) {
         let start = (node.x + node.width, node.y + node.height / 2.0);
         let p1 = (node.x + node.width + pad, node.y + node.height / 2.0);
@@ -1881,7 +1881,7 @@ pub(super) fn build_obstacles(
     config: &LayoutConfig,
 ) -> Vec<Obstacle> {
     let mut obstacles = Vec::new();
-    let pad = (config.node_spacing * 0.35).max(6.0);
+    let pad = (config.node_spacing * OBSTACLE_PAD_RATIO).max(OBSTACLE_PAD_MIN);
     for node in nodes.values() {
         if node.hidden {
             continue;
@@ -1930,7 +1930,7 @@ pub(super) fn build_label_obstacles_for_routing(
 ) -> Vec<Obstacle> {
     let mut obstacles = Vec::new();
 
-    let node_pad = 2.0;
+    let node_pad = LABEL_OBSTACLE_NODE_PAD;
     for node in nodes.values() {
         if node.hidden || node.anchor_subgraph.is_some() {
             continue;
