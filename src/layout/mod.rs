@@ -1834,29 +1834,80 @@ fn apply_orthogonal_region_bands(
     }
 }
 
-fn top_level_subgraph_indices(graph: &Graph) -> Vec<usize> {
-    let mut sets: Vec<HashSet<String>> = Vec::new();
-    for sub in &graph.subgraphs {
-        sets.push(sub.nodes.iter().cloned().collect());
+/// Pre-computed containment tree for subgraphs.
+///
+/// Built once from `graph.subgraphs` by checking subset relationships between
+/// node sets.  Each subgraph is assigned an optional `parent` (the *smallest*
+/// containing subgraph) and a list of `children`.  Top-level subgraphs have
+/// `parent == None`.
+struct SubgraphTree {
+    /// `parent[i]` = index of the immediate parent subgraph, or `None` if top-level.
+    parent: Vec<Option<usize>>,
+    /// `children[i]` = indices of immediate child subgraphs.
+    children: Vec<Vec<usize>>,
+    /// Indices of subgraphs that have no parent.
+    top_level: Vec<usize>,
+}
+
+impl SubgraphTree {
+    fn build(graph: &Graph) -> Self {
+        let n = graph.subgraphs.len();
+        let sets: Vec<HashSet<String>> = graph
+            .subgraphs
+            .iter()
+            .map(|sub| sub.nodes.iter().cloned().collect())
+            .collect();
+
+        // Sort indices by set size ascending so we can find the *smallest*
+        // containing parent efficiently.
+        let mut by_size: Vec<usize> = (0..n).collect();
+        by_size.sort_by_key(|&i| sets[i].len());
+
+        let mut parent: Vec<Option<usize>> = vec![None; n];
+        let mut children: Vec<Vec<usize>> = vec![Vec::new(); n];
+
+        // For each subgraph (from smallest to largest), find its immediate
+        // parent: the smallest subgraph that strictly contains it.
+        for (pos, &i) in by_size.iter().enumerate() {
+            for &j in &by_size[pos + 1..] {
+                if sets[j].len() > sets[i].len() && sets[i].is_subset(&sets[j]) {
+                    parent[i] = Some(j);
+                    children[j].push(i);
+                    break;
+                }
+            }
+        }
+
+        let top_level: Vec<usize> = (0..n).filter(|&i| parent[i].is_none()).collect();
+
+        SubgraphTree {
+            parent,
+            children,
+            top_level,
+        }
     }
 
-    let mut top_level = Vec::new();
-    for i in 0..graph.subgraphs.len() {
-        let mut nested = false;
-        for j in 0..graph.subgraphs.len() {
-            if i == j {
-                continue;
+    /// Returns `true` if subgraph `ancestor` contains subgraph `descendant`
+    /// (i.e. `descendant`'s node set is a subset of `ancestor`'s).
+    fn is_ancestor(&self, ancestor: usize, descendant: usize) -> bool {
+        let mut cur = descendant;
+        loop {
+            match self.parent[cur] {
+                Some(p) if p == ancestor => return true,
+                Some(p) => cur = p,
+                None => return false,
             }
-            if sets[j].len() > sets[i].len() && sets[i].is_subset(&sets[j]) {
-                nested = true;
-                break;
-            }
-        }
-        if !nested {
-            top_level.push(i);
         }
     }
-    top_level
+
+    /// Two subgraphs are siblings if neither is an ancestor of the other.
+    fn are_siblings(&self, a: usize, b: usize) -> bool {
+        a != b && !self.is_ancestor(a, b) && !self.is_ancestor(b, a)
+    }
+}
+
+fn top_level_subgraph_indices(graph: &Graph) -> Vec<usize> {
+    SubgraphTree::build(graph).top_level
 }
 
 fn apply_subgraph_direction_overrides(
@@ -3043,14 +3094,10 @@ fn separate_sibling_subgraphs(
         return;
     }
 
-    // Build node sets for each subgraph
-    let sets: Vec<HashSet<String>> = graph
-        .subgraphs
-        .iter()
-        .map(|sub| sub.nodes.iter().cloned().collect())
-        .collect();
+    let tree = SubgraphTree::build(graph);
 
-    // Find pairs of sibling subgraphs (non-overlapping node sets)
+    // Find groups of sibling subgraphs using the containment tree.
+    // Two subgraphs are siblings if neither is an ancestor of the other.
     let mut sibling_groups: Vec<Vec<usize>> = Vec::new();
     let mut assigned: HashSet<usize> = HashSet::new();
 
@@ -3066,12 +3113,7 @@ fn separate_sibling_subgraphs(
                 continue;
             }
             // Check if j is a sibling (not nested with any in group)
-            let j_set = &sets[j];
-            let is_sibling = group.iter().all(|&k| {
-                let k_set = &sets[k];
-                // Neither is subset of the other
-                !j_set.is_subset(k_set) && !k_set.is_subset(j_set)
-            });
+            let is_sibling = group.iter().all(|&k| tree.are_siblings(j, k));
             if is_sibling {
                 group.push(j);
                 assigned.insert(j);
@@ -4068,27 +4110,46 @@ fn build_subgraph_layouts(
     }
 
     if subgraphs.len() > 1 {
-        let sets: Vec<HashSet<String>> = graph
-            .subgraphs
+        let tree = SubgraphTree::build(graph);
+
+        // Collect all descendants for each subgraph via the tree so we only
+        // visit actual parent-child pairs instead of every O(n²) combination.
+        // Process from leaves up so that child bounds are final before parents
+        // expand to contain them.
+        let mut all_descendants: Vec<Vec<usize>> = vec![Vec::new(); subgraphs.len()];
+        // Post-order traversal: collect leaves first, then parents.
+        let mut order: Vec<usize> = Vec::with_capacity(subgraphs.len());
+        let mut stack: Vec<(usize, bool)> = tree
+            .top_level
             .iter()
-            .map(|sub| sub.nodes.iter().cloned().collect())
+            .rev()
+            .map(|&i| (i, false))
             .collect();
+        while let Some((idx, visited)) = stack.pop() {
+            if visited {
+                order.push(idx);
+                continue;
+            }
+            stack.push((idx, true));
+            for &child in tree.children[idx].iter().rev() {
+                stack.push((child, false));
+            }
+        }
 
-        let mut order: Vec<usize> = (0..subgraphs.len()).collect();
-        order.sort_by_key(|i| sets[*i].len());
+        // Build transitive descendant lists bottom-up.
+        for &idx in &order {
+            let mut descs = Vec::new();
+            for &child in &tree.children[idx] {
+                descs.push(child);
+                descs.extend(all_descendants[child].iter().copied());
+            }
+            all_descendants[idx] = descs;
+        }
 
+        // Expand each parent's bounds to contain all its descendants.
         for &i in &order {
-            for &j in &order {
-                if i == j {
-                    continue;
-                }
+            for &j in &all_descendants[i] {
                 if is_region_subgraph(&graph.subgraphs[j]) {
-                    continue;
-                }
-                if sets[j].len() >= sets[i].len() {
-                    continue;
-                }
-                if !sets[j].is_subset(&sets[i]) {
                     continue;
                 }
                 let pad = 12.0;
