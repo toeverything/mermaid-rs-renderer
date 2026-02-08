@@ -6,6 +6,63 @@ use crate::ir::Direction;
 
 use super::{NodeLayout, SubgraphLayout};
 
+// ── Edge side selection ──────────────────────────────────────────────
+/// Aspect-ratio threshold for preferring horizontal vs vertical edge sides.
+const DIRECTION_PREF_RATIO: f32 = 1.35;
+/// Maximum detour penalty before a non-primary side is rejected.
+const ROUTE_DETOUR_THRESHOLD: f32 = 120.0;
+
+// ── Port stub sizing ────────────────────────────────────────────────
+/// Ratio of node_spacing used as base port stub length.
+const PORT_STUB_RATIO: f32 = 0.35;
+/// Ratio of smallest node dimension used to cap stub length.
+const PORT_STUB_SIZE_CAP_RATIO: f32 = 0.35;
+/// Default max stub length when node size cap is invalid.
+const PORT_STUB_DEFAULT_MAX: f32 = 18.0;
+/// Hard clamp range for port stub length.
+const PORT_STUB_MIN: f32 = 6.0;
+const PORT_STUB_MAX: f32 = 22.0;
+
+// ── Routing grid ────────────────────────────────────────────────────
+/// Default routing cell size as a ratio of node_spacing.
+const ROUTING_CELL_RATIO: f32 = 0.35;
+/// Minimum routing cell size.
+const ROUTING_CELL_MIN: f32 = 8.0;
+/// Minimum node spacing used to compute grid margin.
+const GRID_MARGIN_MIN_SPACING: f32 = 24.0;
+
+// ── A* cost scaling ─────────────────────────────────────────────────
+/// Integer cost multiplier so A* can use u32 costs with fractional cell sizes.
+const ASTAR_COST_SCALE: f32 = 1000.0;
+
+// ── Self-loop / orthogonal routing pad ──────────────────────────────
+/// Ratio of node_spacing used for self-loop padding and routing step.
+const ROUTING_PAD_RATIO: f32 = 0.6;
+/// Minimum node spacing for self-loop / routing pad computations.
+const ROUTING_PAD_MIN_SPACING: f32 = 20.0;
+/// Minimum node spacing used in orthogonal routing step fallback.
+const ORTHO_STEP_MIN_SPACING: f32 = 16.0;
+/// Fraction of step used as channel candidate threshold.
+const CHANNEL_CANDIDATE_RATIO: f32 = 0.75;
+
+// ── Obstacle construction ───────────────────────────────────────────
+/// Ratio of node_spacing used for obstacle padding around nodes/subgraphs.
+const OBSTACLE_PAD_RATIO: f32 = 0.35;
+/// Minimum obstacle padding.
+const OBSTACLE_PAD_MIN: f32 = 6.0;
+
+// ── Occupancy overlap detection ─────────────────────────────────────
+/// Fraction of path-length-in-cells used to trigger occupancy detour.
+const OVERLAP_TRIGGER_RATIO: f32 = 0.35;
+/// Minimum overlap cell count to trigger detour.
+const OVERLAP_TRIGGER_MIN: f32 = 4.0;
+
+// ── Label obstacle padding ──────────────────────────────────────────
+/// Padding around node labels when building label obstacles.
+const LABEL_OBSTACLE_NODE_PAD: f32 = 2.0;
+/// Padding around subgraph labels when building label obstacles.
+const LABEL_OBSTACLE_SUB_PAD: f32 = 3.0;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum EdgeSide {
     Left,
@@ -64,8 +121,8 @@ pub(super) fn edge_sides(
         || from.y < to.y + to.height && to.y < from.y + from.height;
 
     let ratio = dx.abs() / (dy.abs().max(1e-3));
-    let horiz_pref = ratio > 1.35 || (y_overlap && ratio > 0.9);
-    let vert_pref = ratio < (1.0 / 1.35) || (x_overlap && ratio < 1.1);
+    let horiz_pref = ratio > DIRECTION_PREF_RATIO || (y_overlap && ratio > 0.9);
+    let vert_pref = ratio < (1.0 / DIRECTION_PREF_RATIO) || (x_overlap && ratio < 1.1);
     let use_horizontal = if horiz_pref && !vert_pref {
         true
     } else if vert_pref && !horiz_pref {
@@ -201,7 +258,7 @@ pub(super) fn edge_sides_balanced(
         let to_anchor = anchor_point_for_node(to, end_side, 0.0);
         let manhattan = (to_anchor.0 - from_anchor.0).abs() + (to_anchor.1 - from_anchor.1).abs();
         if !(start_side == primary.0 && end_side == primary.1)
-            && manhattan > primary_manhattan * 1.35 + 120.0
+            && manhattan > primary_manhattan * DIRECTION_PREF_RATIO + ROUTE_DETOUR_THRESHOLD
         {
             continue;
         }
@@ -481,14 +538,14 @@ pub(super) fn apply_port_offset(point: (f32, f32), side: EdgeSide, offset: f32) 
 }
 
 pub(super) fn port_stub_length(config: &LayoutConfig, from: &NodeLayout, to: &NodeLayout) -> f32 {
-    let base = config.node_spacing * 0.35;
-    let size_cap = from.width.min(from.height).min(to.width.min(to.height)) * 0.35;
+    let base = config.node_spacing * PORT_STUB_RATIO;
+    let size_cap = from.width.min(from.height).min(to.width.min(to.height)) * PORT_STUB_SIZE_CAP_RATIO;
     let max_len = if size_cap.is_finite() && size_cap > 0.0 {
         size_cap
     } else {
-        18.0
+        PORT_STUB_DEFAULT_MAX
     };
-    base.min(max_len).clamp(6.0, 22.0)
+    base.min(max_len).clamp(PORT_STUB_MIN, PORT_STUB_MAX)
 }
 
 pub(super) fn port_stub_point(point: (f32, f32), side: EdgeSide, length: f32) -> (f32, f32) {
@@ -720,14 +777,14 @@ pub(super) fn anchor_point_for_node(node: &NodeLayout, side: EdgeSide, offset: f
 pub(super) fn routing_cell_size(config: &LayoutConfig) -> f32 {
     let mut cell = config.flowchart.routing.grid_cell;
     if cell <= 0.0 {
-        cell = config.node_spacing * 0.35;
+        cell = config.node_spacing * ROUTING_CELL_RATIO;
     }
-    cell.max(8.0)
+    cell.max(ROUTING_CELL_MIN)
 }
 
 pub(super) fn build_routing_grid(obstacles: &[Obstacle], config: &LayoutConfig) -> Option<RoutingGrid> {
     let cell = routing_cell_size(config);
-    let margin = config.node_spacing.max(24.0) * 2.0;
+    let margin = config.node_spacing.max(GRID_MARGIN_MIN_SPACING) * 2.0;
     let max_cells = (config.flowchart.routing.max_steps / 16).max(3000);
     RoutingGrid::new(obstacles, cell, margin, max_cells)
 }
@@ -853,11 +910,11 @@ pub(super) fn route_edge_with_grid(
     }
 
     let dirs: [(i32, i32); 4] = [(0, -1), (0, 1), (-1, 0), (1, 0)];
-    let step_cost = (grid.cell * 1000.0).round() as u32;
+    let step_cost = (grid.cell * ASTAR_COST_SCALE).round() as u32;
     let turn_penalty =
-        (ctx.config.flowchart.routing.turn_penalty * grid.cell * 1000.0).round() as u32;
+        (ctx.config.flowchart.routing.turn_penalty * grid.cell * ASTAR_COST_SCALE).round() as u32;
     let occupancy_weight =
-        (ctx.config.flowchart.routing.occupancy_weight * grid.cell * 1000.0).round() as u32;
+        (ctx.config.flowchart.routing.occupancy_weight * grid.cell * ASTAR_COST_SCALE).round() as u32;
     let max_steps = ctx.config.flowchart.routing.max_steps.max(10_000);
 
     let cols = grid.cols;
@@ -1032,7 +1089,7 @@ pub(super) fn route_edge_with_avoidance(
         let mut label_hits: Vec<usize> = Vec::new();
         let mut overlaps: Vec<f32> = Vec::new();
 
-        let pad = ctx.config.node_spacing.max(20.0) * 0.6;
+        let pad = ctx.config.node_spacing.max(ROUTING_PAD_MIN_SPACING) * ROUTING_PAD_RATIO;
         for points in route_self_loop_candidates(ctx.from, pad) {
             push_route_candidate_metrics(
                 points,
