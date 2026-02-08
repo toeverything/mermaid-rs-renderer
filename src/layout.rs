@@ -12581,6 +12581,7 @@ fn shape_size(
         crate::ir::DiagramKind::Er => (1.05, 1.15),
         crate::ir::DiagramKind::Kanban => (2.3, 0.67),
         crate::ir::DiagramKind::Requirement => (0.1, 1.0),
+        crate::ir::DiagramKind::Block => (0.5, 0.35),
         _ => (1.0, 1.0),
     };
     let mut pad_x = config.node_padding_x * pad_x_factor * kind_pad_x_scale;
