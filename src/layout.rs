@@ -5,6 +5,12 @@ use crate::theme::{Theme, adjust_color, parse_color_to_hsl};
 use std::cmp::{Ordering, Reverse};
 use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet, VecDeque};
 
+// Label placement padding (shared with render.rs constants)
+const LABEL_PAD_X: f32 = 6.0;
+const LABEL_PAD_Y: f32 = 4.0;
+const LABEL_RANK_FONT_SCALE: f32 = 0.5;
+const LABEL_RANK_MIN_GAP: f32 = 8.0;
+
 #[derive(Debug, Clone)]
 pub struct TextBlock {
     pub lines: Vec<String>,
@@ -980,6 +986,7 @@ fn compute_c4_layout(graph: &Graph, config: &LayoutConfig) -> Layout {
         timeline: None,
         journey: None,
         error: None,
+
         width,
         height,
     }
@@ -1716,6 +1723,7 @@ fn compute_error_layout(graph: &Graph, config: &LayoutConfig) -> Layout {
             icon_tx: config.treemap.icon_tx,
             icon_ty: config.treemap.icon_ty,
         }),
+
         width: render_width,
         height: render_height,
     }
@@ -1774,6 +1782,7 @@ fn compute_pie_error_layout(graph: &Graph, config: &LayoutConfig) -> Layout {
             icon_tx: config.pie.icon_tx,
             icon_ty: config.pie.icon_ty,
         }),
+
         width: render_width,
         height: render_height,
     }
@@ -2246,6 +2255,7 @@ fn compute_mindmap_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -
         timeline: None,
         journey: None,
         error: None,
+
         width,
         height,
     }
@@ -2752,6 +2762,7 @@ fn compute_gitgraph_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         timeline: None,
         journey: None,
         error: None,
+
         width,
         height,
     }
@@ -3557,6 +3568,7 @@ fn compute_pie_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         timeline: None,
         journey: None,
         error: None,
+
         width: width.max(200.0),
         height: height.max(1.0),
     }
@@ -3685,6 +3697,7 @@ fn compute_quadrant_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         timeline: None,
         journey: None,
         error: None,
+
         width,
         height,
     }
@@ -3934,6 +3947,7 @@ fn compute_gantt_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
         timeline: None,
         journey: None,
         error: None,
+
         width,
         height,
     }
@@ -4443,6 +4457,7 @@ fn compute_sankey_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) ->
         timeline: None,
         journey: None,
         error: None,
+
         width: SANKEY_WIDTH,
         height: SANKEY_HEIGHT,
     }
@@ -4642,6 +4657,7 @@ fn compute_architecture_layout(graph: &Graph, theme: &Theme, config: &LayoutConf
         timeline: None,
         journey: None,
         error: None,
+
         width,
         height,
     }
@@ -4730,6 +4746,7 @@ fn compute_radar_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
         timeline: None,
         journey: None,
         error: None,
+
         width: WIDTH,
         height: HEIGHT,
     }
@@ -4797,6 +4814,7 @@ fn compute_block_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
             timeline: None,
             journey: None,
             error: None,
+    
             width: max_x + 6.0,
             height: max_y + 6.0,
         };
@@ -4964,6 +4982,7 @@ fn compute_block_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
         timeline: None,
         journey: None,
         error: None,
+
         width,
         height,
     }
@@ -5108,6 +5127,7 @@ fn compute_kanban_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) ->
         timeline: None,
         journey: None,
         error: None,
+
         width,
         height,
     }
@@ -5303,6 +5323,7 @@ fn compute_xychart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -
         timeline: None,
         journey: None,
         error: None,
+
         width,
         height,
     }
@@ -5411,6 +5432,7 @@ fn compute_timeline_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         }),
         journey: None,
         error: None,
+
         width,
         height,
     }
@@ -5723,6 +5745,7 @@ fn compute_journey_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -
             height,
         }),
         error: None,
+
         width,
         height,
     }
@@ -5936,6 +5959,25 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         }
         layout_set = layout_node_ids.iter().cloned().collect();
     }
+
+    // Pre-measure all edge labels once (reused across layout, routing, and edge construction).
+    let measure_edge_field = |field: &Option<String>| -> Option<TextBlock> {
+        field.as_ref().map(|label| {
+            let label_text = if graph.kind == crate::ir::DiagramKind::Requirement {
+                requirement_edge_label_text(label, config)
+            } else {
+                label.clone()
+            };
+            measure_label(&label_text, theme, config)
+        })
+    };
+    let edge_route_labels: Vec<Option<TextBlock>> =
+        graph.edges.iter().map(|e| measure_edge_field(&e.label)).collect();
+    let edge_start_labels: Vec<Option<TextBlock>> =
+        graph.edges.iter().map(|e| measure_edge_field(&e.start_label)).collect();
+    let edge_end_labels: Vec<Option<TextBlock>> =
+        graph.edges.iter().map(|e| measure_edge_field(&e.end_label)).collect();
+
     assign_positions_manual(
         graph,
         &layout_node_ids,
@@ -5943,6 +5985,8 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         &mut nodes,
         config,
         &layout_edges,
+        theme,
+        &edge_route_labels,
     );
 
     if !graph.subgraphs.is_empty() {
@@ -6143,20 +6187,6 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     let pair_counts = build_edge_pair_counts(&graph.edges);
     let mut pair_seen: HashMap<(String, String), usize> = HashMap::new();
     let mut pair_index: Vec<usize> = vec![0; graph.edges.len()];
-    let edge_route_labels: Vec<Option<TextBlock>> = graph
-        .edges
-        .iter()
-        .map(|edge| {
-            edge.label.as_ref().map(|label| {
-                let label_text = if graph.kind == crate::ir::DiagramKind::Requirement {
-                    requirement_edge_label_text(label, config)
-                } else {
-                    label.clone()
-                };
-                measure_label(&label_text, theme, config)
-            })
-        })
-        .collect();
     for (idx, edge) in graph.edges.iter().enumerate() {
         let key = edge_pair_key(edge);
         let seen = pair_seen.entry(key).or_insert(0usize);
@@ -6240,6 +6270,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     } else {
         None
     };
+    let has_label_dummies = nodes.keys().any(|id| id.starts_with("__elabel_") && id.ends_with("__"));
     let mut route_label_obstacles = label_obstacles;
     let mut existing_segments: Vec<Segment> = Vec::new();
     for (_, _, _, idx) in &route_order {
@@ -6292,17 +6323,18 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             routing_grid.as_ref(),
             Some(&existing_segments),
         );
-        if let Some(label) = edge_route_labels.get(*idx).and_then(|label| label.as_ref())
+        if !has_label_dummies
+            && let Some(label) = edge_route_labels.get(*idx).and_then(|label| label.as_ref())
             && label.width > 0.0
             && label.height > 0.0
             && let Some((label_x, label_y)) = edge_label_anchor_from_points(&points)
         {
             route_label_obstacles.push(Obstacle {
                 id: format!("edge-label:{}", idx),
-                x: label_x - label.width / 2.0 - 6.0,
-                y: label_y - label.height / 2.0 - 4.0,
-                width: label.width + 12.0,
-                height: label.height + 8.0,
+                x: label_x - label.width / 2.0 - LABEL_PAD_X,
+                y: label_y - label.height / 2.0 - LABEL_PAD_Y,
+                width: label.width + 2.0 * LABEL_PAD_X,
+                height: label.height + 2.0 * LABEL_PAD_Y,
                 members: None,
             });
         }
@@ -6319,30 +6351,9 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
 
     let mut edges = Vec::new();
     for (idx, edge) in graph.edges.iter().enumerate() {
-        let label = edge.label.as_ref().map(|l| {
-            let label_text = if graph.kind == crate::ir::DiagramKind::Requirement {
-                requirement_edge_label_text(l, config)
-            } else {
-                l.clone()
-            };
-            measure_label(&label_text, theme, config)
-        });
-        let start_label = edge.start_label.as_ref().map(|l| {
-            let label_text = if graph.kind == crate::ir::DiagramKind::Requirement {
-                requirement_edge_label_text(l, config)
-            } else {
-                l.clone()
-            };
-            measure_label(&label_text, theme, config)
-        });
-        let end_label = edge.end_label.as_ref().map(|l| {
-            let label_text = if graph.kind == crate::ir::DiagramKind::Requirement {
-                requirement_edge_label_text(l, config)
-            } else {
-                l.clone()
-            };
-            measure_label(&label_text, theme, config)
-        });
+        let label = edge_route_labels[idx].clone();
+        let start_label = edge_start_labels[idx].clone();
+        let end_label = edge_end_labels[idx].clone();
         let mut override_style = resolve_edge_style(idx, graph);
         if graph.kind == crate::ir::DiagramKind::Requirement {
             if override_style.stroke.is_none() {
@@ -6524,6 +6535,7 @@ fn compute_treemap_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -
         timeline: None,
         journey: None,
         error: None,
+
         width,
         height,
     }
@@ -6712,12 +6724,20 @@ fn assign_positions_manual(
     nodes: &mut BTreeMap<String, NodeLayout>,
     config: &LayoutConfig,
     layout_edges: &[crate::ir::Edge],
+    theme: &Theme,
+    pre_measured_labels: &[Option<TextBlock>],
 ) {
+    let mut edge_labels_vec: Vec<Option<TextBlock>> = Vec::new();
     let layout_edges: Vec<crate::ir::Edge> = layout_edges
         .iter()
-        .filter(|edge| layout_set.contains(&edge.from) && layout_set.contains(&edge.to))
-        .cloned()
+        .enumerate()
+        .filter(|(_, edge)| layout_set.contains(&edge.from) && layout_set.contains(&edge.to))
+        .map(|(i, edge)| {
+            edge_labels_vec.push(pre_measured_labels.get(i).cloned().unwrap_or(None));
+            edge.clone()
+        })
         .collect();
+    let edge_labels = edge_labels_vec;
     let rank_edges = rank_edges_for_manual_layout(graph, layout_node_ids, &layout_edges);
     let ranks = compute_ranks_subset(layout_node_ids, &rank_edges, &graph.node_order);
     let mut max_rank = 0usize;
@@ -6732,15 +6752,136 @@ fn assign_positions_manual(
         }
     }
 
-    let mut expanded_edges: Vec<crate::ir::Edge> = Vec::new();
+    // Collect gaps (original rank index) where at least one labeled forward edge exists.
+    let gaps_needing_label_rank: Vec<usize> = {
+        let mut gap_set: HashSet<usize> = HashSet::new();
+        for (idx, edge) in layout_edges.iter().enumerate() {
+            if edge_labels[idx].is_none() {
+                continue;
+            }
+            let from_rank = ranks.get(&edge.from).copied().unwrap_or(0);
+            let to_rank = ranks.get(&edge.to).copied().unwrap_or(0);
+            // Forward edges: insert label rank in the gap.
+            // Back-edges (to_rank <= from_rank): insert label rank in the gap too,
+            // using min/max so both directions share the same label rank.
+            let lo = from_rank.min(to_rank);
+            let hi = from_rank.max(to_rank);
+            if hi > lo {
+                // For span-1 edges, the gap index is lo.
+                // For longer spans, use the midpoint gap.
+                let mid_gap = lo + (hi - lo - 1) / 2;
+                gap_set.insert(mid_gap);
+            }
+        }
+        let mut v: Vec<usize> = gap_set.into_iter().collect();
+        v.sort();
+        v
+    };
+
+    // Build a rank shift table: for each original rank r, the new rank is r + shift[r].
+    let mut rank_shift: Vec<usize> = vec![0; max_rank + 2];
+    {
+        let mut cumulative = 0;
+        for r in 0..=max_rank {
+            rank_shift[r] = cumulative;
+            if gaps_needing_label_rank.contains(&r) {
+                cumulative += 1;
+            }
+        }
+        rank_shift[max_rank + 1] = cumulative;
+    }
+    let total_new_ranks = if gaps_needing_label_rank.is_empty() {
+        0
+    } else {
+        rank_shift[max_rank + 1]
+    };
+
+    // Apply rank shifts: expand rank_nodes to accommodate new label ranks.
+    if total_new_ranks > 0 {
+        let new_max_rank = max_rank + total_new_ranks;
+        let mut new_rank_nodes: Vec<Vec<String>> = vec![Vec::new(); new_max_rank + 1];
+        for (old_rank, bucket) in rank_nodes.iter().enumerate() {
+            let new_rank = old_rank + rank_shift[old_rank];
+            new_rank_nodes[new_rank] = bucket.clone();
+        }
+        rank_nodes = new_rank_nodes;
+        max_rank = new_max_rank;
+    }
+
+    // Create label dummy nodes in the inserted label ranks.
+    let mut label_dummy_ranks: HashSet<usize> = HashSet::new();
     let mut order_map = graph.node_order.clone();
     let mut dummy_counter = 0usize;
 
-    for edge in &layout_edges {
-        let Some(&from_rank) = ranks.get(&edge.from) else {
+    for (idx, edge) in layout_edges.iter().enumerate() {
+        let Some(label) = &edge_labels[idx] else {
             continue;
         };
-        let Some(&to_rank) = ranks.get(&edge.to) else {
+        let from_rank = ranks.get(&edge.from).copied().unwrap_or(0);
+        let to_rank = ranks.get(&edge.to).copied().unwrap_or(0);
+        let lo = from_rank.min(to_rank);
+        let hi = from_rank.max(to_rank);
+        if hi <= lo {
+            continue;
+        }
+        let mid_gap = lo + (hi - lo - 1) / 2;
+        // The label rank is the new rank inserted after the shifted gap position.
+        let label_rank = mid_gap + rank_shift[mid_gap] + 1;
+        label_dummy_ranks.insert(label_rank);
+
+        let dummy_id = format!("__elabel_{}_{}_{dummy_counter}__", edge.from, edge.to);
+        dummy_counter += 1;
+        let order_idx = order_map.len();
+        order_map.insert(dummy_id.clone(), order_idx);
+
+        // Determine dimensions: for horizontal layouts, main-axis = width, cross-axis = height.
+        let (main_dim, cross_dim) = if is_horizontal(graph.direction) {
+            (label.width, label.height)
+        } else {
+            (label.height, label.width)
+        };
+
+        nodes.insert(
+            dummy_id.clone(),
+            NodeLayout {
+                id: dummy_id.clone(),
+                x: 0.0,
+                y: 0.0,
+                width: if is_horizontal(graph.direction) { main_dim } else { cross_dim },
+                height: if is_horizontal(graph.direction) { cross_dim } else { main_dim },
+                label: TextBlock {
+                    lines: vec![],
+                    width: 0.0,
+                    height: 0.0,
+                },
+                shape: crate::ir::NodeShape::Rectangle,
+                style: crate::ir::NodeStyle::default(),
+                link: None,
+                anchor_subgraph: None,
+                hidden: true,
+            },
+        );
+
+        if let Some(bucket) = rank_nodes.get_mut(label_rank) {
+            bucket.push(dummy_id);
+        }
+    }
+
+    // Update ranks for existing nodes to use shifted values (for the existing dummy expansion).
+    let shifted_ranks: HashMap<String, usize> = ranks
+        .iter()
+        .map(|(id, &r)| (id.clone(), r + rank_shift[r]))
+        .collect();
+
+    // --- End label dummy nodes ---
+
+    let mut expanded_edges: Vec<crate::ir::Edge> = Vec::new();
+
+    for edge in &layout_edges {
+        let Some(&from_rank) = shifted_ranks.get(&edge.from) else {
+            continue;
+        };
+        let Some(&to_rank) = shifted_ranks.get(&edge.to) else {
             continue;
         };
         if to_rank <= from_rank {
@@ -6805,8 +6946,9 @@ fn assign_positions_manual(
     );
 
     let mut main_cursor = 0.0;
-    for bucket in &rank_nodes {
+    for (rank_idx, bucket) in rank_nodes.iter().enumerate() {
         let mut max_main: f32 = 0.0;
+        let is_label_rank = label_dummy_ranks.contains(&rank_idx);
         for node_id in bucket {
             if let Some(node_layout) = nodes.get_mut(node_id) {
                 if is_horizontal(graph.direction) {
@@ -6819,7 +6961,13 @@ fn assign_positions_manual(
             }
         }
         if max_main > 0.0 {
-            main_cursor += max_main + config.rank_spacing;
+            // Use reduced spacing for label-only ranks to avoid excessive width.
+            let gap = if is_label_rank {
+                (theme.font_size * LABEL_RANK_FONT_SCALE).max(LABEL_RANK_MIN_GAP)
+            } else {
+                config.rank_spacing
+            };
+            main_cursor += max_main + gap;
         }
     }
 
@@ -7569,6 +7717,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
         timeline: None,
         journey: None,
         error: None,
+
         width,
         height,
     }
@@ -8852,46 +9001,49 @@ fn compute_ranks_subset(
     }
 
     let mut order = Vec::with_capacity(set.len());
-    while let Some(Reverse((_key, id))) = ready.pop() {
-        order.push(id.clone());
-        if let Some(nexts) = adj.get(&id) {
-            for next in nexts {
-                if let Some(deg) = indeg.get_mut(next) {
-                    *deg = deg.saturating_sub(1);
-                    if *deg == 0 {
-                        ready.push(Reverse((order_key(next.as_str()), next.clone())));
+    let mut processed: HashSet<String> = HashSet::new();
+    loop {
+        while let Some(Reverse((_key, id))) = ready.pop() {
+            if processed.contains(&id) {
+                continue;
+            }
+            order.push(id.clone());
+            processed.insert(id.clone());
+            if let Some(nexts) = adj.get(&id) {
+                for next in nexts {
+                    if processed.contains(next) {
+                        continue;
+                    }
+                    if let Some(deg) = indeg.get_mut(next) {
+                        *deg = deg.saturating_sub(1);
+                        if *deg == 0 {
+                            ready.push(Reverse((order_key(next.as_str()), next.clone())));
+                        }
                     }
                 }
             }
         }
-    }
 
-    if order.len() < set.len() {
-        // Break cycles deterministically using a feedback arc heuristic.
-        let order_set: HashSet<String> = order.iter().cloned().collect();
-        let mut remaining: HashSet<String> = set.difference(&order_set).cloned().collect();
-        let mut cycle_order = Vec::new();
-        while !remaining.is_empty() {
-            let mut heap: BinaryHeap<(i32, Reverse<(usize, String)>)> = BinaryHeap::new();
-            for id in &remaining {
-                let out = adj
-                    .get(id)
-                    .map(|v| v.iter().filter(|to| remaining.contains(*to)).count())
-                    .unwrap_or(0) as i32;
-                let inp = rev
-                    .get(id)
-                    .map(|v| v.iter().filter(|from| remaining.contains(*from)).count())
-                    .unwrap_or(0) as i32;
-                heap.push((out - inp, Reverse((order_key(id.as_str()), id.clone()))));
-            }
-            if let Some((_score, Reverse((_key, id)))) = heap.pop() {
-                remaining.remove(&id);
-                cycle_order.push(id);
-            } else {
-                break;
+        if processed.len() >= set.len() {
+            break;
+        }
+
+        // Cycle detected — pick the remaining node earliest in declaration
+        // order as the next source, treating its incoming edges as back-edges.
+        let mut best: Option<(usize, String)> = None;
+        for id in &set {
+            if !processed.contains(id) {
+                let key = order_key(id.as_str());
+                if best.as_ref().map_or(true, |(bk, _)| key < *bk) {
+                    best = Some((key, id.clone()));
+                }
             }
         }
-        order.extend(cycle_order);
+        if let Some((key, id)) = best {
+            ready.push(Reverse((key, id)));
+        } else {
+            break;
+        }
     }
 
     let order_index: HashMap<String, usize> = order

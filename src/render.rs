@@ -12,6 +12,18 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::path::Path;
 
+// Label placement constants
+const LABEL_PAD_X: f32 = 6.0;
+const LABEL_PAD_Y: f32 = 4.0;
+const NODE_OBSTACLE_PAD: f32 = 6.0;
+const EDGE_OBSTACLE_PAD: f32 = 6.0;
+const LABEL_STEP_NORMAL_PAD: f32 = 4.0;
+const LABEL_STEP_TANGENT_PAD: f32 = 6.0;
+const LABEL_OVERLAP_WIDE_THRESHOLD: f32 = 1e-4;
+const LABEL_ANCHOR_FRACTIONS: [f32; 3] = [0.35, 0.5, 0.65];
+const LABEL_ANCHOR_POS_EPS: f32 = 1.0;
+const LABEL_ANCHOR_DIR_EPS: f32 = 0.02;
+
 pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
     let mut svg = String::new();
     let state_font_size = if layout.kind == crate::ir::DiagramKind::State {
@@ -754,14 +766,16 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             &layout.subgraphs,
             Some((layout.width, layout.height)),
         );
-        let edge_obstacles = build_edge_obstacles(&layout.edges, 6.0);
+        let edge_obstacles = build_edge_obstacles(&layout.edges, EDGE_OBSTACLE_PAD);
+        let edge_obs_rects: Vec<Rect> = edge_obstacles.iter().map(|(_, r)| *r).collect();
+        let endpoint_edge_grid = ObstacleGrid::new(48.0, &edge_obs_rects);
         let mut endpoint_occupied = build_label_obstacles(&layout.nodes, &layout.subgraphs);
         for pos in label_positions.values().flatten() {
             endpoint_occupied.push((
-                pos.0 - pos.2.width / 2.0 - 6.0,
-                pos.1 - pos.2.height / 2.0 - 4.0,
-                pos.2.width + 12.0,
-                pos.2.height + 8.0,
+                pos.0 - pos.2.width / 2.0 - LABEL_PAD_X,
+                pos.1 - pos.2.height / 2.0 - LABEL_PAD_Y,
+                pos.2.width + 2.0 * LABEL_PAD_X,
+                pos.2.height + 2.0 * LABEL_PAD_Y,
             ));
         }
 
@@ -962,7 +976,9 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     label.width * endpoint_label_scale,
                     label.height * endpoint_label_scale,
                     &endpoint_occupied,
+                    &ObstacleGrid::new(48.0, &endpoint_occupied),
                     &edge_obstacles,
+                    &endpoint_edge_grid,
                     Some((layout.width, layout.height)),
                 )
             {
@@ -1020,7 +1036,9 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     label.width * endpoint_label_scale,
                     label.height * endpoint_label_scale,
                     &endpoint_occupied,
+                    &ObstacleGrid::new(48.0, &endpoint_occupied),
                     &edge_obstacles,
+                    &endpoint_edge_grid,
                     Some((layout.width, layout.height)),
                 )
             {
@@ -4574,7 +4592,9 @@ fn compute_edge_label_positions(
     bounds: Option<(f32, f32)>,
 ) -> HashMap<usize, Option<(f32, f32, TextBlock)>> {
     let mut occupied: Vec<(f32, f32, f32, f32)> = build_label_obstacles(nodes, subgraphs);
-    let edge_obstacles = build_edge_obstacles(edges, 6.0);
+    let edge_obstacles = build_edge_obstacles(edges, EDGE_OBSTACLE_PAD);
+    let edge_obs_rects: Vec<Rect> = edge_obstacles.iter().map(|(_, r)| *r).collect();
+    let edge_grid = ObstacleGrid::new(48.0, &edge_obs_rects);
     let mut positions = HashMap::new();
 
     for (idx, edge) in edges.iter().enumerate() {
@@ -4582,14 +4602,18 @@ fn compute_edge_label_positions(
             positions.insert(idx, None);
             continue;
         };
+        let pad_w = label.width + 2.0 * LABEL_PAD_X;
+        let pad_h = label.height + 2.0 * LABEL_PAD_Y;
+        // Rebuild node obstacle grid each iteration since occupied grows.
+        let occupied_grid = ObstacleGrid::new(48.0, &occupied);
         let mut anchors: Vec<(f32, f32, f32, f32)> = vec![edge_label_anchor(edge)];
-        for frac in [0.35f32, 0.5f32, 0.65f32] {
+        for frac in LABEL_ANCHOR_FRACTIONS {
             if let Some(candidate) = edge_label_anchor_at_fraction(edge, frac) {
                 let duplicate = anchors.iter().any(|anchor| {
-                    (anchor.0 - candidate.0).abs() <= 1.0
-                        && (anchor.1 - candidate.1).abs() <= 1.0
-                        && (anchor.2 - candidate.2).abs() <= 0.02
-                        && (anchor.3 - candidate.3).abs() <= 0.02
+                    (anchor.0 - candidate.0).abs() <= LABEL_ANCHOR_POS_EPS
+                        && (anchor.1 - candidate.1).abs() <= LABEL_ANCHOR_POS_EPS
+                        && (anchor.2 - candidate.2).abs() <= LABEL_ANCHOR_DIR_EPS
+                        && (anchor.3 - candidate.3).abs() <= LABEL_ANCHOR_DIR_EPS
                 });
                 if !duplicate {
                     anchors.push(candidate);
@@ -4609,14 +4633,14 @@ fn compute_edge_label_positions(
             let normal_x = -dir_y;
             let normal_y = dir_x;
             let step_n = if normal_x.abs() > normal_y.abs() {
-                label.width + 10.0
+                label.width + LABEL_PAD_X + LABEL_STEP_NORMAL_PAD
             } else {
-                label.height + 8.0
+                label.height + LABEL_PAD_Y + LABEL_STEP_NORMAL_PAD
             };
             let step_t = if dir_x.abs() > dir_y.abs() {
-                label.width + 12.0
+                label.width + LABEL_PAD_X + LABEL_STEP_TANGENT_PAD
             } else {
-                label.height + 10.0
+                label.height + LABEL_PAD_Y + LABEL_STEP_TANGENT_PAD
             };
             for t in tangents {
                 let base_x = anchor_x + dir_x * step_t * *t;
@@ -4625,10 +4649,10 @@ fn compute_edge_label_positions(
                     let x = base_x + normal_x * step_n * *n;
                     let y = base_y + normal_y * step_n * *n;
                     let rect = (
-                        x - label.width / 2.0 - 6.0,
-                        y - label.height / 2.0 - 4.0,
-                        label.width + 12.0,
-                        label.height + 8.0,
+                        x - label.width / 2.0 - LABEL_PAD_X,
+                        y - label.height / 2.0 - LABEL_PAD_Y,
+                        pad_w,
+                        pad_h,
                     );
                     let penalty = label_penalties(
                         rect,
@@ -4636,7 +4660,9 @@ fn compute_edge_label_positions(
                         label.width,
                         label.height,
                         &occupied,
+                        &occupied_grid,
                         &edge_obstacles,
+                        &edge_grid,
                         idx,
                         bounds,
                     );
@@ -4656,7 +4682,7 @@ fn compute_edge_label_positions(
                 &mut best_pos,
             );
         }
-        if best_penalty.0 > 1e-4 {
+        if best_penalty.0 > LABEL_OVERLAP_WIDE_THRESHOLD {
             let normal_steps_wide = [0.0, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0, 4.0, -4.0, 5.0, -5.0];
             let tangent_steps_wide = [0.0, 0.6, -0.6, 1.2, -1.2, 1.8, -1.8, 2.4, -2.4];
             for anchor in &anchors {
@@ -4670,15 +4696,15 @@ fn compute_edge_label_positions(
             }
         }
         let clamped_pos = if let Some(bound) = bounds {
-            clamp_label_center_to_bounds(best_pos, label.width, label.height, 6.0, 4.0, bound)
+            clamp_label_center_to_bounds(best_pos, label.width, label.height, LABEL_PAD_X, LABEL_PAD_Y, bound)
         } else {
             best_pos
         };
         let rect = (
-            clamped_pos.0 - label.width / 2.0 - 6.0,
-            clamped_pos.1 - label.height / 2.0 - 4.0,
-            label.width + 12.0,
-            label.height + 8.0,
+            clamped_pos.0 - label.width / 2.0 - LABEL_PAD_X,
+            clamped_pos.1 - label.height / 2.0 - LABEL_PAD_Y,
+            pad_w,
+            pad_h,
         );
         occupied.push(rect);
         let placed = Some((clamped_pos.0, clamped_pos.1, label.clone()));
@@ -4695,14 +4721,14 @@ fn build_label_obstacles(
 ) -> Vec<Rect> {
     let mut occupied: Vec<Rect> = Vec::new();
     for node in nodes.values() {
-        if node.anchor_subgraph.is_some() {
+        if node.anchor_subgraph.is_some() || node.hidden {
             continue;
         }
         occupied.push((
-            node.x - 6.0,
-            node.y - 6.0,
-            node.width + 12.0,
-            node.height + 12.0,
+            node.x - NODE_OBSTACLE_PAD,
+            node.y - NODE_OBSTACLE_PAD,
+            node.width + 2.0 * NODE_OBSTACLE_PAD,
+            node.height + 2.0 * NODE_OBSTACLE_PAD,
         ));
     }
     for sub in subgraphs {
@@ -4712,8 +4738,8 @@ fn build_label_obstacles(
         let width = sub.label_block.width;
         let height = sub.label_block.height;
         let x = sub.x + 12.0;
-        let y = sub.y + 6.0;
-        occupied.push((x - 4.0, y, width + 8.0, height + 4.0));
+        let y = sub.y + NODE_OBSTACLE_PAD;
+        occupied.push((x - LABEL_PAD_Y, y, width + 2.0 * LABEL_PAD_Y, height + LABEL_PAD_Y));
     }
     occupied
 }
@@ -5249,23 +5275,79 @@ fn clamp_label_center_to_bounds(
     (x, y)
 }
 
+/// Spatial index for fast overlap queries during label placement.
+struct ObstacleGrid {
+    cell: f32,
+    /// Maps grid cell (ix, iy) to indices into the obstacle list.
+    cells: HashMap<(i32, i32), Vec<usize>>,
+}
+
+impl ObstacleGrid {
+    fn new(cell: f32, rects: &[Rect]) -> Self {
+        let cell = cell.max(16.0);
+        let mut cells: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
+        for (i, rect) in rects.iter().enumerate() {
+            let x0 = (rect.0 / cell).floor() as i32;
+            let y0 = (rect.1 / cell).floor() as i32;
+            let x1 = ((rect.0 + rect.2) / cell).floor() as i32;
+            let y1 = ((rect.1 + rect.3) / cell).floor() as i32;
+            for ix in x0..=x1 {
+                for iy in y0..=y1 {
+                    cells.entry((ix, iy)).or_default().push(i);
+                }
+            }
+        }
+        Self { cell, cells }
+    }
+
+    /// Return indices of obstacles that could overlap with `rect`.
+    fn query(&self, rect: &Rect) -> impl Iterator<Item = usize> + '_ {
+        let x0 = (rect.0 / self.cell).floor() as i32;
+        let y0 = (rect.1 / self.cell).floor() as i32;
+        let x1 = ((rect.0 + rect.2) / self.cell).floor() as i32;
+        let y1 = ((rect.1 + rect.3) / self.cell).floor() as i32;
+        let mut seen = Vec::new();
+        (x0..=x1)
+            .flat_map(move |ix| (y0..=y1).map(move |iy| (ix, iy)))
+            .flat_map(move |key| {
+                self.cells
+                    .get(&key)
+                    .map(|v| v.as_slice())
+                    .unwrap_or(&[])
+                    .iter()
+                    .copied()
+            })
+            .filter(move |idx| {
+                if seen.contains(idx) {
+                    false
+                } else {
+                    seen.push(*idx);
+                    true
+                }
+            })
+    }
+}
+
 fn label_penalties(
     rect: Rect,
     anchor: (f32, f32),
     label_w: f32,
     label_h: f32,
     occupied: &[Rect],
+    occupied_grid: &ObstacleGrid,
     edge_obstacles: &[EdgeObstacle],
+    edge_grid: &ObstacleGrid,
     edge_idx: usize,
     bounds: Option<(f32, f32)>,
 ) -> (f32, f32) {
     let area = (label_w * label_h).max(1.0);
     let mut overlap = 0.0;
-    for occ in occupied {
-        overlap += overlap_area(&rect, occ);
+    for i in occupied_grid.query(&rect) {
+        overlap += overlap_area(&rect, &occupied[i]);
     }
-    for (idx, obs) in edge_obstacles {
-        if *idx == edge_idx {
+    for i in edge_grid.query(&rect) {
+        let (idx, ref obs) = edge_obstacles[i];
+        if idx == edge_idx {
             continue;
         }
         overlap += overlap_area(&rect, obs);
@@ -5522,7 +5604,9 @@ fn edge_endpoint_label_position_with_avoid(
     label_w: f32,
     label_h: f32,
     occupied: &[Rect],
+    occupied_grid: &ObstacleGrid,
     edge_obstacles: &[EdgeObstacle],
+    edge_grid: &ObstacleGrid,
     bounds: Option<(f32, f32)>,
 ) -> Option<(f32, f32)> {
     if edge.points.len() < 2 {
@@ -5572,7 +5656,9 @@ fn edge_endpoint_label_position_with_avoid(
                 label_w,
                 label_h,
                 occupied,
+                occupied_grid,
                 edge_obstacles,
+                edge_grid,
                 edge_idx,
                 bounds,
             );
