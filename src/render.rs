@@ -2070,6 +2070,101 @@ fn render_radar(layout: &Layout, theme: &Theme, _config: &LayoutConfig) -> Strin
     svg
 }
 
+/// Render an architecture diagram icon as SVG.
+/// Returns SVG elements (paths/circles) drawn within the given width/height box.
+fn architecture_icon_svg(icon_type: Option<&str>, w: f32, h: f32, fill: &str) -> String {
+    let cx = w / 2.0;
+    let cy = h / 2.0;
+    let r = w.min(h) * 0.35;
+    let sw = (w * 0.02).max(1.5);
+    let style = format!(
+        "fill=\"none\" stroke=\"{}\" stroke-width=\"{:.1}\" stroke-linecap=\"round\" stroke-linejoin=\"round\"",
+        fill, sw
+    );
+    match icon_type {
+        Some("internet") | Some("globe") => {
+            // Globe: circle + vertical ellipse + horizontal line + vertical line
+            format!(
+                "<circle cx=\"{cx:.1}\" cy=\"{cy:.1}\" r=\"{r:.1}\" {style}/>\
+                 <ellipse cx=\"{cx:.1}\" cy=\"{cy:.1}\" rx=\"{rx:.1}\" ry=\"{r:.1}\" {style}/>\
+                 <line x1=\"{x1:.1}\" y1=\"{cy:.1}\" x2=\"{x2:.1}\" y2=\"{cy:.1}\" {style}/>\
+                 <line x1=\"{cx:.1}\" y1=\"{y1:.1}\" x2=\"{cx:.1}\" y2=\"{y2:.1}\" {style}/>",
+                rx = r * 0.5,
+                x1 = cx - r,
+                x2 = cx + r,
+                y1 = cy - r,
+                y2 = cy + r,
+            )
+        }
+        Some("server") => {
+            // Server rack: stacked rectangles
+            let bx = cx - r;
+            let by = cy - r;
+            let bw = r * 2.0;
+            let bh = r * 2.0;
+            let rows = 3;
+            let row_h = bh / rows as f32;
+            let mut s = String::new();
+            for i in 0..rows {
+                let ry = by + i as f32 * row_h;
+                s.push_str(&format!(
+                    "<rect x=\"{bx:.1}\" y=\"{ry:.1}\" width=\"{bw:.1}\" height=\"{row_h:.1}\" rx=\"2\" {style}/>"
+                ));
+                // Small indicator circle in each row
+                let dot_x = bx + bw - row_h * 0.35;
+                let dot_y = ry + row_h * 0.5;
+                let dot_r = row_h * 0.12;
+                s.push_str(&format!(
+                    "<circle cx=\"{dot_x:.1}\" cy=\"{dot_y:.1}\" r=\"{dot_r:.1}\" fill=\"{fill}\" stroke=\"none\"/>"
+                ));
+            }
+            s
+        }
+        Some("database") | Some("disk") => {
+            // Database cylinder: rect body + ellipses top/bottom
+            let bx = cx - r;
+            let bw = r * 2.0;
+            let ell_ry = r * 0.3;
+            let body_top = cy - r + ell_ry;
+            let body_bot = cy + r - ell_ry;
+            let body_h = body_bot - body_top;
+            format!(
+                "<rect x=\"{bx:.1}\" y=\"{body_top:.1}\" width=\"{bw:.1}\" height=\"{body_h:.1}\" {style}/>\
+                 <ellipse cx=\"{cx:.1}\" cy=\"{body_top:.1}\" rx=\"{r:.1}\" ry=\"{ell_ry:.1}\" {style}/>\
+                 <ellipse cx=\"{cx:.1}\" cy=\"{body_bot:.1}\" rx=\"{r:.1}\" ry=\"{ell_ry:.1}\" {style}/>\
+                 <line x1=\"{x1:.1}\" y1=\"{body_top:.1}\" x2=\"{x1:.1}\" y2=\"{body_bot:.1}\" {style}/>\
+                 <line x1=\"{x2:.1}\" y1=\"{body_top:.1}\" x2=\"{x2:.1}\" y2=\"{body_bot:.1}\" {style}/>",
+                x1 = bx,
+                x2 = bx + bw,
+            )
+        }
+        Some("cloud") => {
+            // Cloud: rounded bumpy shape using cubic bezier
+            let s = r * 0.7;
+            format!(
+                "<path d=\"M {x1:.1} {y_mid:.1} \
+                 Q {x1:.1} {y_top:.1} {cx:.1} {y_top:.1} \
+                 Q {x2:.1} {y_top:.1} {x2:.1} {y_mid:.1} \
+                 Q {x2:.1} {y_bot:.1} {cx:.1} {y_bot:.1} \
+                 Q {x1:.1} {y_bot:.1} {x1:.1} {y_mid:.1} Z\" {style}/>",
+                x1 = cx - s,
+                x2 = cx + s,
+                y_mid = cy,
+                y_top = cy - s * 0.8,
+                y_bot = cy + s * 0.6,
+            )
+        }
+        _ => {
+            // Fallback: question mark
+            format!(
+                "<text x=\"{cx:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" dominant-baseline=\"middle\" fill=\"{fill}\" font-size=\"{fs:.0}\">?</text>",
+                y = cy + w * 0.08,
+                fs = w * 0.7,
+            )
+        }
+    }
+}
+
 fn render_architecture(
     layout: &Layout,
     theme: &Theme,
@@ -2170,12 +2265,11 @@ fn render_architecture(
             node.height,
             escape_xml(icon_fill)
         ));
-        svg.push_str(&format!(
-            "<text x=\"{:.3}\" y=\"{:.3}\" text-anchor=\"middle\" dominant-baseline=\"middle\" fill=\"{}\" font-family=\"{}\" font-size=\"64\">?</text>",
-            node.width / 2.0,
-            node.height / 2.0 + 6.0,
+        svg.push_str(&architecture_icon_svg(
+            node.icon.as_deref(),
+            node.width,
+            node.height,
             ICON_TEXT_FILL,
-            escape_xml(&theme.font_family)
         ));
         svg.push_str(&format!(
             "<text x=\"{:.3}\" y=\"{:.3}\" text-anchor=\"middle\" font-family=\"{}\" font-size=\"{}\" fill=\"{}\">{}</text>",
@@ -2215,20 +2309,20 @@ fn render_architecture(
         let icon_x = subgraph.x + GROUP_ICON_OFFSET;
         let icon_y = subgraph.y + GROUP_ICON_OFFSET;
         svg.push_str(&format!(
-            "<rect x=\"{:.3}\" y=\"{:.3}\" width=\"{}\" height=\"{}\" fill=\"{}\" stroke=\"none\" />",
-            icon_x,
-            icon_y,
-            GROUP_ICON_SIZE,
-            GROUP_ICON_SIZE,
-            ICON_FILL
+            "<g transform=\"translate({:.3},{:.3})\">",
+            icon_x, icon_y
         ));
         svg.push_str(&format!(
-            "<text x=\"{:.3}\" y=\"{:.3}\" text-anchor=\"middle\" dominant-baseline=\"middle\" fill=\"{}\" font-family=\"{}\" font-size=\"24\">?</text>",
-            icon_x + GROUP_ICON_SIZE / 2.0,
-            icon_y + GROUP_ICON_SIZE / 2.0 + 2.0,
-            ICON_TEXT_FILL,
-            escape_xml(&theme.font_family)
+            "<rect width=\"{}\" height=\"{}\" fill=\"{}\" stroke=\"none\" />",
+            GROUP_ICON_SIZE, GROUP_ICON_SIZE, ICON_FILL
         ));
+        svg.push_str(&architecture_icon_svg(
+            subgraph.icon.as_deref(),
+            GROUP_ICON_SIZE,
+            GROUP_ICON_SIZE,
+            ICON_TEXT_FILL,
+        ));
+        svg.push_str("</g>");
         let label_x = subgraph.x + GROUP_ICON_SIZE + 4.0;
         let label_y = subgraph.y + GROUP_ICON_SIZE * 0.7;
         svg.push_str(&format!(

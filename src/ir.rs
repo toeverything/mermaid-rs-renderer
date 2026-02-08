@@ -328,6 +328,7 @@ pub struct Node {
     pub label: String,
     pub shape: NodeShape,
     pub value: Option<f32>,
+    pub icon: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -386,6 +387,7 @@ pub struct Subgraph {
     pub label: String,
     pub nodes: Vec<String>,
     pub direction: Option<Direction>,
+    pub icon: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -577,6 +579,7 @@ impl Graph {
             label: id.to_string(),
             shape: NodeShape::Rectangle,
             value: None,
+            icon: None,
         });
         if is_new {
             let order = self.node_order.len();

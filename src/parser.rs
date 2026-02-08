@@ -270,6 +270,7 @@ fn parse_flowchart(input: &str) -> Result<ParseOutput> {
                     label,
                     nodes: Vec::new(),
                     direction: None,
+                    icon: None,
                 });
                 subgraph_stack.push(graph.subgraphs.len() - 1);
                 if let Some(id) = id {
@@ -1842,6 +1843,7 @@ fn parse_journey_diagram(input: &str) -> Result<ParseOutput> {
                 label: label.to_string(),
                 nodes: Vec::new(),
                 direction: None,
+                icon: None,
             });
             current_section = Some(graph.subgraphs.len() - 1);
             last_task = None;
@@ -2050,6 +2052,7 @@ fn parse_gantt_diagram(input: &str) -> Result<ParseOutput> {
                 label: label.to_string(),
                 nodes: Vec::new(),
                 direction: None,
+                icon: None,
             });
             current_section = Some(graph.subgraphs.len() - 1);
             current_section_name = Some(label.to_string());
@@ -3697,6 +3700,7 @@ fn parse_kanban_diagram(input: &str) -> Result<ParseOutput> {
                 label: col_label,
                 nodes: Vec::new(),
                 direction: None,
+                icon: None,
             });
             current_section = Some(graph.subgraphs.len() - 1);
             continue;
@@ -3746,17 +3750,23 @@ fn parse_architecture_diagram(input: &str) -> Result<ParseOutput> {
             continue;
         }
         if lower.starts_with("group ") || lower.starts_with("service ") {
-            if let Some((kind, id, label, parent)) = parse_architecture_node(line) {
+            if let Some((kind, id, label, parent, icon)) = parse_architecture_node(line) {
                 if kind == "group" {
                     graph.subgraphs.push(Subgraph {
                         id: Some(id.clone()),
                         label: label.clone(),
                         nodes: Vec::new(),
                         direction: None,
+                        icon: icon,
                     });
                     groups.insert(id, graph.subgraphs.len() - 1);
                 } else {
                     graph.ensure_node(&id, Some(label), Some(crate::ir::NodeShape::Rectangle));
+                    if let Some(icon_type) = icon {
+                        if let Some(node) = graph.nodes.get_mut(&id) {
+                            node.icon = Some(icon_type);
+                        }
+                    }
                     if let Some(parent_id) = parent
                         && let Some(idx) = groups.get(&parent_id).copied()
                         && let Some(subgraph) = graph.subgraphs.get_mut(idx)
@@ -3791,7 +3801,9 @@ fn parse_architecture_diagram(input: &str) -> Result<ParseOutput> {
     Ok(ParseOutput { graph, init_config })
 }
 
-fn parse_architecture_node(line: &str) -> Option<(String, String, String, Option<String>)> {
+fn parse_architecture_node(
+    line: &str,
+) -> Option<(String, String, String, Option<String>, Option<String>)> {
     let mut parts = line.splitn(2, ' ');
     let kind = parts.next()?.trim().to_ascii_lowercase();
     let rest = parts.next()?.trim();
@@ -3810,6 +3822,15 @@ fn parse_architecture_node(line: &str) -> Option<(String, String, String, Option
         String::new()
     };
     let id_part = node_part.split('[').next().unwrap_or(node_part).trim();
+    let icon = if let Some(paren_start) = id_part.find('(') {
+        if let Some(paren_end) = id_part.find(')') {
+            Some(id_part[paren_start + 1..paren_end].trim().to_string())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     let id = id_part
         .split('(')
         .next()
@@ -3820,7 +3841,7 @@ fn parse_architecture_node(line: &str) -> Option<(String, String, String, Option
         return None;
     }
     let label = if label.is_empty() { id.clone() } else { label };
-    Some((kind, id, label, parent))
+    Some((kind, id, label, parent, icon))
 }
 
 fn parse_architecture_edge(line: &str) -> Option<(String, String)> {
@@ -3829,8 +3850,10 @@ fn parse_architecture_edge(line: &str) -> Option<(String, String)> {
         if let Some(idx) = line.find(arrow) {
             let left = line[..idx].trim();
             let right = line[idx + arrow.len()..].trim();
-            let from = strip_arch_port(left);
-            let to = strip_arch_port(right);
+            // Left side format: ID:Port (e.g., "gateway:R")
+            let from = strip_arch_port_left(left);
+            // Right side format: Port:ID (e.g., "L:app")
+            let to = strip_arch_port_right(right);
             if from.is_empty() || to.is_empty() {
                 return None;
             }
@@ -3840,7 +3863,13 @@ fn parse_architecture_edge(line: &str) -> Option<(String, String)> {
     None
 }
 
-fn strip_arch_port(token: &str) -> &str {
+fn strip_arch_port_left(token: &str) -> &str {
+    // "gateway:R" -> "gateway" (take the first part before ':')
+    token.split(':').next().unwrap_or(token).trim()
+}
+
+fn strip_arch_port_right(token: &str) -> &str {
+    // "L:app" -> "app" (take the last part after ':')
     token.split(':').next_back().unwrap_or(token).trim()
 }
 
@@ -4239,6 +4268,7 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
                     label: String::new(),
                     nodes: region_nodes,
                     direction: None,
+                    icon: None,
                 });
                 graph.subgraph_styles.insert(
                     id,
@@ -4319,6 +4349,7 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
                     label: label.clone(),
                     nodes: Vec::new(),
                     direction: None,
+                    icon: None,
                 });
                 subgraph_stack.push(graph.subgraphs.len() - 1);
                 composite_stack.push(CompositeContext {

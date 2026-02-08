@@ -31,6 +31,7 @@ pub struct NodeLayout {
     pub link: Option<crate::ir::NodeLink>,
     pub anchor_subgraph: Option<usize>,
     pub hidden: bool,
+    pub icon: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -85,6 +86,7 @@ pub struct SubgraphLayout {
     pub width: f32,
     pub height: f32,
     pub style: crate::ir::NodeStyle,
+    pub icon: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -2072,6 +2074,7 @@ fn compute_mindmap_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -
                 link: graph.node_links.get(&node.id).cloned(),
                 anchor_subgraph: None,
                 hidden: false,
+                icon: None,
             },
         );
 
@@ -4356,6 +4359,7 @@ fn compute_sankey_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) ->
                 link: graph.node_links.get(&id).cloned(),
                 anchor_subgraph: None,
                 hidden: false,
+                icon: None,
             },
         );
         sankey_nodes.push(SankeyNodeLayout {
@@ -4502,6 +4506,7 @@ fn compute_architecture_layout(graph: &Graph, theme: &Theme, config: &LayoutConf
                 link: graph.node_links.get(&node.id).cloned(),
                 anchor_subgraph: None,
                 hidden: false,
+                icon: node.icon.clone(),
             },
         );
     }
@@ -4562,6 +4567,7 @@ fn compute_architecture_layout(graph: &Graph, theme: &Theme, config: &LayoutConf
             width: group_width,
             height: group_height,
             style,
+            icon: sub.icon.clone(),
         });
 
         current_y += group_height + GROUP_GAP_Y;
@@ -4715,6 +4721,7 @@ fn compute_radar_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
                 link: graph.node_links.get(&node.id).cloned(),
                 anchor_subgraph: None,
                 hidden: false,
+                icon: None,
             },
         );
     }
@@ -4772,6 +4779,7 @@ fn compute_block_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> 
                 link: graph.node_links.get(&node.id).cloned(),
                 anchor_subgraph: None,
                 hidden: false,
+                icon: None,
             },
         );
     }
@@ -5026,6 +5034,7 @@ fn compute_kanban_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) ->
                 link: graph.node_links.get(&node.id).cloned(),
                 anchor_subgraph: None,
                 hidden: false,
+                icon: None,
             },
         );
     }
@@ -5862,6 +5871,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
                 link: graph.node_links.get(&node.id).cloned(),
                 anchor_subgraph: None,
                 hidden: false,
+                icon: None,
             },
         );
     }
@@ -6657,6 +6667,7 @@ fn layout_treemap_nodes(
                     link: graph.node_links.get(id).cloned(),
                     anchor_subgraph: None,
                     hidden: false,
+                    icon: None,
                 },
             );
         }
@@ -6859,6 +6870,7 @@ fn assign_positions_manual(
                 link: None,
                 anchor_subgraph: None,
                 hidden: true,
+                icon: None,
             },
         );
 
@@ -7176,6 +7188,7 @@ fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) 
                 link: graph.node_links.get(id).cloned(),
                 anchor_subgraph: None,
                 hidden: false,
+                icon: None,
             },
         );
         cursor_x += actor_width + actor_gap;
@@ -12463,6 +12476,7 @@ fn build_subgraph_layouts(
             width,
             height: (max_y - min_y) + padding_y + top_padding,
             style,
+            icon: sub.icon.clone(),
         });
     }
 
@@ -12767,6 +12781,7 @@ mod tests {
             link: None,
             anchor_subgraph: None,
             hidden: false,
+            icon: None,
         }
     }
 
