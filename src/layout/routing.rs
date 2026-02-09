@@ -273,8 +273,11 @@ pub(super) fn edge_sides_balanced(
             2.0
         };
         let backward_penalty = if is_backward && !primary.2 { 4.0 } else { 0.0 };
-        let score =
-            load_score * 9.0 + manhattan * 0.22 + axis_penalty + primary_penalty + backward_penalty;
+        let score = load_score * 9.0
+            + manhattan * 0.22
+            + axis_penalty
+            + primary_penalty
+            + backward_penalty;
         let tiebreak = manhattan + from_load + to_load;
         if score < best_score || ((score - best_score).abs() < 1e-4 && tiebreak < best_tiebreak) {
             best = (start_side, end_side, is_backward);
@@ -1142,12 +1145,12 @@ pub(super) fn route_edge_with_avoidance(
                 || (hits == best_hits
                     && cross == best_cross
                     && label == best_label_hits
-                    && bends < best_bends)
+                    && overlap < best_overlap)
                 || (hits == best_hits
                     && cross == best_cross
                     && label == best_label_hits
-                    && bends == best_bends
-                    && overlap < best_overlap)
+                    && (overlap - best_overlap).abs() <= 1e-4
+                    && bends < best_bends)
                 || (hits == best_hits
                     && cross == best_cross
                     && label == best_label_hits
@@ -1589,12 +1592,12 @@ pub(super) fn route_edge_with_avoidance(
                 || (hits == best_hits
                     && cross == best_cross
                     && label == best_label_hits
-                    && bends < best_bends)
+                    && overlap < best_overlap)
                 || (hits == best_hits
                     && cross == best_cross
                     && label == best_label_hits
-                    && bends == best_bends
-                    && overlap < best_overlap)
+                    && (overlap - best_overlap).abs() <= 1e-4
+                    && bends < best_bends)
                 || (hits == best_hits
                     && cross == best_cross
                     && label == best_label_hits
@@ -1646,12 +1649,12 @@ pub(super) fn route_edge_with_avoidance(
             || (hits == best_hits
                 && cross == best_cross
                 && label == best_label_hits
-                && bends < best_bends)
+                && overlap < best_overlap)
             || (hits == best_hits
                 && cross == best_cross
                 && label == best_label_hits
-                && bends == best_bends
-                && overlap < best_overlap)
+                && (overlap - best_overlap).abs() <= 1e-4
+                && bends < best_bends)
             || (hits == best_hits
                 && cross == best_cross
                 && label == best_label_hits

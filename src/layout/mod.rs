@@ -547,6 +547,9 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             .max(config.flowchart.port_pad_min);
         let usable = (node_len - 2.0 * pad).max(1.0);
         let min_sep = usable / (candidates.len() as f32 + 1.0);
+        let snap_to_grid = config.flowchart.routing.snap_ports_to_grid
+            && routing_cell > 0.0
+            && min_sep >= routing_cell * 0.75;
         // other_pos is now an ideal port coordinate (x or y) in absolute
         // space.  Normalise it within the node's usable range so that ports
         // land where straight-line geometry dictates.
@@ -594,7 +597,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         for (rank, &cand_idx) in order.iter().enumerate() {
             let candidate = &candidates[cand_idx];
             let mut offset = assigned[cand_idx] - node_len / 2.0;
-            if config.flowchart.routing.snap_ports_to_grid && routing_cell > 0.0 {
+            if snap_to_grid {
                 offset = (offset / routing_cell).round() * routing_cell;
             }
             if config.flowchart.port_side_bias != 0.0 {
@@ -618,6 +621,62 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         let seen = pair_seen.entry(key).or_insert(0usize);
         pair_index[idx] = *seen;
         *seen += 1;
+    }
+
+    let mut cross_edge_offsets = vec![0.0f32; graph.edges.len()];
+    if graph.kind == crate::ir::DiagramKind::Flowchart {
+        let is_horizontal_layout = is_horizontal(graph.direction);
+        let band_size = (config.node_spacing * 2.0).max(30.0);
+        let mut groups: HashMap<i32, Vec<(usize, f32)>> = HashMap::new();
+        for (idx, edge) in graph.edges.iter().enumerate() {
+            let from_layout = nodes.get(&edge.from).expect("from node missing");
+            let to_layout = nodes.get(&edge.to).expect("to node missing");
+            let temp_from = from_layout.anchor_subgraph.and_then(|idx| {
+                subgraphs
+                    .get(idx)
+                    .map(|sub| anchor_layout_for_edge(from_layout, sub, graph.direction, true))
+            });
+            let temp_to = to_layout.anchor_subgraph.and_then(|idx| {
+                subgraphs
+                    .get(idx)
+                    .map(|sub| anchor_layout_for_edge(to_layout, sub, graph.direction, false))
+            });
+            let from = temp_from.as_ref().unwrap_or(from_layout);
+            let to = temp_to.as_ref().unwrap_or(to_layout);
+            let from_center = (from.x + from.width / 2.0, from.y + from.height / 2.0);
+            let to_center = (to.x + to.width / 2.0, to.y + to.height / 2.0);
+            let dx = to_center.0 - from_center.0;
+            let dy = to_center.1 - from_center.1;
+            let cross_axis = if is_horizontal_layout { dy.abs() } else { dx.abs() };
+            let main_axis = if is_horizontal_layout { dx.abs() } else { dy.abs() };
+            let is_secondary = edge.style == crate::ir::EdgeStyle::Dotted || edge.label.is_some();
+            if !is_secondary || cross_axis <= main_axis * 1.2 {
+                continue;
+            }
+            let band_coord = if is_horizontal_layout {
+                (from_center.0 + to_center.0) * 0.5
+            } else {
+                (from_center.1 + to_center.1) * 0.5
+            };
+            let bucket = (band_coord / band_size).round() as i32;
+            let sort_key = if is_horizontal_layout {
+                (from_center.1 + to_center.1) * 0.5
+            } else {
+                (from_center.0 + to_center.0) * 0.5
+            };
+            groups.entry(bucket).or_default().push((idx, sort_key));
+        }
+        let spacing = (config.node_spacing * 0.45).max(8.0);
+        for (_bucket, mut group) in groups {
+            if group.len() <= 1 {
+                continue;
+            }
+            group.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
+            let center = (group.len() as f32 - 1.0) * 0.5;
+            for (pos, (idx, _)) in group.iter().enumerate() {
+                cross_edge_offsets[*idx] = (pos as f32 - center) * spacing;
+            }
+        }
     }
 
     let mut route_order: Vec<(u8, f32, f32, usize)> = Vec::with_capacity(graph.edges.len());
@@ -709,7 +768,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             (idx_in_pair - (total - 1.0) / 2.0) * (config.node_spacing * MULTI_EDGE_OFFSET_RATIO)
         } else {
             0.0
-        };
+        } + cross_edge_offsets[*idx];
         let from_layout = nodes.get(&edge.from).expect("from node missing");
         let to_layout = nodes.get(&edge.to).expect("to node missing");
         let temp_from = from_layout.anchor_subgraph.and_then(|idx| {
@@ -931,8 +990,9 @@ fn assign_positions_manual(
         }
     }
 
+    let use_label_dummies = graph.kind != crate::ir::DiagramKind::Flowchart;
     // Collect gaps (original rank index) where at least one labeled forward edge exists.
-    let gaps_needing_label_rank: Vec<usize> = {
+    let gaps_needing_label_rank: Vec<usize> = if use_label_dummies {
         let mut gap_set: HashSet<usize> = HashSet::new();
         for (idx, edge) in layout_edges.iter().enumerate() {
             if edge_labels[idx].is_none() {
@@ -955,6 +1015,8 @@ fn assign_positions_manual(
         let mut v: Vec<usize> = gap_set.into_iter().collect();
         v.sort();
         v
+    } else {
+        Vec::new()
     };
 
     // Build a rank shift table: for each original rank r, the new rank is r + shift[r].
@@ -992,65 +1054,76 @@ fn assign_positions_manual(
     let mut order_map = graph.node_order.clone();
     let mut dummy_counter = 0usize;
 
-    for (idx, edge) in layout_edges.iter().enumerate() {
-        let Some(label) = &edge_labels[idx] else {
-            continue;
-        };
-        let from_rank = ranks.get(&edge.from).copied().unwrap_or(0);
-        let to_rank = ranks.get(&edge.to).copied().unwrap_or(0);
-        let lo = from_rank.min(to_rank);
-        let hi = from_rank.max(to_rank);
-        if hi <= lo {
-            continue;
-        }
-        let mid_gap = lo + (hi - lo - 1) / 2;
-        // The label rank is the new rank inserted after the shifted gap position.
-        let label_rank = mid_gap + rank_shift[mid_gap] + 1;
-        label_dummy_ranks.insert(label_rank);
-
-        let dummy_id = format!("__elabel_{}_{}_{dummy_counter}__", edge.from, edge.to);
-        dummy_counter += 1;
-        let order_idx = order_map.len();
-        order_map.insert(dummy_id.clone(), order_idx);
-
-        // Determine dimensions: for horizontal layouts, main-axis = width, cross-axis = height.
-        let (main_dim, cross_dim) = if is_horizontal(graph.direction) {
-            (label.width, label.height)
-        } else {
-            (label.height, label.width)
-        };
-
-        nodes.insert(
-            dummy_id.clone(),
-            NodeLayout {
-                id: dummy_id.clone(),
-                x: 0.0,
-                y: 0.0,
-                width: if is_horizontal(graph.direction) { main_dim } else { cross_dim },
-                height: if is_horizontal(graph.direction) { cross_dim } else { main_dim },
-                label: TextBlock {
-                    lines: vec![],
-                    width: 0.0,
-                    height: 0.0,
-                },
-                shape: crate::ir::NodeShape::Rectangle,
-                style: crate::ir::NodeStyle::default(),
-                link: None,
-                anchor_subgraph: None,
-                hidden: true,
-                icon: None,
-            },
-        );
-
-        // Record original edge index → dummy node ID mapping.
-        if let Some(&orig_idx) = original_edge_indices.get(idx) {
-            if orig_idx < label_dummy_ids.len() {
-                label_dummy_ids[orig_idx] = Some(dummy_id.clone());
+    if use_label_dummies {
+        for (idx, edge) in layout_edges.iter().enumerate() {
+            let Some(label) = &edge_labels[idx] else {
+                continue;
+            };
+            let from_rank = ranks.get(&edge.from).copied().unwrap_or(0);
+            let to_rank = ranks.get(&edge.to).copied().unwrap_or(0);
+            let lo = from_rank.min(to_rank);
+            let hi = from_rank.max(to_rank);
+            if hi <= lo {
+                continue;
             }
-        }
+            let mid_gap = lo + (hi - lo - 1) / 2;
+            // The label rank is the new rank inserted after the shifted gap position.
+            let label_rank = mid_gap + rank_shift[mid_gap] + 1;
+            label_dummy_ranks.insert(label_rank);
 
-        if let Some(bucket) = rank_nodes.get_mut(label_rank) {
-            bucket.push(dummy_id);
+            let dummy_id = format!("__elabel_{}_{}_{dummy_counter}__", edge.from, edge.to);
+            dummy_counter += 1;
+            let order_idx = order_map.len();
+            order_map.insert(dummy_id.clone(), order_idx);
+
+            // Determine dimensions: for horizontal layouts, main-axis = width, cross-axis = height.
+            // Cap the main-axis size so long edge labels don't explode rank spacing.
+            let label_main_cap =
+                (theme.font_size * 8.0).max(config.node_spacing * 1.3);
+            let (raw_main, raw_cross) = if is_horizontal(graph.direction) {
+                (label.width, label.height)
+            } else {
+                (label.height, label.width)
+            };
+            let main_dim = if raw_main > 0.0 {
+                raw_main.min(label_main_cap)
+            } else {
+                raw_main
+            };
+            let cross_dim = raw_cross;
+
+            nodes.insert(
+                dummy_id.clone(),
+                NodeLayout {
+                    id: dummy_id.clone(),
+                    x: 0.0,
+                    y: 0.0,
+                    width: if is_horizontal(graph.direction) { main_dim } else { cross_dim },
+                    height: if is_horizontal(graph.direction) { cross_dim } else { main_dim },
+                    label: TextBlock {
+                        lines: vec![],
+                        width: 0.0,
+                        height: 0.0,
+                    },
+                    shape: crate::ir::NodeShape::Rectangle,
+                    style: crate::ir::NodeStyle::default(),
+                    link: None,
+                    anchor_subgraph: None,
+                    hidden: true,
+                    icon: None,
+                },
+            );
+
+            // Record original edge index → dummy node ID mapping.
+            if let Some(&orig_idx) = original_edge_indices.get(idx) {
+                if orig_idx < label_dummy_ids.len() {
+                    label_dummy_ids[orig_idx] = Some(dummy_id.clone());
+                }
+            }
+
+            if let Some(bucket) = rank_nodes.get_mut(label_rank) {
+                bucket.push(dummy_id);
+            }
         }
     }
 
