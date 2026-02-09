@@ -1185,6 +1185,67 @@ def summarize_common_comparison(left, right):
     return lines
 
 
+def compute_sequence_cli_conformance(layout_path: Path, mermaid_svg_path: Path):
+    layout_diff = load_layout_diff()
+    mmdr_nodes, _ = layout_diff.load_mmdr_layout(layout_path)
+    mer_nodes, mer_labels, _, mer_specials = layout_diff.parse_mermaid_svg(mermaid_svg_path)
+    diffs, missing = layout_diff.compute_diffs(mmdr_nodes, mer_nodes, mer_labels, mer_specials)
+    summary = layout_diff.summarize_diffs(diffs)
+    _, _, aligned_summary, _ = layout_diff.align_diffs(diffs)
+    return {
+        "sequence_cli_match_count": summary.get("count", 0),
+        "sequence_cli_missing_nodes": len(missing),
+        "sequence_cli_mean_distance": summary.get("mean_distance", 0.0),
+        "sequence_cli_max_distance": summary.get("max_distance", 0.0),
+        "sequence_cli_aligned_mean_distance": aligned_summary.get("mean_distance", 0.0),
+        "sequence_cli_aligned_max_distance": aligned_summary.get("max_distance", 0.0),
+    }
+
+
+def augment_sequence_cli_conformance(files, mmdr_results, out_dir):
+    for file in files:
+        if detect_diagram_kind(file) != "sequence":
+            continue
+        file_key_str = str(file)
+        metrics = mmdr_results.get(file_key_str)
+        if not isinstance(metrics, dict) or "score" not in metrics:
+            continue
+        key = layout_key(file, ROOT)
+        layout_path = out_dir / f"{key}-layout.json"
+        mermaid_svg_path = out_dir / f"{key}-mmdc.svg"
+        if not layout_path.exists() or not mermaid_svg_path.exists():
+            continue
+        try:
+            metrics.update(compute_sequence_cli_conformance(layout_path, mermaid_svg_path))
+        except Exception as exc:
+            metrics["sequence_cli_conformance_error"] = str(exc)[:200]
+
+
+def summarize_sequence_cli_conformance(results):
+    rows = [
+        v
+        for v in results.values()
+        if isinstance(v, dict) and "sequence_cli_aligned_mean_distance" in v
+    ]
+    if not rows:
+        return []
+    aligned_means = [float(v["sequence_cli_aligned_mean_distance"]) for v in rows]
+    aligned_maxes = [float(v["sequence_cli_aligned_max_distance"]) for v in rows]
+    missing_nodes = [int(v.get("sequence_cli_missing_nodes", 0)) for v in rows]
+    lines = []
+    lines.append(
+        "sequence vs mermaid-cli conformance: "
+        f"{len(rows)} fixtures, "
+        f"avg aligned mean node distance={sum(aligned_means)/len(aligned_means):.2f}px, "
+        f"avg aligned max node distance={sum(aligned_maxes)/len(aligned_maxes):.2f}px"
+    )
+    lines.append(
+        "sequence vs mermaid-cli conformance: "
+        f"fixtures with missing mapped nodes={sum(1 for n in missing_nodes if n > 0)}/{len(rows)}"
+    )
+    return lines
+
+
 def main():
     parser = argparse.ArgumentParser(description="Compute layout quality metrics")
     parser.add_argument(
@@ -1269,6 +1330,8 @@ def main():
         results["mmdr"] = compute_mmdr_metrics(files, bin_path, config_path, out_dir)
     if args.engine in {"mmdc", "both"}:
         results["mermaid_cli"] = compute_mmdc_metrics(files, args.mmdc, config_path, out_dir)
+    if args.engine == "both":
+        augment_sequence_cli_conformance(files, results.get("mmdr", {}), out_dir)
 
     if args.engine == "mmdr":
         output_json = Path(args.output_json) if args.output_json else out_dir / "quality.json"
@@ -1343,6 +1406,8 @@ def main():
         for line in summarize_common_comparison(
             results.get("mmdr", {}), results.get("mermaid_cli", {})
         ):
+            print(line)
+        for line in summarize_sequence_cli_conformance(results.get("mmdr", {})):
             print(line)
     else:
         scored = [(k, v) for k, v in payload.items() if isinstance(v, dict) and "score" in v]
