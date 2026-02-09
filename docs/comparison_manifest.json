@@ -1,191 +1,422 @@
 {
-  "cache_bust": "v=14",
+  "cache_bust": "v=16",
   "sections": [
     {
       "title": "Flowchart",
       "items": [
-        {"id": "flowchart_basic", "label": "Basic"},
-        {"id": "flowchart_td", "label": "Top-Down"},
-        {"id": "flowchart_shapes", "label": "All Shapes"},
-        {"id": "flowchart_edges", "label": "Edge Types"},
-        {"id": "flowchart_labels", "label": "Edge Labels"},
-        {"id": "flowchart_styles", "label": "Custom Styles"},
-        {"id": "flowchart_subgraph", "label": "Subgraph"},
-        {"id": "flowchart_subgraph_dir", "label": "Subgraph Directions"},
-        {"id": "flowchart_ports", "label": "Branches"},
-        {"id": "flowchart_cycles", "label": "Cycles"},
-        {"id": "flowchart_dense", "label": "Dense Graph"},
-        {"id": "flowchart_complex", "label": "Complex Pipeline"},
-        {"id": "flowchart_cicd", "label": "CI/CD Pipeline"},
-        {"id": "flowchart_auth", "label": "Auth Flow"}
+        {
+          "id": "flowchart_basic",
+          "label": "Basic"
+        },
+        {
+          "id": "flowchart_td",
+          "label": "Top-Down"
+        },
+        {
+          "id": "flowchart_shapes",
+          "label": "All Shapes"
+        },
+        {
+          "id": "flowchart_edges",
+          "label": "Edge Types"
+        },
+        {
+          "id": "flowchart_labels",
+          "label": "Edge Labels"
+        },
+        {
+          "id": "flowchart_styles",
+          "label": "Custom Styles"
+        },
+        {
+          "id": "flowchart_subgraph",
+          "label": "Subgraph"
+        },
+        {
+          "id": "flowchart_subgraph_dir",
+          "label": "Subgraph Directions"
+        },
+        {
+          "id": "flowchart_ports",
+          "label": "Branches"
+        },
+        {
+          "id": "flowchart_cycles",
+          "label": "Cycles"
+        },
+        {
+          "id": "flowchart_dense",
+          "label": "Dense Graph"
+        },
+        {
+          "id": "flowchart_complex",
+          "label": "Complex Pipeline"
+        },
+        {
+          "id": "flowchart_cicd",
+          "label": "CI/CD Pipeline"
+        },
+        {
+          "id": "flowchart_auth",
+          "label": "Auth Flow"
+        }
       ]
     },
     {
       "title": "Sequence Diagram",
       "items": [
-        {"id": "sequence_basic", "label": "Basic"},
-        {"id": "sequence_frames", "label": "Frames"},
-        {"id": "sequence_collab", "label": "Collaboration"},
-        {"id": "sequence_loops", "label": "Loops & Par"},
-        {"id": "sequence_notes", "label": "Notes"},
-        {"id": "sequence_autonumber", "label": "Autonumber"},
-        {"id": "sequence_oauth", "label": "OAuth Flow"},
-        {"id": "sequence_microservice", "label": "Microservices"}
+        {
+          "id": "sequence_basic",
+          "label": "Basic"
+        },
+        {
+          "id": "sequence_frames",
+          "label": "Frames"
+        },
+        {
+          "id": "sequence_collab",
+          "label": "Collaboration"
+        },
+        {
+          "id": "sequence_loops",
+          "label": "Loops & Par"
+        },
+        {
+          "id": "sequence_notes",
+          "label": "Notes"
+        },
+        {
+          "id": "sequence_autonumber",
+          "label": "Autonumber"
+        },
+        {
+          "id": "sequence_oauth",
+          "label": "OAuth Flow"
+        },
+        {
+          "id": "sequence_microservice",
+          "label": "Microservices"
+        }
       ]
     },
     {
       "title": "Class Diagram",
       "items": [
-        {"id": "class_basic", "label": "Basic"},
-        {"id": "class_multiplicity", "label": "Multiplicity"},
-        {"id": "class_relations", "label": "Relations"},
-        {"id": "class_interface", "label": "Interfaces"},
-        {"id": "class_full", "label": "E-Commerce Model"},
-        {"id": "class_patterns", "label": "Observer Pattern"}
+        {
+          "id": "class_basic",
+          "label": "Basic"
+        },
+        {
+          "id": "class_multiplicity",
+          "label": "Multiplicity"
+        },
+        {
+          "id": "class_relations",
+          "label": "Relations"
+        },
+        {
+          "id": "class_interface",
+          "label": "Interfaces"
+        },
+        {
+          "id": "class_full",
+          "label": "E-Commerce Model"
+        },
+        {
+          "id": "class_patterns",
+          "label": "Observer Pattern"
+        }
       ]
     },
     {
       "title": "State Diagram",
       "items": [
-        {"id": "state_basic", "label": "Basic"},
-        {"id": "state_note", "label": "With Note"},
-        {"id": "state_parallel", "label": "Composite"},
-        {"id": "state_choice", "label": "Lifecycle"},
-        {"id": "state_nested", "label": "Deeply Nested"},
-        {"id": "state_fork", "label": "Fork/Join"},
-        {"id": "state_tcp", "label": "TCP States"}
+        {
+          "id": "state_basic",
+          "label": "Basic"
+        },
+        {
+          "id": "state_note",
+          "label": "With Note"
+        },
+        {
+          "id": "state_parallel",
+          "label": "Composite"
+        },
+        {
+          "id": "state_choice",
+          "label": "Lifecycle"
+        },
+        {
+          "id": "state_nested",
+          "label": "Deeply Nested"
+        },
+        {
+          "id": "state_fork",
+          "label": "Fork/Join"
+        },
+        {
+          "id": "state_tcp",
+          "label": "TCP States"
+        }
       ]
     },
     {
       "title": "ER Diagram",
       "items": [
-        {"id": "er_basic", "label": "Basic"},
-        {"id": "er_extended", "label": "Extended"},
-        {"id": "er_ecommerce", "label": "E-Commerce"},
-        {"id": "er_blog", "label": "Blog Platform"}
+        {
+          "id": "er_basic",
+          "label": "Basic"
+        },
+        {
+          "id": "er_extended",
+          "label": "Extended"
+        },
+        {
+          "id": "er_ecommerce",
+          "label": "E-Commerce"
+        },
+        {
+          "id": "er_blog",
+          "label": "Blog Platform"
+        }
       ]
     },
     {
       "title": "Pie Chart",
       "items": [
-        {"id": "pie_basic", "label": "Basic"},
-        {"id": "pie_segments", "label": "Segments"},
-        {"id": "pie_multicolor", "label": "Browser Share"}
+        {
+          "id": "pie_basic",
+          "label": "Basic"
+        },
+        {
+          "id": "pie_segments",
+          "label": "Segments"
+        },
+        {
+          "id": "pie_multicolor",
+          "label": "Browser Share"
+        }
       ]
     },
     {
       "title": "Gantt Chart",
       "items": [
-        {"id": "gantt_basic", "label": "Basic"},
-        {"id": "gantt_release", "label": "Release Plan"},
-        {"id": "gantt_full", "label": "Full Project"},
-        {"id": "gantt_sections", "label": "Sprint Plan"}
+        {
+          "id": "gantt_basic",
+          "label": "Basic"
+        },
+        {
+          "id": "gantt_release",
+          "label": "Release Plan"
+        },
+        {
+          "id": "gantt_full",
+          "label": "Full Project"
+        },
+        {
+          "id": "gantt_sections",
+          "label": "Sprint Plan"
+        }
       ]
     },
     {
       "title": "Mindmap",
       "items": [
-        {"id": "mindmap_basic", "label": "Basic"},
-        {"id": "mindmap_deep", "label": "Deep"},
-        {"id": "mindmap_project", "label": "Project Structure"},
-        {"id": "mindmap_shapes", "label": "Node Shapes"}
+        {
+          "id": "mindmap_basic",
+          "label": "Basic"
+        },
+        {
+          "id": "mindmap_deep",
+          "label": "Deep"
+        },
+        {
+          "id": "mindmap_project",
+          "label": "Project Structure"
+        },
+        {
+          "id": "mindmap_shapes",
+          "label": "Node Shapes"
+        }
       ]
     },
     {
       "title": "Timeline",
       "items": [
-        {"id": "timeline_basic", "label": "Basic"},
-        {"id": "timeline_release", "label": "Phases"},
-        {"id": "timeline_detailed", "label": "Computing History"}
+        {
+          "id": "timeline_basic",
+          "label": "Basic"
+        },
+        {
+          "id": "timeline_release",
+          "label": "Phases"
+        },
+        {
+          "id": "timeline_detailed",
+          "label": "Computing History"
+        }
       ]
     },
     {
       "title": "User Journey",
       "items": [
-        {"id": "journey_basic", "label": "Basic"},
-        {"id": "journey_team", "label": "Team"},
-        {"id": "journey_shopping", "label": "Shopping Experience"}
+        {
+          "id": "journey_basic",
+          "label": "Basic"
+        },
+        {
+          "id": "journey_team",
+          "label": "Team"
+        },
+        {
+          "id": "journey_shopping",
+          "label": "Shopping Experience"
+        }
       ]
     },
     {
       "title": "Git Graph",
       "items": [
-        {"id": "gitgraph_basic", "label": "Basic"},
-        {"id": "gitgraph_branching", "label": "Branching"},
-        {"id": "gitgraph_release", "label": "Release Flow"},
-        {"id": "gitgraph_parallel", "label": "Parallel Branches"}
+        {
+          "id": "gitgraph_basic",
+          "label": "Basic"
+        },
+        {
+          "id": "gitgraph_branching",
+          "label": "Branching"
+        },
+        {
+          "id": "gitgraph_release",
+          "label": "Release Flow"
+        },
+        {
+          "id": "gitgraph_parallel",
+          "label": "Parallel Branches"
+        }
       ]
     },
     {
       "title": "XY Chart",
       "items": [
-        {"id": "xychart_basic", "label": "Basic"},
-        {"id": "xychart_series", "label": "Series"},
-        {"id": "xychart_line", "label": "Line Chart"},
-        {"id": "xychart_mixed", "label": "Bar + Line"}
+        {
+          "id": "xychart_basic",
+          "label": "Basic"
+        },
+        {
+          "id": "xychart_series",
+          "label": "Series"
+        },
+        {
+          "id": "xychart_line",
+          "label": "Line Chart"
+        },
+        {
+          "id": "xychart_mixed",
+          "label": "Bar + Line"
+        }
       ]
     },
     {
       "title": "Quadrant Chart",
       "items": [
-        {"id": "quadrant_basic", "label": "Basic"},
-        {"id": "quadrant_strategy", "label": "Strategy"},
-        {"id": "quadrant_tech", "label": "Technology Radar"}
+        {
+          "id": "quadrant_basic",
+          "label": "Basic"
+        },
+        {
+          "id": "quadrant_strategy",
+          "label": "Strategy"
+        },
+        {
+          "id": "quadrant_tech",
+          "label": "Technology Radar"
+        }
       ]
     },
     {
       "title": "C4 Diagram",
       "items": [
-        {"id": "c4_basic", "label": "Context"},
-        {"id": "c4_container", "label": "Container"}
+        {
+          "id": "c4_basic",
+          "label": "Context"
+        },
+        {
+          "id": "c4_container",
+          "label": "Container"
+        }
       ]
     },
     {
       "title": "Sankey Diagram",
       "items": [
-        {"id": "sankey_basic", "label": "Energy Flow"}
+        {
+          "id": "sankey_basic",
+          "label": "Energy Flow"
+        }
       ]
     },
     {
       "title": "Block Diagram",
       "items": [
-        {"id": "block_basic", "label": "Basic"}
+        {
+          "id": "block_basic",
+          "label": "Basic"
+        }
       ]
     },
     {
       "title": "Packet Diagram",
       "items": [
-        {"id": "packet_basic", "label": "IPv4 Header"}
+        {
+          "id": "packet_basic",
+          "label": "IPv4 Header"
+        }
       ]
     },
     {
       "title": "Kanban Board",
       "items": [
-        {"id": "kanban_basic", "label": "Sprint Board"}
+        {
+          "id": "kanban_basic",
+          "label": "Sprint Board"
+        }
       ]
     },
     {
       "title": "Requirement Diagram",
       "items": [
-        {"id": "requirement_basic", "label": "Basic"}
+        {
+          "id": "requirement_basic",
+          "label": "Basic"
+        }
       ]
     },
     {
       "title": "Architecture Diagram",
       "items": [
-        {"id": "architecture_basic", "label": "Basic"}
+        {
+          "id": "architecture_basic",
+          "label": "Basic"
+        }
       ]
     },
     {
       "title": "Radar Chart",
       "items": [
-        {"id": "radar_basic", "label": "Comparison"}
+        {
+          "id": "radar_basic",
+          "label": "Comparison"
+        }
       ]
     },
     {
       "title": "Treemap",
       "items": [
-        {"id": "treemap_basic", "label": "Revenue"}
+        {
+          "id": "treemap_basic",
+          "label": "Revenue"
+        }
       ]
     }
   ]
