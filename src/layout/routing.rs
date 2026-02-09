@@ -56,6 +56,8 @@ const OBSTACLE_PAD_MIN: f32 = 6.0;
 const OVERLAP_TRIGGER_RATIO: f32 = 0.35;
 /// Minimum overlap cell count to trigger detour.
 const OVERLAP_TRIGGER_MIN: f32 = 4.0;
+/// Minimum collinear overlap length (px) that should trigger extra detour search.
+const OVERLAP_DETOUR_MIN: f32 = 3.0;
 
 // ── Label obstacle padding ──────────────────────────────────────────
 /// Padding around node labels when building label obstacles.
@@ -1225,6 +1227,8 @@ pub(super) fn route_edge_with_avoidance(
         // Find the extents of any obstacle that blocks the direct path
         let mut min_left = f32::MAX;
         let mut max_right = 0.0f32;
+        let mut min_top = f32::MAX;
+        let mut max_bottom = 0.0f32;
         for obstacle in ctx.obstacles {
             if obstacle.id == ctx.from_id || obstacle.id == ctx.to_id {
                 continue;
@@ -1243,6 +1247,15 @@ pub(super) fn route_edge_with_avoidance(
                 min_left = min_left.min(obstacle.x);
                 max_right = max_right.max(obstacle.x + obstacle.width);
             }
+            // Check if obstacle horizontally overlaps the edge span
+            let obs_left = obstacle.x;
+            let obs_right = obstacle.x + obstacle.width;
+            let path_left = start.0.min(end.0);
+            let path_right = start.0.max(end.0);
+            if obs_left < path_right && obs_right > path_left {
+                min_top = min_top.min(obs_top);
+                max_bottom = max_bottom.max(obs_bottom);
+            }
         }
 
         // Try routing around the right side first
@@ -1252,6 +1265,50 @@ pub(super) fn route_edge_with_avoidance(
                 route_start,
                 (route_x, route_start.1),
                 (route_x, route_end.1),
+                route_end,
+            ];
+            push_route_candidate_metrics(
+                points,
+                ctx,
+                existing_segments,
+                use_existing,
+                &mut candidates,
+                &mut intersections,
+                &mut crossings,
+                &mut label_hits,
+                &mut overlaps,
+            );
+        }
+
+        // Try routing under all blocking obstacles
+        if max_bottom > 0.0 {
+            let route_y = max_bottom + pad;
+            let points = vec![
+                route_start,
+                (route_start.0, route_y),
+                (route_end.0, route_y),
+                route_end,
+            ];
+            push_route_candidate_metrics(
+                points,
+                ctx,
+                existing_segments,
+                use_existing,
+                &mut candidates,
+                &mut intersections,
+                &mut crossings,
+                &mut label_hits,
+                &mut overlaps,
+            );
+        }
+
+        // Try routing above all blocking obstacles
+        if min_top < f32::MAX {
+            let route_y = min_top - pad;
+            let points = vec![
+                route_start,
+                (route_start.0, route_y),
+                (route_end.0, route_y),
                 route_end,
             ];
             push_route_candidate_metrics(
@@ -1318,7 +1375,10 @@ pub(super) fn route_edge_with_avoidance(
     } else {
         (route_end.0 - route_start.0).abs()
     };
-    let use_channel_candidates = cross_axis_delta > step * CHANNEL_CANDIDATE_RATIO && ctx.obstacles.len() > 10;
+    let use_channel_candidates =
+        (cross_axis_delta > step * CHANNEL_CANDIDATE_RATIO && ctx.obstacles.len() > 10)
+            || is_backward
+            || (ctx.start_side == ctx.end_side && ctx.obstacles.len() > 4);
 
     for (offset_rank, offset) in offsets.iter().copied().enumerate() {
         if is_horizontal(ctx.direction) {
@@ -1483,7 +1543,13 @@ pub(super) fn route_edge_with_avoidance(
     let min_hits = intersections.iter().copied().min().unwrap_or(0);
     let min_crossings = crossings.iter().copied().min().unwrap_or(0);
     let min_label_hits = label_hits.iter().copied().min().unwrap_or(0);
-    let mut needs_detour = min_crossings > 0 || min_label_hits > 0;
+    let min_overlap = overlaps
+        .iter()
+        .copied()
+        .fold(f32::INFINITY, f32::min);
+    let mut needs_detour = min_crossings > 0
+        || min_label_hits > 0
+        || (min_overlap.is_finite() && min_overlap >= OVERLAP_DETOUR_MIN);
     if min_hits == 0
         && let Some(occ) = occupancy
     {

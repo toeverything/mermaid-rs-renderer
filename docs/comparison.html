@@ -22,10 +22,12 @@ h2 { border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-top: 40px; }
 </head>
 <body>
 <h1>mmdr vs mermaid-cli Visual Comparison</h1>
-<p class="stats">Comparing output quality between mmdr (Rust) and mermaid-cli (Node.js + Chromium)<br>Last regenerated: <span id="regen-ts" data-regen="2026-02-09T08:26:33Z">2026-02-09 08:26 UTC</span> (<span id="regen-ago">just now</span> ago)</p>
+<p class="stats">Comparing output quality between mmdr (Rust) and mermaid-cli (Node.js + Chromium)<br>Last regenerated: <span id="regen-ts" data-regen="2026-02-09T09:58:19Z">2026-02-09 09:58 UTC</span> (<span id="regen-ago">just now</span> ago)</p>
 
 <h2>Changelog</h2>
 <ul class="changelog">
+<li>2026-02-09 8c9e313 Regenerate comparison artifacts</li>
+<li>2026-02-09 f625c0d Improve layout spacing for sequence, ER, and class diagrams</li>
 <li>2026-02-08 e5e48e3 Regenerate comparison artifacts</li>
 <li>2026-02-08 bab354b Improve flowchart label handling and routing fanout</li>
 <li>2026-02-08 ece3a1a Refactor layout data and improve edge label placement</li>
@@ -36,6 +38,14 @@ h2 { border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-top: 40px; }
 <li>2026-02-08 7317107 Extract error handling and sankey layout, name routing constants</li>
 <li>2026-02-08 b571d0c Add shared node builder helper and name magic number literals</li>
 <li>2026-02-08 1b2193b Pre-compute subgraph containment tree to avoid O(n²) loops</li>
+<li>2026-02-08 c78a1b9 Extract c4, mindmap, gitgraph, treemap, sequence layouts to individual files</li>
+<li>2026-02-08 9ba9fdc Extract gantt, xychart, journey, block, architecture layouts to individual files</li>
+<li>2026-02-08 3325f3a Extract pie, radar, quadrant, timeline, kanban layouts to individual files</li>
+<li>2026-02-08 4ffeaa5 Extract edge routing to layout/routing.rs</li>
+<li>2026-02-08 0189162 Extract ranking functions to layout/ranking.rs</li>
+<li>2026-02-08 385a40a Update comparison SVGs after label dummy positioning fix</li>
+<li>2026-02-08 bede067 Extract text measurement functions to layout/text.rs</li>
+<li>2026-02-08 849d3e3 Extract layout type definitions to layout/types.rs</li>
 </ul>
 
 <h2>Flowchart</h2><h3 class="example-title">Basic</h3><div class="comparison"><div class="panel code"><h3>Source</h3><pre>flowchart LR

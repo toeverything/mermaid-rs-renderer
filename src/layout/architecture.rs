@@ -127,10 +127,53 @@ pub(super) fn compute_architecture_layout(
         let Some(to) = nodes.get(&edge.to) else {
             continue;
         };
-        let start_x = from.x + SERVICE_SIZE;
-        let start_y = from.y + SERVICE_SIZE / 2.0;
-        let end_x = to.x;
-        let end_y = to.y + SERVICE_SIZE / 2.0;
+        let (start_side, end_side, _is_backward) = edge_sides(from, to, graph.direction);
+        let start = anchor_point_for_node(from, start_side, 0.0);
+        let end = anchor_point_for_node(to, end_side, 0.0);
+        let mut points = vec![start];
+        let dx = (start.0 - end.0).abs();
+        let dy = (start.1 - end.1).abs();
+        if dx > 1e-3 && dy <= 1e-3 {
+            let y = start.1;
+            let seg_min_x = start.0.min(end.0);
+            let seg_max_x = start.0.max(end.0);
+            let mut block_top = f32::MAX;
+            let mut block_bottom = f32::MIN;
+            let mut has_blocker = false;
+            for node in nodes.values() {
+                if node.id == edge.from || node.id == edge.to {
+                    continue;
+                }
+                let node_min_x = node.x;
+                let node_max_x = node.x + node.width;
+                let node_min_y = node.y;
+                let node_max_y = node.y + node.height;
+                if y > node_min_y && y < node_max_y && seg_max_x > node_min_x && seg_min_x < node_max_x {
+                    has_blocker = true;
+                    block_top = block_top.min(node_min_y);
+                    block_bottom = block_bottom.max(node_max_y);
+                }
+            }
+            if has_blocker {
+                let gap = 16.0;
+                let above = block_top - gap;
+                let below = block_bottom + gap;
+                let detour_y = if (y - above).abs() <= (below - y).abs() {
+                    above
+                } else {
+                    below
+                };
+                points.push((start.0, detour_y));
+                points.push((end.0, detour_y));
+            }
+        } else if dx > 1e-3 && dy > 1e-3 {
+            if side_is_vertical(start_side) {
+                points.push((start.0, end.1));
+            } else {
+                points.push((end.0, start.1));
+            }
+        }
+        points.push(end);
         let mut override_style = resolve_edge_style(idx, graph);
         if override_style.stroke.is_none() {
             override_style.stroke = Some(theme.line_color.clone());
@@ -146,7 +189,7 @@ pub(super) fn compute_architecture_layout(
             label_anchor: None,
             start_label_anchor: None,
             end_label_anchor: None,
-            points: vec![(start_x, start_y), (end_x, end_y)],
+            points: compress_path(&points),
             directed: true,
             arrow_start: false,
             arrow_end: true,

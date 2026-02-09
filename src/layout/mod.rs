@@ -47,7 +47,7 @@ use crate::ir::{Direction, Graph};
 use crate::text_metrics;
 use crate::theme::{Theme, adjust_color, parse_color_to_hsl};
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 // Label placement padding (resolved per diagram kind).
 const LABEL_RANK_FONT_SCALE: f32 = 0.5;
@@ -75,6 +75,8 @@ const STATE_PAD_Y_LABEL_RATIO: f32 = 0.22;
 // ── Subgraph padding ─────────────────────────────────────────────────
 const FLOWCHART_PAD_MAIN: f32 = 40.0;
 const FLOWCHART_PAD_CROSS: f32 = 30.0;
+const FLOWCHART_PORT_ROUTE_BIAS_RATIO: f32 = 0.5;
+const FLOWCHART_PORT_ROUTE_BIAS_MAX_RATIO: f32 = 0.8;
 const KANBAN_SUBGRAPH_PAD: f32 = 8.0;
 const STATE_SUBGRAPH_BASE_PAD: f32 = 16.0;
 const GENERIC_SUBGRAPH_BASE_PAD: f32 = 24.0;
@@ -478,15 +480,23 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         });
         let from = temp_from.as_ref().unwrap_or(from_layout);
         let to = temp_to.as_ref().unwrap_or(to_layout);
-        let (start_side, end_side, _is_backward) = edge_sides_balanced(
-            &edge.from,
-            &edge.to,
-            from,
-            to,
-            graph.direction,
-            &node_degrees,
-            &side_loads,
+        let use_balanced_sides = !matches!(
+            graph.kind,
+            crate::ir::DiagramKind::Architecture
         );
+        let (start_side, end_side, _is_backward) = if use_balanced_sides {
+            edge_sides_balanced(
+                &edge.from,
+                &edge.to,
+                from,
+                to,
+                graph.direction,
+                &node_degrees,
+                &side_loads,
+            )
+        } else {
+            edge_sides(from, to, graph.direction)
+        };
         bump_side_load(&mut side_loads, &edge.from, start_side);
         bump_side_load(&mut side_loads, &edge.to, end_side);
         edge_ports.push(EdgePortInfo {
@@ -715,7 +725,24 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         };
         let (_, _, is_backward) = edge_sides(from, to, graph.direction);
         let is_secondary = edge.style == crate::ir::EdgeStyle::Dotted || edge.label.is_some();
-        let priority = if is_secondary {
+        let has_open_triangle = matches!(
+            edge.arrow_start_kind,
+            Some(crate::ir::EdgeArrowhead::OpenTriangle)
+        ) || matches!(
+            edge.arrow_end_kind,
+            Some(crate::ir::EdgeArrowhead::OpenTriangle)
+        );
+        let priority = if graph.kind == crate::ir::DiagramKind::Class {
+            if has_open_triangle {
+                0u8
+            } else if is_secondary {
+                2u8
+            } else if is_backward {
+                1u8
+            } else {
+                1u8
+            }
+        } else if is_secondary {
             2u8
         } else if is_backward {
             1u8
@@ -768,7 +795,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         let key = edge_pair_key(edge);
         let total = *pair_counts.get(&key).unwrap_or(&1) as f32;
         let idx_in_pair = pair_index[*idx] as f32;
-        let base_offset = if total > 1.0 {
+        let mut base_offset = if total > 1.0 {
             (idx_in_pair - (total - 1.0) / 2.0) * (config.node_spacing * MULTI_EDGE_OFFSET_RATIO)
         } else {
             0.0
@@ -791,6 +818,12 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             .get(*idx)
             .copied()
             .expect("edge port info missing");
+        if graph.kind == crate::ir::DiagramKind::Flowchart {
+            let raw_bias =
+                (port_info.start_offset - port_info.end_offset) * FLOWCHART_PORT_ROUTE_BIAS_RATIO;
+            let max_bias = (config.node_spacing * FLOWCHART_PORT_ROUTE_BIAS_MAX_RATIO).max(8.0);
+            base_offset += raw_bias.clamp(-max_bias, max_bias);
+        }
         let default_stub = port_stub_length(config, from, to);
         let stub_len = match graph.kind {
             crate::ir::DiagramKind::Class
@@ -815,12 +848,61 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             end_offset: port_info.end_offset,
             stub_len,
         };
-        let points = route_edge_with_avoidance(
+        let use_existing_for_edge = !(matches!(
+            graph.kind,
+            crate::ir::DiagramKind::Class | crate::ir::DiagramKind::Er
+        ) && edge.style == crate::ir::EdgeStyle::Dotted);
+        let existing_for_edge = if use_existing_for_edge {
+            Some(existing_segments.as_slice())
+        } else {
+            None
+        };
+        let mut points = route_edge_with_avoidance(
             &route_ctx,
             edge_occupancy.as_ref(),
             routing_grid.as_ref(),
-            Some(&existing_segments),
+            existing_for_edge,
         );
+        if matches!(
+            graph.kind,
+            crate::ir::DiagramKind::Class | crate::ir::DiagramKind::Er
+        ) {
+            let fast_ctx = RouteContext {
+                from_id: route_ctx.from_id,
+                to_id: route_ctx.to_id,
+                from: route_ctx.from,
+                to: route_ctx.to,
+                direction: route_ctx.direction,
+                config: route_ctx.config,
+                obstacles: route_ctx.obstacles,
+                label_obstacles: route_ctx.label_obstacles,
+                fast_route: true,
+                base_offset: route_ctx.base_offset,
+                start_side: route_ctx.start_side,
+                end_side: route_ctx.end_side,
+                start_offset: route_ctx.start_offset,
+                end_offset: route_ctx.end_offset,
+                stub_len: route_ctx.stub_len,
+            };
+            let fast_points = route_edge_with_avoidance(&fast_ctx, None, None, existing_for_edge);
+            let fast_hits = path_obstacle_intersections(
+                &fast_points,
+                route_ctx.obstacles,
+                route_ctx.from_id,
+                route_ctx.to_id,
+            );
+            let fast_label_hits = path_label_intersections(&fast_points, route_ctx.label_obstacles);
+            if fast_hits == 0 && fast_label_hits == 0 {
+                let (fast_cross, fast_overlap) =
+                    edge_crossings_with_existing(&fast_points, &existing_segments);
+                let (cur_cross, cur_overlap) = edge_crossings_with_existing(&points, &existing_segments);
+                if fast_cross < cur_cross
+                    || (fast_cross == cur_cross && fast_overlap + 0.25 < cur_overlap)
+                {
+                    points = fast_points;
+                }
+            }
+        }
         if !has_label_dummies
             && let Some(label) = edge_route_labels.get(*idx).and_then(|label| label.as_ref())
             && label.width > 0.0
@@ -845,6 +927,16 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             }
         }
         routed_points[*idx] = points;
+    }
+
+    if graph.kind == crate::ir::DiagramKind::Flowchart {
+        reduce_orthogonal_path_crossings(graph, &nodes, &mut routed_points, config);
+        deoverlap_flowchart_paths(graph, &nodes, &mut routed_points, config);
+    } else if matches!(
+        graph.kind,
+        crate::ir::DiagramKind::Class | crate::ir::DiagramKind::Er
+    ) {
+        reduce_orthogonal_path_crossings(graph, &nodes, &mut routed_points, config);
     }
 
     // Insert label dummy via-points so edges pass through label positions.
@@ -989,7 +1081,63 @@ fn assign_positions_manual(
         .collect();
     let edge_labels = edge_labels_vec;
     let rank_edges = rank_edges_for_manual_layout(graph, layout_node_ids, &layout_edges);
-    let ranks = compute_ranks_subset(layout_node_ids, &rank_edges, &graph.node_order);
+    let mut ranks = compute_ranks_subset(layout_node_ids, &rank_edges, &graph.node_order);
+    if graph.kind == crate::ir::DiagramKind::Class {
+        let mut hierarchy_nodes: HashSet<String> = HashSet::new();
+        for edge in &layout_edges {
+            let has_open_triangle = matches!(
+                edge.arrow_start_kind,
+                Some(crate::ir::EdgeArrowhead::OpenTriangle)
+            ) || matches!(
+                edge.arrow_end_kind,
+                Some(crate::ir::EdgeArrowhead::OpenTriangle)
+            );
+            if has_open_triangle {
+                hierarchy_nodes.insert(edge.from.clone());
+                hierarchy_nodes.insert(edge.to.clone());
+            }
+        }
+        if !hierarchy_nodes.is_empty() {
+            let min_hierarchy_rank = hierarchy_nodes
+                .iter()
+                .filter_map(|id| ranks.get(id).copied())
+                .min()
+                .unwrap_or(0);
+            let mut pending_updates: Vec<(String, usize)> = Vec::new();
+            for node_id in layout_node_ids {
+                if hierarchy_nodes.contains(node_id) {
+                    continue;
+                }
+                let mut sum = 0.0f32;
+                let mut count = 0usize;
+                for edge in &layout_edges {
+                    if edge.from == *node_id {
+                        if let Some(rank) = ranks.get(&edge.to) {
+                            sum += *rank as f32;
+                            count += 1;
+                        }
+                    } else if edge.to == *node_id
+                        && let Some(rank) = ranks.get(&edge.from)
+                    {
+                        sum += *rank as f32;
+                        count += 1;
+                    }
+                }
+                if count == 0 {
+                    continue;
+                }
+                let avg_neighbor_rank = (sum / count as f32).round().max(0.0) as usize;
+                let target_rank = avg_neighbor_rank.max(min_hierarchy_rank + 1);
+                let current_rank = ranks.get(node_id).copied().unwrap_or(0);
+                if target_rank > current_rank {
+                    pending_updates.push((node_id.clone(), target_rank));
+                }
+            }
+            for (node_id, rank) in pending_updates {
+                ranks.insert(node_id, rank);
+            }
+        }
+    }
     let mut max_rank = 0usize;
     for rank in ranks.values() {
         max_rank = max_rank.max(*rank);
@@ -1008,6 +1156,7 @@ fn assign_positions_manual(
             | crate::ir::DiagramKind::Class
             | crate::ir::DiagramKind::Er
             | crate::ir::DiagramKind::Requirement
+            | crate::ir::DiagramKind::State
     );
     // Collect gaps (original rank index) where at least one labeled forward edge exists.
     let gaps_needing_label_rank: Vec<usize> = if use_label_dummies {
@@ -1064,7 +1213,6 @@ fn assign_positions_manual(
             new_rank_nodes[new_rank] = bucket.clone();
         }
         rank_nodes = new_rank_nodes;
-        max_rank = new_max_rank;
     }
 
     // Create label dummy nodes in the inserted label ranks.
@@ -2811,6 +2959,369 @@ fn bounds_with_edges(
     (max_x, max_y)
 }
 
+fn flowchart_path_overlap_with_prior(path: &[(f32, f32)], prior: &[Vec<(f32, f32)>]) -> f32 {
+    let mut overlap = 0.0f32;
+    for segment in path.windows(2) {
+        let a1 = segment[0];
+        let a2 = segment[1];
+        for other in prior {
+            for other_segment in other.windows(2) {
+                overlap += collinear_overlap_length(a1, a2, other_segment[0], other_segment[1]);
+            }
+        }
+    }
+    overlap
+}
+
+fn append_path_segments(path: &[(f32, f32)], segments: &mut Vec<Segment>) {
+    if path.len() < 2 {
+        return;
+    }
+    for window in path.windows(2) {
+        segments.push((window[0], window[1]));
+    }
+}
+
+fn perimeter_route_candidates(
+    start: (f32, f32),
+    end: (f32, f32),
+    outer_left: f32,
+    outer_right: f32,
+    outer_top: f32,
+    outer_bottom: f32,
+) -> Vec<Vec<(f32, f32)>> {
+    vec![
+        vec![
+            start,
+            (outer_right, start.1),
+            (outer_right, outer_bottom),
+            (outer_left, outer_bottom),
+            (outer_left, end.1),
+            end,
+        ],
+        vec![
+            start,
+            (outer_right, start.1),
+            (outer_right, outer_top),
+            (outer_left, outer_top),
+            (outer_left, end.1),
+            end,
+        ],
+        vec![
+            start,
+            (outer_left, start.1),
+            (outer_left, outer_bottom),
+            (outer_right, outer_bottom),
+            (outer_right, end.1),
+            end,
+        ],
+        vec![
+            start,
+            (outer_left, start.1),
+            (outer_left, outer_top),
+            (outer_right, outer_top),
+            (outer_right, end.1),
+            end,
+        ],
+    ]
+}
+
+fn reduce_crossing_sweep(
+    order: &[usize],
+    graph: &Graph,
+    nodes: &BTreeMap<String, NodeLayout>,
+    routed_points: &mut [Vec<(f32, f32)>],
+    deltas: &[f32],
+    use_perimeter_candidates: bool,
+    outer_left: f32,
+    outer_right: f32,
+    outer_top: f32,
+    outer_bottom: f32,
+) -> bool {
+    let mut changed = false;
+    let mut existing_segments: Vec<Segment> = Vec::new();
+    for &idx in order {
+        if routed_points[idx].len() < 2 {
+            append_path_segments(&routed_points[idx], &mut existing_segments);
+            continue;
+        }
+        let from_id = graph.edges[idx].from.as_str();
+        let to_id = graph.edges[idx].to.as_str();
+        let (baseline_cross, baseline_overlap) =
+            edge_crossings_with_existing(&routed_points[idx], &existing_segments);
+        if baseline_cross == 0 {
+            append_path_segments(&routed_points[idx], &mut existing_segments);
+            continue;
+        }
+        let mut best_cross = baseline_cross;
+        let mut best_overlap = baseline_overlap;
+        let mut best_len = path_length(&routed_points[idx]);
+        let mut best_points = routed_points[idx].clone();
+        let segment_count = routed_points[idx].len().saturating_sub(1);
+        for seg_idx in 0..segment_count {
+            for &delta in deltas {
+                let Some(candidate) = bump_orthogonal_segment(&routed_points[idx], seg_idx, delta)
+                else {
+                    continue;
+                };
+                if flowchart_path_hits_non_endpoint_nodes(&candidate, from_id, to_id, nodes) {
+                    continue;
+                }
+                let (crossings, overlap) = edge_crossings_with_existing(&candidate, &existing_segments);
+                let len = path_length(&candidate);
+                if crossings < best_cross
+                    || (crossings == best_cross && overlap + 0.05 < best_overlap)
+                    || (crossings == best_cross
+                        && (overlap - best_overlap).abs() <= 0.05
+                        && len + 1.0 < best_len)
+                {
+                    best_cross = crossings;
+                    best_overlap = overlap;
+                    best_len = len;
+                    best_points = candidate;
+                }
+            }
+        }
+        if use_perimeter_candidates
+            && let (Some(&start), Some(&end)) = (routed_points[idx].first(), routed_points[idx].last())
+        {
+            for candidate in perimeter_route_candidates(
+                start,
+                end,
+                outer_left,
+                outer_right,
+                outer_top,
+                outer_bottom,
+            ) {
+                let candidate = compress_path(&candidate);
+                if flowchart_path_hits_non_endpoint_nodes(&candidate, from_id, to_id, nodes) {
+                    continue;
+                }
+                let (crossings, overlap) = edge_crossings_with_existing(&candidate, &existing_segments);
+                let len = path_length(&candidate);
+                if crossings < best_cross
+                    || (crossings == best_cross && overlap + 0.05 < best_overlap)
+                    || (crossings == best_cross
+                        && (overlap - best_overlap).abs() <= 0.05
+                        && len + 1.0 < best_len)
+                {
+                    best_cross = crossings;
+                    best_overlap = overlap;
+                    best_len = len;
+                    best_points = candidate;
+                }
+            }
+        }
+        if best_cross < baseline_cross || (best_cross == baseline_cross && best_overlap + 0.05 < baseline_overlap) {
+            routed_points[idx] = best_points;
+            changed = true;
+        }
+        append_path_segments(&routed_points[idx], &mut existing_segments);
+    }
+    changed
+}
+
+fn reduce_orthogonal_path_crossings(
+    graph: &Graph,
+    nodes: &BTreeMap<String, NodeLayout>,
+    routed_points: &mut [Vec<(f32, f32)>],
+    config: &LayoutConfig,
+) {
+    if graph.edges.len() < 2 {
+        return;
+    }
+    let base_delta = (config.node_spacing * 0.22).max(8.0);
+    let deltas = [
+        base_delta,
+        -base_delta,
+        base_delta * 1.5,
+        -base_delta * 1.5,
+        base_delta * 2.0,
+        -base_delta * 2.0,
+        base_delta * 3.0,
+        -base_delta * 3.0,
+        base_delta * 4.0,
+        -base_delta * 4.0,
+    ];
+    let min_x = nodes
+        .values()
+        .filter(|node| !node.hidden && node.anchor_subgraph.is_none())
+        .map(|node| node.x)
+        .fold(f32::MAX, f32::min);
+    let max_x = nodes
+        .values()
+        .filter(|node| !node.hidden && node.anchor_subgraph.is_none())
+        .map(|node| node.x + node.width)
+        .fold(f32::MIN, f32::max);
+    let min_y = nodes
+        .values()
+        .filter(|node| !node.hidden && node.anchor_subgraph.is_none())
+        .map(|node| node.y)
+        .fold(f32::MAX, f32::min);
+    let max_y = nodes
+        .values()
+        .filter(|node| !node.hidden && node.anchor_subgraph.is_none())
+        .map(|node| node.y + node.height)
+        .fold(f32::MIN, f32::max);
+    let outer_pad = (config.node_spacing * 0.8).max(24.0);
+    let outer_left = min_x - outer_pad;
+    let outer_right = max_x + outer_pad;
+    let outer_top = min_y - outer_pad;
+    let outer_bottom = max_y + outer_pad;
+    let use_perimeter_candidates = graph.kind == crate::ir::DiagramKind::Er;
+    let forward: Vec<usize> = (0..routed_points.len()).collect();
+    let reverse: Vec<usize> = (0..routed_points.len()).rev().collect();
+
+    for _ in 0..3 {
+        let mut changed = reduce_crossing_sweep(
+            &forward,
+            graph,
+            nodes,
+            routed_points,
+            &deltas,
+            use_perimeter_candidates,
+            outer_left,
+            outer_right,
+            outer_top,
+            outer_bottom,
+        );
+        changed |= reduce_crossing_sweep(
+            &reverse,
+            graph,
+            nodes,
+            routed_points,
+            &deltas,
+            use_perimeter_candidates,
+            outer_left,
+            outer_right,
+            outer_top,
+            outer_bottom,
+        );
+        if !changed {
+            break;
+        }
+    }
+}
+
+fn flowchart_path_hits_non_endpoint_nodes(
+    path: &[(f32, f32)],
+    from_id: &str,
+    to_id: &str,
+    nodes: &BTreeMap<String, NodeLayout>,
+) -> bool {
+    for segment in path.windows(2) {
+        let a = segment[0];
+        let b = segment[1];
+        for node in nodes.values() {
+            if node.id == from_id || node.id == to_id || node.hidden || node.anchor_subgraph.is_some() {
+                continue;
+            }
+            let obstacle = Obstacle {
+                id: node.id.clone(),
+                x: node.x,
+                y: node.y,
+                width: node.width,
+                height: node.height,
+                members: None,
+            };
+            if segment_intersects_rect(a, b, &obstacle) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn bump_orthogonal_segment(points: &[(f32, f32)], seg_idx: usize, delta: f32) -> Option<Vec<(f32, f32)>> {
+    if seg_idx + 1 >= points.len() {
+        return None;
+    }
+    let a = points[seg_idx];
+    let b = points[seg_idx + 1];
+    let horizontal = (a.1 - b.1).abs() < 1e-3;
+    let vertical = (a.0 - b.0).abs() < 1e-3;
+    if !horizontal && !vertical {
+        return None;
+    }
+    let mut bumped = Vec::with_capacity(points.len() + 2);
+    bumped.extend_from_slice(&points[..=seg_idx]);
+    if horizontal {
+        let y = a.1 + delta;
+        bumped.push((a.0, y));
+        bumped.push((b.0, y));
+    } else {
+        let x = a.0 + delta;
+        bumped.push((x, a.1));
+        bumped.push((x, b.1));
+    }
+    bumped.extend_from_slice(&points[(seg_idx + 1)..]);
+    Some(compress_path(&bumped))
+}
+
+fn deoverlap_flowchart_paths(
+    graph: &Graph,
+    nodes: &BTreeMap<String, NodeLayout>,
+    routed_points: &mut [Vec<(f32, f32)>],
+    config: &LayoutConfig,
+) {
+    if graph.edges.len() < 2 {
+        return;
+    }
+    let overlap_threshold = 0.75f32;
+    let base_delta = (config.node_spacing * 0.25).max(8.0);
+    let deltas = [
+        base_delta,
+        -base_delta,
+        base_delta * 1.5,
+        -base_delta * 1.5,
+        base_delta * 2.0,
+        -base_delta * 2.0,
+    ];
+
+    for _ in 0..3 {
+        let mut changed = false;
+        for idx in 1..routed_points.len() {
+            if routed_points[idx].len() < 2 {
+                continue;
+            }
+            let from_id = graph.edges[idx].from.as_str();
+            let to_id = graph.edges[idx].to.as_str();
+            let baseline =
+                flowchart_path_overlap_with_prior(&routed_points[idx], &routed_points[..idx]);
+            if baseline < overlap_threshold {
+                continue;
+            }
+            let mut best_overlap = baseline;
+            let mut best_points = routed_points[idx].clone();
+            let segment_count = routed_points[idx].len().saturating_sub(1);
+            for seg_idx in 0..segment_count {
+                for delta in deltas {
+                    let Some(candidate) =
+                        bump_orthogonal_segment(&routed_points[idx], seg_idx, delta)
+                    else {
+                        continue;
+                    };
+                    if flowchart_path_hits_non_endpoint_nodes(&candidate, from_id, to_id, nodes) {
+                        continue;
+                    }
+                    let overlap = flowchart_path_overlap_with_prior(&candidate, &routed_points[..idx]);
+                    if overlap + 0.05 < best_overlap {
+                        best_overlap = overlap;
+                        best_points = candidate;
+                    }
+                }
+            }
+            if best_overlap + 0.05 < baseline {
+                routed_points[idx] = best_points;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+}
+
 fn apply_direction_mirror(
     direction: Direction,
     nodes: &mut BTreeMap<String, NodeLayout>,
@@ -3972,43 +4483,6 @@ fn has_visible_node_overlap(nodes: &BTreeMap<String, NodeLayout>) -> bool {
         }
     }
     false
-}
-
-fn graph_has_directed_cycle(graph: &Graph) -> bool {
-    if graph.nodes.len() < 2 || graph.edges.len() < 2 {
-        return false;
-    }
-    let mut indegree: HashMap<String, usize> = graph.nodes.keys().map(|id| (id.clone(), 0)).collect();
-    let mut outgoing: HashMap<String, Vec<String>> = HashMap::new();
-    for edge in &graph.edges {
-        if !indegree.contains_key(&edge.from) || !indegree.contains_key(&edge.to) {
-            continue;
-        }
-        outgoing
-            .entry(edge.from.clone())
-            .or_default()
-            .push(edge.to.clone());
-        *indegree.entry(edge.to.clone()).or_default() += 1;
-    }
-    let mut queue: VecDeque<String> = indegree
-        .iter()
-        .filter_map(|(id, deg)| if *deg == 0 { Some(id.clone()) } else { None })
-        .collect();
-    let mut visited = 0usize;
-    while let Some(node_id) = queue.pop_front() {
-        visited += 1;
-        if let Some(next) = outgoing.get(&node_id) {
-            for target in next {
-                if let Some(deg) = indegree.get_mut(target) {
-                    *deg = deg.saturating_sub(1);
-                    if *deg == 0 {
-                        queue.push_back(target.clone());
-                    }
-                }
-            }
-        }
-    }
-    visited < indegree.len()
 }
 
 #[derive(Clone)]

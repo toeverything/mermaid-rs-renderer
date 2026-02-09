@@ -106,6 +106,7 @@ pub(super) fn order_rank_nodes(
                 continue;
             }
             sort_bucket(&mut rank_nodes[rank], &incoming, &positions);
+            transpose_bucket(&mut rank_nodes[rank], &incoming, &positions, node_order);
             update_positions(rank_nodes, &mut positions);
         }
         for rank in (0..rank_nodes.len().saturating_sub(1)).rev() {
@@ -113,7 +114,77 @@ pub(super) fn order_rank_nodes(
                 continue;
             }
             sort_bucket(&mut rank_nodes[rank], &outgoing, &positions);
+            transpose_bucket(&mut rank_nodes[rank], &outgoing, &positions, node_order);
             update_positions(rank_nodes, &mut positions);
+        }
+    }
+}
+
+fn pair_crossings(
+    a: &str,
+    b: &str,
+    neighbors: &HashMap<String, Vec<String>>,
+    positions: &HashMap<String, usize>,
+) -> (usize, usize) {
+    let mut a_pos: Vec<usize> = neighbors
+        .get(a)
+        .into_iter()
+        .flatten()
+        .filter_map(|id| positions.get(id).copied())
+        .collect();
+    let mut b_pos: Vec<usize> = neighbors
+        .get(b)
+        .into_iter()
+        .flatten()
+        .filter_map(|id| positions.get(id).copied())
+        .collect();
+    if a_pos.is_empty() || b_pos.is_empty() {
+        return (0, 0);
+    }
+    a_pos.sort_unstable();
+    b_pos.sort_unstable();
+    let mut crossings_ab = 0usize;
+    let mut crossings_ba = 0usize;
+    for pa in &a_pos {
+        for pb in &b_pos {
+            if pa > pb {
+                crossings_ab += 1;
+            } else if pb > pa {
+                crossings_ba += 1;
+            }
+        }
+    }
+    (crossings_ab, crossings_ba)
+}
+
+fn transpose_bucket(
+    bucket: &mut Vec<String>,
+    neighbors: &HashMap<String, Vec<String>>,
+    positions: &HashMap<String, usize>,
+    node_order: &HashMap<String, usize>,
+) {
+    if bucket.len() <= 1 {
+        return;
+    }
+    let mut improved = true;
+    while improved {
+        improved = false;
+        for i in 0..bucket.len().saturating_sub(1) {
+            let a = bucket[i].as_str();
+            let b = bucket[i + 1].as_str();
+            let (crossings_ab, crossings_ba) = pair_crossings(a, b, neighbors, positions);
+            let should_swap = if crossings_ba < crossings_ab {
+                true
+            } else if crossings_ba > crossings_ab {
+                false
+            } else {
+                node_order.get(a).copied().unwrap_or(usize::MAX)
+                    > node_order.get(b).copied().unwrap_or(usize::MAX)
+            };
+            if should_swap {
+                bucket.swap(i, i + 1);
+                improved = true;
+            }
         }
     }
 }
