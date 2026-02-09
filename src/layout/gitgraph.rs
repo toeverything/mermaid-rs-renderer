@@ -1,6 +1,10 @@
 use super::*;
 
-pub(super) fn compute_gitgraph_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
+pub(super) fn compute_gitgraph_layout(
+    graph: &Graph,
+    theme: &Theme,
+    config: &LayoutConfig,
+) -> Layout {
     let gg = &config.gitgraph;
     let is_vertical = matches!(graph.direction, Direction::TopDown | Direction::BottomTop);
     let is_bottom_top = graph.direction == Direction::BottomTop;

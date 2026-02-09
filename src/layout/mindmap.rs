@@ -220,7 +220,11 @@ fn place_mindmap_children(
     }
 }
 
-pub(super) fn compute_mindmap_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
+pub(super) fn compute_mindmap_layout(
+    graph: &Graph,
+    theme: &Theme,
+    config: &LayoutConfig,
+) -> Layout {
     let palette = mindmap_palette(theme, config);
     let mut nodes: BTreeMap<String, NodeLayout> = BTreeMap::new();
     let mut info_map: HashMap<String, MindmapNodeInfo> = HashMap::new();
@@ -476,6 +480,8 @@ pub(super) fn compute_mindmap_layout(graph: &Graph, theme: &Theme, config: &Layo
         subgraphs: Vec::new(),
         width,
         height,
-        diagram: DiagramData::Graph { state_notes: Vec::new() },
+        diagram: DiagramData::Graph {
+            state_notes: Vec::new(),
+        },
     }
 }

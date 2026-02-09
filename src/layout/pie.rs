@@ -6,7 +6,9 @@ use crate::ir::Graph;
 use crate::theme::Theme;
 
 use super::text::measure_label_with_font_size;
-use super::{DiagramData, Layout, PieData, PieLegendItem, PieSliceLayout, PieTitleLayout, TextBlock};
+use super::{
+    DiagramData, Layout, PieData, PieLegendItem, PieSliceLayout, PieTitleLayout, TextBlock,
+};
 
 fn pie_palette(theme: &Theme) -> Vec<String> {
     theme.pie_colors.to_vec()

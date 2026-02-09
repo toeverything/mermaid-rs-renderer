@@ -126,7 +126,9 @@ fn resolve_center_labels(
         // Then by edge path length ascending (shorter = more constrained).
         let len_a = edge_path_length(&edges[a]);
         let len_b = edge_path_length(&edges[b]);
-        len_a.partial_cmp(&len_b).unwrap_or(std::cmp::Ordering::Equal)
+        len_a
+            .partial_cmp(&len_b)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     for idx in order {
@@ -155,7 +157,9 @@ fn resolve_center_labels(
         } else {
             push_anchor_unique(&mut anchors, edge_label_anchor(edge));
         }
-        let normal_steps = [0.0, 0.15, -0.15, 0.35, -0.35, 0.6, -0.6, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0];
+        let normal_steps = [
+            0.0, 0.15, -0.15, 0.35, -0.35, 0.6, -0.6, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0,
+        ];
         let tangent_steps = [0.0, 0.2, -0.2, 0.6, -0.6, 1.2, -1.2];
         let mut best_pos = (anchors[0].0, anchors[0].1);
         let mut best_penalty = (f32::INFINITY, f32::INFINITY);
@@ -265,7 +269,9 @@ fn resolve_endpoint_labels(
     theme: &Theme,
     config: &LayoutConfig,
 ) {
-    let has_endpoint_labels = edges.iter().any(|e| e.start_label.is_some() || e.end_label.is_some());
+    let has_endpoint_labels = edges
+        .iter()
+        .any(|e| e.start_label.is_some() || e.end_label.is_some());
     if !has_endpoint_labels {
         return;
     }
@@ -302,9 +308,7 @@ fn resolve_endpoint_labels(
     }
 
     let end_label_offset = match kind {
-        DiagramKind::Class | DiagramKind::Flowchart => {
-            (theme.font_size * 0.75).max(9.0)
-        }
+        DiagramKind::Class | DiagramKind::Flowchart => (theme.font_size * 0.75).max(9.0),
         _ => (theme.font_size * 0.6).max(8.0),
     };
     let state_font_size = if kind == DiagramKind::State {
@@ -401,11 +405,7 @@ fn edge_path_length(edge: &EdgeLayout) -> f32 {
     total
 }
 
-fn subgraph_label_rect(
-    sub: &SubgraphLayout,
-    kind: DiagramKind,
-    theme: &Theme,
-) -> Option<Rect> {
+fn subgraph_label_rect(sub: &SubgraphLayout, kind: DiagramKind, theme: &Theme) -> Option<Rect> {
     if sub.label.trim().is_empty() {
         return None;
     }
@@ -415,8 +415,7 @@ fn subgraph_label_rect(
         return None;
     }
     if kind == DiagramKind::State {
-        let header_h =
-            (height + theme.font_size * 0.75).max(theme.font_size * 1.4);
+        let header_h = (height + theme.font_size * 0.75).max(theme.font_size * 1.4);
         let label_pad_x = (theme.font_size * 0.6).max(height * 0.35);
         let x = sub.x + label_pad_x;
         let y = sub.y + header_h / 2.0 - height / 2.0;
@@ -600,8 +599,8 @@ fn edge_label_anchor_from_point(
         let t_clamped = t.clamp(0.0, 1.0);
         let proj_x = p1.0 + dx * t_clamped;
         let proj_y = p1.1 + dy * t_clamped;
-        let dist2 = (point.0 - proj_x) * (point.0 - proj_x)
-            + (point.1 - proj_y) * (point.1 - proj_y);
+        let dist2 =
+            (point.0 - proj_x) * (point.0 - proj_x) + (point.1 - proj_y) * (point.1 - proj_y);
         if dist2 < best_dist2 {
             best_dist2 = dist2;
             best_dir = Some((dx, dy));
@@ -612,10 +611,7 @@ fn edge_label_anchor_from_point(
     Some((point.0, point.1, dx / len, dy / len))
 }
 
-fn push_anchor_unique(
-    anchors: &mut Vec<(f32, f32, f32, f32)>,
-    candidate: (f32, f32, f32, f32),
-) {
+fn push_anchor_unique(anchors: &mut Vec<(f32, f32, f32, f32)>, candidate: (f32, f32, f32, f32)) {
     let duplicate = anchors.iter().any(|anchor| {
         (anchor.0 - candidate.0).abs() <= LABEL_ANCHOR_POS_EPS
             && (anchor.1 - candidate.1).abs() <= LABEL_ANCHOR_POS_EPS
@@ -797,7 +793,11 @@ fn candidate_better(candidate: (f32, f32), best: (f32, f32)) -> bool {
     (candidate.0 - best.0).abs() <= 1e-6 && candidate.1 + 1e-6 < best.1
 }
 
-pub(crate) fn edge_endpoint_label_position(edge: &EdgeLayout, start: bool, offset: f32) -> Option<(f32, f32)> {
+pub(crate) fn edge_endpoint_label_position(
+    edge: &EdgeLayout,
+    start: bool,
+    offset: f32,
+) -> Option<(f32, f32)> {
     if edge.points.len() < 2 {
         return None;
     }
@@ -961,7 +961,8 @@ mod tests {
 
     #[test]
     fn clamp_label_center_no_op_when_inside() {
-        let result = clamp_label_center_to_bounds((50.0, 50.0), 20.0, 10.0, 2.0, 2.0, (100.0, 100.0));
+        let result =
+            clamp_label_center_to_bounds((50.0, 50.0), 20.0, 10.0, 2.0, 2.0, (100.0, 100.0));
         assert_eq!(result, (50.0, 50.0));
     }
 
@@ -1014,7 +1015,11 @@ mod tests {
             override_style: crate::ir::EdgeStyleOverride::default(),
         };
         let (x, y, _dx, _dy) = edge_label_anchor(&edge);
-        assert!((x - 50.0).abs() < 1.0, "midpoint x should be ~50, got {}", x);
+        assert!(
+            (x - 50.0).abs() < 1.0,
+            "midpoint x should be ~50, got {}",
+            x
+        );
         assert!((y - 0.0).abs() < 1.0, "midpoint y should be ~0, got {}", y);
     }
 
@@ -1040,9 +1045,17 @@ mod tests {
             style: crate::ir::EdgeStyle::Solid,
             override_style: crate::ir::EdgeStyleOverride::default(),
         };
-        let (_x, _y, dx, dy) = edge_label_anchor_from_point(&edge, (100.0, 60.0))
-            .expect("anchor should resolve");
-        assert!(dx.abs() < 0.1, "dx should be ~0 for vertical segment, got {}", dx);
-        assert!(dy > 0.9, "dy should be positive for vertical segment, got {}", dy);
+        let (_x, _y, dx, dy) =
+            edge_label_anchor_from_point(&edge, (100.0, 60.0)).expect("anchor should resolve");
+        assert!(
+            dx.abs() < 0.1,
+            "dx should be ~0 for vertical segment, got {}",
+            dx
+        );
+        assert!(
+            dy > 0.9,
+            "dy should be positive for vertical segment, got {}",
+            dy
+        );
     }
 }

@@ -58,8 +58,24 @@ def resolve_bin(path_str: str) -> Path:
     return path
 
 
+def bin_needs_rebuild(bin_path: Path):
+    if not bin_path.exists():
+        return True
+    bin_mtime = bin_path.stat().st_mtime
+    candidates = [ROOT / "Cargo.toml", ROOT / "Cargo.lock"]
+    for path in candidates:
+        if path.exists() and path.stat().st_mtime > bin_mtime:
+            return True
+    src_dir = ROOT / "src"
+    if src_dir.exists():
+        for path in src_dir.rglob("*.rs"):
+            if path.stat().st_mtime > bin_mtime:
+                return True
+    return False
+
+
 def build_release(bin_path: Path):
-    if bin_path.exists():
+    if not bin_needs_rebuild(bin_path):
         return
     cmd = ["cargo", "build", "--release"]
     res = run(cmd)
@@ -97,6 +113,29 @@ def parse_svg_number(value: str) -> float:
         return 0.0
     match = re.search(r"[-+]?(?:\d*\.\d+|\d+)", value)
     return float(match.group(0)) if match else 0.0
+
+
+def detect_diagram_kind(path: Path):
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("%%"):
+            continue
+        if line.startswith("sequenceDiagram"):
+            return "sequence"
+        if line.startswith("flowchart") or line.startswith("graph"):
+            return "flowchart"
+        if line.startswith("classDiagram"):
+            return "class"
+        if line.startswith("stateDiagram"):
+            return "state"
+        if line.startswith("erDiagram"):
+            return "er"
+        break
+    return ""
 
 
 def parse_style_map(style: str):
@@ -372,6 +411,7 @@ def parse_mermaid_edges(svg_path: Path):
                 "signal",
                 "arrow",
                 "link",
+                "relationship",
             )
         )
         if "actor-line" in cls_lower or "actorline" in cls_lower or "lifeline" in cls_lower:
@@ -635,6 +675,87 @@ def segment_intersects_rect(a, b, rect, eps=1e-6):
     return False
 
 
+def point_segment_distance(point, a, b):
+    ax, ay = a
+    bx, by = b
+    px, py = point
+    dx = bx - ax
+    dy = by - ay
+    len_sq = dx * dx + dy * dy
+    if len_sq <= 1e-9:
+        return math.hypot(px - ax, py - ay)
+    t = ((px - ax) * dx + (py - ay) * dy) / len_sq
+    t = max(0.0, min(1.0, t))
+    proj_x = ax + dx * t
+    proj_y = ay + dy * t
+    return math.hypot(px - proj_x, py - proj_y)
+
+
+def point_polyline_distance(point, points):
+    if not points:
+        return float("inf")
+    if len(points) == 1:
+        return math.hypot(point[0] - points[0][0], point[1] - points[0][1])
+    best = float("inf")
+    for a, b in zip(points, points[1:]):
+        best = min(best, point_segment_distance(point, a, b))
+    return best
+
+
+def collinear_overlap_length(a, b, c, d, eps=1e-6):
+    if abs(orient(a, b, c)) > eps or abs(orient(a, b, d)) > eps:
+        return 0.0
+    dx = b[0] - a[0]
+    dy = b[1] - a[1]
+    seg_len_sq = dx * dx + dy * dy
+    if seg_len_sq < eps:
+        return 0.0
+
+    def proj(p):
+        return ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / seg_len_sq
+
+    t1 = proj(c)
+    t2 = proj(d)
+    tmin = min(t1, t2)
+    tmax = max(t1, t2)
+    overlap = max(0.0, min(1.0, tmax) - max(0.0, tmin))
+    return overlap * math.sqrt(seg_len_sq)
+
+
+def compute_svg_edge_path_metrics(edges):
+    segments = []
+    for idx, edge in enumerate(edges):
+        points = [tuple(p) for p in edge.get("points", [])]
+        if len(points) < 2:
+            continue
+        for a, b in zip(points, points[1:]):
+            segments.append((idx, a, b))
+
+    crossings = 0
+    overlap_length = 0.0
+    for i in range(len(segments)):
+        ei, a1, a2 = segments[i]
+        for j in range(i + 1, len(segments)):
+            ej, b1, b2 = segments[j]
+            if ei == ej:
+                continue
+            if (
+                math.hypot(a1[0] - b1[0], a1[1] - b1[1]) < 1e-6
+                or math.hypot(a1[0] - b2[0], a1[1] - b2[1]) < 1e-6
+                or math.hypot(a2[0] - b1[0], a2[1] - b1[1]) < 1e-6
+                or math.hypot(a2[0] - b2[0], a2[1] - b2[1]) < 1e-6
+            ):
+                continue
+            if segments_intersect(a1, a2, b1, b2):
+                crossings += 1
+            overlap_length += collinear_overlap_length(a1, a2, b1, b2)
+
+    return {
+        "svg_edge_crossings": crossings,
+        "svg_edge_overlap_length": overlap_length,
+    }
+
+
 def infer_label_owner(label, nodes):
     cx = label["x"] + label["width"] / 2.0
     cy = label["y"] + label["height"] / 2.0
@@ -656,7 +777,7 @@ def infer_label_owner(label, nodes):
     return best_id
 
 
-def compute_label_metrics(svg_path: Path, nodes, edges):
+def compute_label_metrics(svg_path: Path, nodes, edges, diagram_kind=""):
     labels = parse_text_boxes(svg_path)
     root = ET.fromstring(svg_path.read_text())
     canvas_width, canvas_height = svg_size(root)
@@ -713,6 +834,47 @@ def compute_label_metrics(svg_path: Path, nodes, edges):
                 label_out_of_bounds_count += 1
                 label_out_of_bounds_area += clipped
 
+    edge_label_distances = []
+    edge_label_bad_count = 0
+    for label in labels:
+        if label.get("owner") is not None:
+            continue
+        center = (
+            label["x"] + label["width"] * 0.5,
+            label["y"] + label["height"] * 0.5,
+        )
+        min_dist = float("inf")
+        for edge in edges:
+            points = [tuple(p) for p in edge.get("points", [])]
+            if len(points) < 2:
+                continue
+            min_dist = min(min_dist, point_polyline_distance(center, points))
+        if not math.isfinite(min_dist):
+            continue
+        # Exclude obvious non-edge labels (titles, distant captions).
+        if diagram_kind == "sequence":
+            candidate_cutoff = max(48.0, label["height"] * 6.0)
+            bad_limit = max(24.0, label["height"] * 3.6)
+        else:
+            candidate_cutoff = max(24.0, label["height"] * 4.0)
+            bad_limit = max(10.0, label["height"] * 1.75)
+        if min_dist > candidate_cutoff:
+            continue
+        edge_label_distances.append(min_dist)
+        if min_dist > bad_limit:
+            edge_label_bad_count += 1
+
+    edge_label_alignment_mean = (
+        sum(edge_label_distances) / len(edge_label_distances)
+        if edge_label_distances
+        else 0.0
+    )
+    edge_label_alignment_p95 = 0.0
+    if edge_label_distances:
+        ordered = sorted(edge_label_distances)
+        p95_idx = int(round((len(ordered) - 1) * 0.95))
+        edge_label_alignment_p95 = ordered[p95_idx]
+
     return {
         "label_count": len(labels),
         "label_overlap_count": overlap_count,
@@ -724,6 +886,15 @@ def compute_label_metrics(svg_path: Path, nodes, edges):
         "label_out_of_bounds_area": label_out_of_bounds_area,
         "label_out_of_bounds_ratio": (
             label_out_of_bounds_area / label_total_area if label_total_area > 1e-9 else 0.0
+        ),
+        "edge_label_alignment_count": len(edge_label_distances),
+        "edge_label_alignment_mean": edge_label_alignment_mean,
+        "edge_label_alignment_p95": edge_label_alignment_p95,
+        "edge_label_alignment_bad_count": edge_label_bad_count,
+        "edge_label_alignment_bad_ratio": (
+            edge_label_bad_count / len(edge_label_distances)
+            if edge_label_distances
+            else 0.0
         ),
     }
 
@@ -769,6 +940,49 @@ def load_mermaid_svg_graph(svg_path: Path):
 
     return {"width": width, "height": height}, nodes, edges
 
+
+def parse_anchor_tuple(value):
+    if not isinstance(value, (list, tuple)) or len(value) < 2:
+        return None
+    try:
+        return float(value[0]), float(value[1])
+    except (TypeError, ValueError):
+        return None
+
+
+def compute_layout_anchor_metrics(layout_edges):
+    distances = []
+    miss_count = 0
+    for edge in layout_edges:
+        points = [tuple(p) for p in edge.get("points", [])]
+        if len(points) < 2:
+            continue
+        for label_key, anchor_key in (
+            ("label", "label_anchor"),
+            ("start_label", "start_label_anchor"),
+            ("end_label", "end_label_anchor"),
+        ):
+            if edge.get(label_key) is None:
+                continue
+            anchor = parse_anchor_tuple(edge.get(anchor_key))
+            if anchor is None:
+                continue
+            dist = point_polyline_distance(anchor, points)
+            distances.append(dist)
+            if dist > 8.0:
+                miss_count += 1
+
+    mean_dist = sum(distances) / len(distances) if distances else 0.0
+    max_dist = max(distances) if distances else 0.0
+    return {
+        "layout_anchor_label_count": len(distances),
+        "layout_anchor_alignment_mean": mean_dist,
+        "layout_anchor_alignment_max": max_dist,
+        "layout_anchor_miss_count": miss_count,
+        "layout_anchor_miss_ratio": (miss_count / len(distances)) if distances else 0.0,
+    }
+
+
 def layout_key(path: Path, base: Path) -> str:
     path = Path(path)
     base = Path(base)
@@ -799,6 +1013,7 @@ def compute_mmdr_metrics(files, bin_path, config_path, out_dir):
     config_args = ["-c", str(config_path)] if config_path.exists() else []
     results = {}
     for file in files:
+        diagram_kind = detect_diagram_kind(file)
         key = layout_key(file, ROOT)
         layout_path = out_dir / f"{key}-layout.json"
         svg_path = out_dir / f"{key}.svg"
@@ -823,7 +1038,14 @@ def compute_mmdr_metrics(files, bin_path, config_path, out_dir):
         data, nodes, edges = layout_score.load_layout(layout_path)
         metrics = layout_score.compute_metrics(data, nodes, edges)
         metrics["score"] = layout_score.weighted_score(metrics)
-        metrics.update(compute_label_metrics(svg_path, nodes, edges))
+        _, _, svg_edges = load_mermaid_svg_graph(svg_path)
+        metrics.update(compute_label_metrics(svg_path, nodes, svg_edges, diagram_kind))
+        svg_metrics = compute_svg_edge_path_metrics(svg_edges)
+        metrics.update(svg_metrics)
+        metrics["arrow_path_intersections"] = svg_metrics.get("svg_edge_crossings", 0)
+        metrics["arrow_path_overlap_length"] = svg_metrics.get("svg_edge_overlap_length", 0.0)
+        layout_data = json.loads(layout_path.read_text())
+        metrics.update(compute_layout_anchor_metrics(layout_data.get("edges", [])))
         results[str(file)] = metrics
     return results
 
@@ -833,6 +1055,7 @@ def compute_mmdc_metrics(files, cli_cmd, config_path, out_dir):
     out_dir.mkdir(parents=True, exist_ok=True)
     results = {}
     for file in files:
+        diagram_kind = detect_diagram_kind(file)
         key = layout_key(file, ROOT)
         svg_path = out_dir / f"{key}-mmdc.svg"
         if svg_path.exists():
@@ -844,7 +1067,11 @@ def compute_mmdc_metrics(files, cli_cmd, config_path, out_dir):
         data, nodes, edges = load_mermaid_svg_graph(svg_path)
         metrics = layout_score.compute_metrics(data, nodes, edges)
         metrics["score"] = layout_score.weighted_score(metrics)
-        metrics.update(compute_label_metrics(svg_path, nodes, edges))
+        metrics.update(compute_label_metrics(svg_path, nodes, edges, diagram_kind))
+        svg_metrics = compute_svg_edge_path_metrics(edges)
+        metrics.update(svg_metrics)
+        metrics["arrow_path_intersections"] = svg_metrics.get("svg_edge_crossings", 0)
+        metrics["arrow_path_overlap_length"] = svg_metrics.get("svg_edge_overlap_length", 0.0)
         results[str(file)] = metrics
     return results
 
@@ -864,13 +1091,107 @@ def summarize_metric(results, key):
     return sum(values) / len(values), len(values)
 
 
+def collect_common_scored(left, right):
+    common = []
+    for key, lval in left.items():
+        rval = right.get(key)
+        if not isinstance(lval, dict) or not isinstance(rval, dict):
+            continue
+        if "score" not in lval or "score" not in rval:
+            continue
+        common.append(key)
+    return common
+
+
+def metric_compare_counts(left, right, keys, metric, eps=1e-9):
+    better = 0
+    equal = 0
+    worse = 0
+    regressions = []
+    for key in keys:
+        lval = left[key].get(metric)
+        rval = right[key].get(metric)
+        if not isinstance(lval, (int, float)) or not isinstance(rval, (int, float)):
+            continue
+        delta = lval - rval
+        if delta < -eps:
+            better += 1
+        elif delta > eps:
+            worse += 1
+            regressions.append((delta, key, lval, rval))
+        else:
+            equal += 1
+    regressions.sort(reverse=True, key=lambda item: item[0])
+    return better, equal, worse, regressions
+
+
+def summarize_common_comparison(left, right):
+    common = collect_common_scored(left, right)
+    if not common:
+        return []
+    core_metrics = [
+        "score",
+        "edge_crossings",
+        "svg_edge_crossings",
+        "arrow_path_intersections",
+        "label_overlap_count",
+        "label_out_of_bounds_count",
+    ]
+    lines = [f"Common scored fixtures: {len(common)}"]
+    for metric in core_metrics:
+        better, equal, worse, regressions = metric_compare_counts(left, right, common, metric)
+        lines.append(
+            f"mmdr vs mermaid-cli `{metric}`: better {better}, equal {equal}, worse {worse}"
+        )
+        if regressions:
+            top = regressions[0]
+            lines.append(
+                "  worst regression: "
+                f"{Path(top[1]).name} (mmdr={top[2]:.3f}, mermaid-cli={top[3]:.3f})"
+            )
+
+    dominance_metrics = [
+        "score",
+        "edge_crossings",
+        "arrow_path_intersections",
+        "label_overlap_count",
+        "label_out_of_bounds_count",
+    ]
+    non_worse = 0
+    strict = 0
+    comparable = 0
+    for key in common:
+        comparable_metrics = []
+        for metric in dominance_metrics:
+            lval = left[key].get(metric)
+            rval = right[key].get(metric)
+            if isinstance(lval, (int, float)) and isinstance(rval, (int, float)):
+                comparable_metrics.append((lval, rval))
+        if len(comparable_metrics) != len(dominance_metrics):
+            continue
+        comparable += 1
+        is_non_worse = all(l <= r + 1e-9 for l, r in comparable_metrics)
+        is_strict = is_non_worse and any(l < r - 1e-9 for l, r in comparable_metrics)
+        if is_non_worse:
+            non_worse += 1
+        if is_strict:
+            strict += 1
+    if comparable:
+        lines.append(
+            "Core-dominance "
+            f"({', '.join(dominance_metrics)}): non-worse {non_worse}/{comparable}, "
+            f"strictly better {strict}/{comparable}"
+        )
+    return lines
+
+
 def main():
     parser = argparse.ArgumentParser(description="Compute layout quality metrics")
     parser.add_argument(
         "--fixtures",
         action="append",
         default=[],
-        help="fixture dir (repeatable). default: tests/fixtures, benches/fixtures",
+        help="fixture dir (repeatable). default: tests/fixtures, benches/fixtures, docs/comparison_sources",
     )
     parser.add_argument(
         "--config",
@@ -919,7 +1240,11 @@ def main():
 
     fixtures = [Path(p) for p in args.fixtures if p]
     if not fixtures:
-        fixtures = [ROOT / "tests" / "fixtures", ROOT / "benches" / "fixtures"]
+        fixtures = [
+            ROOT / "tests" / "fixtures",
+            ROOT / "benches" / "fixtures",
+            ROOT / "docs" / "comparison_sources",
+        ]
 
     bin_path = resolve_bin(args.bin)
     if args.engine in {"mmdr", "both"}:
@@ -995,6 +1320,30 @@ def main():
             print(f"mmdr: avg label out-of-bounds count: {mmdr_label_oob:.3f}")
         if mmdc_label_oob_count:
             print(f"mermaid-cli: avg label out-of-bounds count: {mmdc_label_oob:.3f}")
+        mmdr_intersections, mmdr_intersections_count = summarize_metric(
+            results.get("mmdr", {}), "arrow_path_intersections"
+        )
+        mmdc_intersections, mmdc_intersections_count = summarize_metric(
+            results.get("mermaid_cli", {}), "arrow_path_intersections"
+        )
+        if mmdr_intersections_count:
+            print(f"mmdr: avg arrow-path intersections: {mmdr_intersections:.3f}")
+        if mmdc_intersections_count:
+            print(f"mermaid-cli: avg arrow-path intersections: {mmdc_intersections:.3f}")
+        mmdr_label_align, mmdr_label_align_count = summarize_metric(
+            results.get("mmdr", {}), "edge_label_alignment_mean"
+        )
+        mmdc_label_align, mmdc_label_align_count = summarize_metric(
+            results.get("mermaid_cli", {}), "edge_label_alignment_mean"
+        )
+        if mmdr_label_align_count:
+            print(f"mmdr: avg edge-label distance to nearest edge: {mmdr_label_align:.3f}")
+        if mmdc_label_align_count:
+            print(f"mermaid-cli: avg edge-label distance to nearest edge: {mmdc_label_align:.3f}")
+        for line in summarize_common_comparison(
+            results.get("mmdr", {}), results.get("mermaid_cli", {})
+        ):
+            print(line)
     else:
         scored = [(k, v) for k, v in payload.items() if isinstance(v, dict) and "score" in v]
         if scored:
@@ -1037,6 +1386,30 @@ def main():
                     "  "
                     f"{name}: count={metrics.get('label_out_of_bounds_count', 0)}, "
                     f"ratio={metrics.get('label_out_of_bounds_ratio', 0.0):.3f}"
+                )
+            by_intersections = sorted(
+                scored,
+                key=lambda kv: kv[1].get("arrow_path_intersections", 0.0),
+                reverse=True,
+            )[:5]
+            print("Worst 5 by arrow-path intersections:")
+            for name, metrics in by_intersections:
+                print(
+                    "  "
+                    f"{name}: intersections={metrics.get('arrow_path_intersections', 0)}, "
+                    f"overlap={metrics.get('arrow_path_overlap_length', 0.0):.2f}"
+                )
+            by_label_alignment = sorted(
+                scored,
+                key=lambda kv: kv[1].get("edge_label_alignment_bad_count", 0.0),
+                reverse=True,
+            )[:5]
+            print("Worst 5 by edge-label alignment misses:")
+            for name, metrics in by_label_alignment:
+                print(
+                    "  "
+                    f"{name}: bad={metrics.get('edge_label_alignment_bad_count', 0)}, "
+                    f"mean={metrics.get('edge_label_alignment_mean', 0.0):.2f}"
                 )
 
 

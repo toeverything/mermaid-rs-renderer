@@ -1,10 +1,6 @@
 use super::*;
 
-pub(super) fn compute_kanban_layout(
-    graph: &Graph,
-    theme: &Theme,
-    config: &LayoutConfig,
-) -> Layout {
+pub(super) fn compute_kanban_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
     if !graph.edges.is_empty() {
         return compute_flowchart_layout(graph, theme, config);
     }
@@ -104,6 +100,8 @@ pub(super) fn compute_kanban_layout(
         subgraphs,
         width,
         height,
-        diagram: DiagramData::Graph { state_notes: Vec::new() },
+        diagram: DiagramData::Graph {
+            state_notes: Vec::new(),
+        },
     }
 }

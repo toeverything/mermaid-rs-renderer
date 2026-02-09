@@ -368,7 +368,12 @@ mod tests {
     #[test]
     fn compute_ranks_diamond() {
         let nodes = vec!["A".into(), "B".into(), "C".into(), "D".into()];
-        let edges = vec![edge("A", "B"), edge("A", "C"), edge("B", "D"), edge("C", "D")];
+        let edges = vec![
+            edge("A", "B"),
+            edge("A", "C"),
+            edge("B", "D"),
+            edge("C", "D"),
+        ];
         let ranks = compute_ranks_subset(&nodes, &edges, &HashMap::new());
         assert_eq!(ranks["A"], 0);
         assert_eq!(ranks["B"], 1);

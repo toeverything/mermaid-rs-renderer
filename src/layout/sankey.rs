@@ -6,15 +6,11 @@ use crate::theme::Theme;
 
 use super::text::measure_label;
 use super::{
-    resolve_node_style, DiagramData, EdgeLayout, Layout, NodeLayout, SankeyLayout, SankeyLinkLayout,
-    SankeyNodeLayout,
+    DiagramData, EdgeLayout, Layout, NodeLayout, SankeyLayout, SankeyLinkLayout, SankeyNodeLayout,
+    resolve_node_style,
 };
 
-pub(super) fn compute_sankey_layout(
-    graph: &Graph,
-    theme: &Theme,
-    config: &LayoutConfig,
-) -> Layout {
+pub(super) fn compute_sankey_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
     const SANKEY_WIDTH: f32 = 560.0;
     const SANKEY_HEIGHT: f32 = 360.0;
     const SANKEY_NODE_WIDTH: f32 = 10.0;

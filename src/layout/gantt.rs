@@ -142,11 +142,7 @@ fn format_gantt_date(days: i32) -> String {
     format!("{:04}-{:02}-{:02}", year, month, day)
 }
 
-pub(super) fn compute_gantt_layout(
-    graph: &Graph,
-    theme: &Theme,
-    config: &LayoutConfig,
-) -> Layout {
+pub(super) fn compute_gantt_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
     let padding = theme.font_size * 1.25;
     let row_height = (theme.font_size * 1.5).max(theme.font_size + 8.0);
     let label_gap = theme.font_size * 1.05;

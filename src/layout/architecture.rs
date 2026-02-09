@@ -148,7 +148,11 @@ pub(super) fn compute_architecture_layout(
                 let node_max_x = node.x + node.width;
                 let node_min_y = node.y;
                 let node_max_y = node.y + node.height;
-                if y > node_min_y && y < node_max_y && seg_max_x > node_min_x && seg_min_x < node_max_x {
+                if y > node_min_y
+                    && y < node_max_y
+                    && seg_max_x > node_min_x
+                    && seg_min_x < node_max_x
+                {
                     has_blocker = true;
                     block_top = block_top.min(node_min_y);
                     block_bottom = block_bottom.max(node_max_y);
@@ -213,6 +217,8 @@ pub(super) fn compute_architecture_layout(
         subgraphs,
         width,
         height,
-        diagram: DiagramData::Graph { state_notes: Vec::new() },
+        diagram: DiagramData::Graph {
+            state_notes: Vec::new(),
+        },
     }
 }

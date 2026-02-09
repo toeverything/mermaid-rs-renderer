@@ -236,7 +236,10 @@ mod tests {
     fn fallback_text_width_scales_with_font_size() {
         let w16 = fallback_text_width("Hello", 16.0);
         let w32 = fallback_text_width("Hello", 32.0);
-        assert!((w32 - w16 * 2.0).abs() < 0.01, "width should double with font size");
+        assert!(
+            (w32 - w16 * 2.0).abs() < 0.01,
+            "width should double with font size"
+        );
     }
 
     #[test]

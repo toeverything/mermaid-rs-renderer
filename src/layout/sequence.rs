@@ -1,6 +1,17 @@
 use super::*;
 
-pub(super) fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
+type Rect = (f32, f32, f32, f32);
+
+const SEQUENCE_LABEL_PAD_X: f32 = 3.0;
+const SEQUENCE_LABEL_PAD_Y: f32 = 2.0;
+const SEQUENCE_ENDPOINT_LABEL_PAD_X: f32 = 2.5;
+const SEQUENCE_ENDPOINT_LABEL_PAD_Y: f32 = 1.5;
+
+pub(super) fn compute_sequence_layout(
+    graph: &Graph,
+    theme: &Theme,
+    config: &LayoutConfig,
+) -> Layout {
     let mut nodes = BTreeMap::new();
     let mut edges = Vec::new();
     let subgraphs = Vec::new();
@@ -13,26 +24,35 @@ pub(super) fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &Lay
     }
 
     let mut label_blocks: HashMap<String, TextBlock> = HashMap::new();
-    let mut max_label_width: f32 = 0.0;
     let mut max_label_height: f32 = 0.0;
+    let min_actor_width = (theme.font_size * 4.0).max(80.0);
+    let mut participant_widths: HashMap<String, f32> = HashMap::new();
+    let mut width_total = 0.0f32;
     for id in &participants {
         let node = graph.nodes.get(id).expect("participant missing");
         let label = measure_label(&node.label, theme, config);
-        max_label_width = max_label_width.max(label.width);
         max_label_height = max_label_height.max(label.height);
+        let width = (label.width + theme.font_size * 1.2).max(min_actor_width);
+        participant_widths.insert(id.clone(), width);
+        width_total += width;
         label_blocks.insert(id.clone(), label);
     }
 
     let participant_count = participants.len();
-    let base_actor_width = max_label_width + theme.font_size * 1.2;
-    let min_actor_width = (theme.font_size * 4.0).max(80.0);
-    let actor_width = base_actor_width.max(min_actor_width);
     let actor_height = (max_label_height + theme.font_size * 1.6).max(48.0);
-    let mut actor_gap = (theme.font_size * 1.4).max(16.0);
+    let avg_actor_width = if participant_count > 0 {
+        width_total / participant_count as f32
+    } else {
+        min_actor_width
+    };
+    let mut actor_gap = (theme.font_size * 1.0).max(12.0);
+    if avg_actor_width > 140.0 {
+        actor_gap *= 0.85;
+    }
     if participant_count >= 7 {
-        actor_gap *= 0.75;
+        actor_gap *= 0.72;
     } else if participant_count >= 5 {
-        actor_gap *= 0.82;
+        actor_gap *= 0.8;
     }
 
     // Add consistent margins to center the diagram
@@ -40,6 +60,10 @@ pub(super) fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &Lay
     let mut cursor_x = margin;
     for id in &participants {
         let node = graph.nodes.get(id).expect("participant missing");
+        let actor_width = participant_widths
+            .get(id)
+            .copied()
+            .unwrap_or(min_actor_width);
         let label = label_blocks.get(id).cloned().unwrap_or_else(|| TextBlock {
             lines: vec![id.clone()],
             width: 0.0,
@@ -508,43 +532,139 @@ pub(super) fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &Lay
         }
     }
 
+    place_sequence_label_anchors(
+        &mut edges,
+        &nodes,
+        &sequence_footboxes,
+        &sequence_frames,
+        &sequence_notes,
+        &sequence_activations,
+        &sequence_numbers,
+        theme,
+    );
+
     let mut min_x = f32::INFINITY;
     let mut min_y = f32::INFINITY;
     let mut max_x = f32::NEG_INFINITY;
     let mut max_y = f32::NEG_INFINITY;
-    let mut update_rect = |x: f32, y: f32, w: f32, h: f32| {
-        min_x = min_x.min(x);
-        min_y = min_y.min(y);
-        max_x = max_x.max(x + w);
-        max_y = max_y.max(y + h);
-    };
     for node in nodes.values() {
-        update_rect(node.x, node.y, node.width, node.height);
+        extend_bounds(
+            &mut min_x,
+            &mut min_y,
+            &mut max_x,
+            &mut max_y,
+            node.x,
+            node.y,
+            node.width,
+            node.height,
+        );
     }
     for footbox in &sequence_footboxes {
-        update_rect(footbox.x, footbox.y, footbox.width, footbox.height);
+        extend_bounds(
+            &mut min_x,
+            &mut min_y,
+            &mut max_x,
+            &mut max_y,
+            footbox.x,
+            footbox.y,
+            footbox.width,
+            footbox.height,
+        );
     }
     for seq_box in &sequence_boxes {
-        update_rect(seq_box.x, seq_box.y, seq_box.width, seq_box.height);
+        extend_bounds(
+            &mut min_x,
+            &mut min_y,
+            &mut max_x,
+            &mut max_y,
+            seq_box.x,
+            seq_box.y,
+            seq_box.width,
+            seq_box.height,
+        );
     }
     for frame in &sequence_frames {
-        update_rect(frame.x, frame.y, frame.width, frame.height);
+        extend_bounds(
+            &mut min_x,
+            &mut min_y,
+            &mut max_x,
+            &mut max_y,
+            frame.x,
+            frame.y,
+            frame.width,
+            frame.height,
+        );
     }
     for note in &sequence_notes {
-        update_rect(note.x, note.y, note.width, note.height);
+        extend_bounds(
+            &mut min_x,
+            &mut min_y,
+            &mut max_x,
+            &mut max_y,
+            note.x,
+            note.y,
+            note.width,
+            note.height,
+        );
     }
     for activation in &sequence_activations {
-        update_rect(activation.x, activation.y, activation.width, activation.height);
+        extend_bounds(
+            &mut min_x,
+            &mut min_y,
+            &mut max_x,
+            &mut max_y,
+            activation.x,
+            activation.y,
+            activation.width,
+            activation.height,
+        );
     }
     for number in &sequence_numbers {
-        update_rect(number.x, number.y, 0.0, 0.0);
+        extend_bounds(
+            &mut min_x, &mut min_y, &mut max_x, &mut max_y, number.x, number.y, 0.0, 0.0,
+        );
     }
     for edge in &edges {
         for point in &edge.points {
-            min_x = min_x.min(point.0);
-            min_y = min_y.min(point.1);
-            max_x = max_x.max(point.0);
-            max_y = max_y.max(point.1);
+            extend_bounds(
+                &mut min_x, &mut min_y, &mut max_x, &mut max_y, point.0, point.1, 0.0, 0.0,
+            );
+        }
+        if let (Some(label), Some((x, y))) = (&edge.label, edge.label_anchor) {
+            extend_bounds(
+                &mut min_x,
+                &mut min_y,
+                &mut max_x,
+                &mut max_y,
+                x - label.width / 2.0 - SEQUENCE_LABEL_PAD_X,
+                y - label.height / 2.0 - SEQUENCE_LABEL_PAD_Y,
+                label.width + 2.0 * SEQUENCE_LABEL_PAD_X,
+                label.height + 2.0 * SEQUENCE_LABEL_PAD_Y,
+            );
+        }
+        if let (Some(label), Some((x, y))) = (&edge.start_label, edge.start_label_anchor) {
+            extend_bounds(
+                &mut min_x,
+                &mut min_y,
+                &mut max_x,
+                &mut max_y,
+                x - label.width / 2.0 - SEQUENCE_ENDPOINT_LABEL_PAD_X,
+                y - label.height / 2.0 - SEQUENCE_ENDPOINT_LABEL_PAD_Y,
+                label.width + 2.0 * SEQUENCE_ENDPOINT_LABEL_PAD_X,
+                label.height + 2.0 * SEQUENCE_ENDPOINT_LABEL_PAD_Y,
+            );
+        }
+        if let (Some(label), Some((x, y))) = (&edge.end_label, edge.end_label_anchor) {
+            extend_bounds(
+                &mut min_x,
+                &mut min_y,
+                &mut max_x,
+                &mut max_y,
+                x - label.width / 2.0 - SEQUENCE_ENDPOINT_LABEL_PAD_X,
+                y - label.height / 2.0 - SEQUENCE_ENDPOINT_LABEL_PAD_Y,
+                label.width + 2.0 * SEQUENCE_ENDPOINT_LABEL_PAD_X,
+                label.height + 2.0 * SEQUENCE_ENDPOINT_LABEL_PAD_Y,
+            );
         }
     }
     if !min_x.is_finite() || !min_y.is_finite() || !max_x.is_finite() || !max_y.is_finite() {
@@ -566,6 +686,15 @@ pub(super) fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &Lay
             for point in &mut edge.points {
                 point.0 += shift_x;
                 point.1 += shift_y;
+            }
+            if let Some((x, y)) = edge.label_anchor {
+                edge.label_anchor = Some((x + shift_x, y + shift_y));
+            }
+            if let Some((x, y)) = edge.start_label_anchor {
+                edge.start_label_anchor = Some((x + shift_x, y + shift_y));
+            }
+            if let Some((x, y)) = edge.end_label_anchor {
+                edge.end_label_anchor = Some((x + shift_x, y + shift_y));
             }
         }
         for lifeline in &mut lifelines {
@@ -632,4 +761,440 @@ pub(super) fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &Lay
             numbers: sequence_numbers,
         }),
     }
+}
+
+fn place_sequence_label_anchors(
+    edges: &mut [EdgeLayout],
+    nodes: &BTreeMap<String, NodeLayout>,
+    footboxes: &[NodeLayout],
+    frames: &[SequenceFrameLayout],
+    notes: &[SequenceNoteLayout],
+    activations: &[SequenceActivationLayout],
+    numbers: &[SequenceNumberLayout],
+    theme: &Theme,
+) {
+    if edges.is_empty() {
+        return;
+    }
+
+    let mut occupied: Vec<Rect> = Vec::new();
+    for node in nodes.values() {
+        occupied.push((node.x, node.y, node.width, node.height));
+    }
+    for footbox in footboxes {
+        occupied.push((footbox.x, footbox.y, footbox.width, footbox.height));
+    }
+    for frame in frames {
+        occupied.push(frame.label_box);
+        for label in &frame.section_labels {
+            occupied.push((
+                label.x - label.text.width / 2.0,
+                label.y - label.text.height / 2.0,
+                label.text.width,
+                label.text.height,
+            ));
+        }
+    }
+    for note in notes {
+        occupied.push((note.x, note.y, note.width, note.height));
+    }
+    for activation in activations {
+        occupied.push((
+            activation.x,
+            activation.y,
+            activation.width,
+            activation.height,
+        ));
+    }
+    let number_r = (theme.font_size * 0.45).max(6.0);
+    for number in numbers {
+        occupied.push((
+            number.x - number_r,
+            number.y - number_r,
+            number_r * 2.0,
+            number_r * 2.0,
+        ));
+    }
+
+    let edge_paths: Vec<Vec<(f32, f32)>> = edges.iter().map(|edge| edge.points.clone()).collect();
+    for idx in 0..edges.len() {
+        if let Some(label) = edges[idx].label.clone() {
+            let anchor = choose_sequence_center_label_anchor(
+                &edge_paths[idx],
+                &label,
+                &occupied,
+                &edge_paths,
+                idx,
+                theme,
+            );
+            edges[idx].label_anchor = Some(anchor);
+            occupied.push(label_rect(
+                anchor,
+                &label,
+                SEQUENCE_LABEL_PAD_X,
+                SEQUENCE_LABEL_PAD_Y,
+            ));
+        }
+
+        if let Some(label) = edges[idx].start_label.clone() {
+            let anchor = choose_sequence_endpoint_label_anchor(
+                &edge_paths[idx],
+                &label,
+                true,
+                &occupied,
+                &edge_paths,
+                idx,
+                theme,
+            );
+            edges[idx].start_label_anchor = anchor;
+            if let Some(center) = anchor {
+                occupied.push(label_rect(
+                    center,
+                    &label,
+                    SEQUENCE_ENDPOINT_LABEL_PAD_X,
+                    SEQUENCE_ENDPOINT_LABEL_PAD_Y,
+                ));
+            }
+        }
+
+        if let Some(label) = edges[idx].end_label.clone() {
+            let anchor = choose_sequence_endpoint_label_anchor(
+                &edge_paths[idx],
+                &label,
+                false,
+                &occupied,
+                &edge_paths,
+                idx,
+                theme,
+            );
+            edges[idx].end_label_anchor = anchor;
+            if let Some(center) = anchor {
+                occupied.push(label_rect(
+                    center,
+                    &label,
+                    SEQUENCE_ENDPOINT_LABEL_PAD_X,
+                    SEQUENCE_ENDPOINT_LABEL_PAD_Y,
+                ));
+            }
+        }
+    }
+}
+
+fn choose_sequence_center_label_anchor(
+    points: &[(f32, f32)],
+    label: &TextBlock,
+    occupied: &[Rect],
+    edge_paths: &[Vec<(f32, f32)>],
+    edge_idx: usize,
+    theme: &Theme,
+) -> (f32, f32) {
+    let (anchor, dir) = edge_midpoint_with_direction(points);
+    let normal = (-dir.1, dir.0);
+    let normal_step = (label.height + theme.font_size * 0.55).max(10.0);
+    let tangent_step = (label.width + theme.font_size * 0.45).max(12.0) * 0.38;
+    let tangent_offsets = [0.0, -0.35, 0.35, -0.8, 0.8, -1.35, 1.35];
+    let normal_offsets = [-1.0, 1.0, -1.8, 1.8, -2.6, 2.6, -3.4, 3.4];
+    let mut best = anchor;
+    let mut best_score = f32::INFINITY;
+
+    for t in tangent_offsets {
+        for n in normal_offsets {
+            let center = (
+                anchor.0 + dir.0 * tangent_step * t + normal.0 * normal_step * n,
+                anchor.1 + dir.1 * tangent_step * t + normal.1 * normal_step * n,
+            );
+            let rect = label_rect(center, label, SEQUENCE_LABEL_PAD_X, SEQUENCE_LABEL_PAD_Y);
+            let mut score = sequence_label_penalty(rect, center, anchor, points, occupied);
+            score += sequence_edge_overlap_penalty(rect, edge_paths, edge_idx);
+            let own_dist = point_to_polyline_distance(center, points);
+            score += own_dist * 0.04;
+            if dir.0.abs() > dir.1.abs() && center.1 > anchor.1 {
+                // Prefer placing sequence message labels above horizontal edges.
+                score += 0.25;
+            }
+            if score < best_score {
+                best_score = score;
+                best = center;
+            }
+        }
+    }
+
+    best
+}
+
+fn choose_sequence_endpoint_label_anchor(
+    points: &[(f32, f32)],
+    label: &TextBlock,
+    start: bool,
+    occupied: &[Rect],
+    edge_paths: &[Vec<(f32, f32)>],
+    edge_idx: usize,
+    theme: &Theme,
+) -> Option<(f32, f32)> {
+    let ((anchor_x, anchor_y), dir) = sequence_endpoint_base(points, start, theme)?;
+    let normal = (-dir.1, dir.0);
+    let base_step = (theme.font_size * 0.6).max(8.0);
+    let tangent_offsets = [0.0, 0.8, -0.8, 1.7, -1.7];
+    let normal_offsets = [1.0, -1.0, 1.8, -1.8, 2.6, -2.6, 3.4, -3.4];
+    let anchor = (anchor_x, anchor_y);
+    let mut best = anchor;
+    let mut best_score = f32::INFINITY;
+
+    for t in tangent_offsets {
+        for n in normal_offsets {
+            let center = (
+                anchor.0 + dir.0 * base_step * t + normal.0 * base_step * n,
+                anchor.1 + dir.1 * base_step * t + normal.1 * base_step * n,
+            );
+            let rect = label_rect(
+                center,
+                label,
+                SEQUENCE_ENDPOINT_LABEL_PAD_X,
+                SEQUENCE_ENDPOINT_LABEL_PAD_Y,
+            );
+            let mut score = sequence_label_penalty(rect, center, anchor, points, occupied);
+            score += sequence_edge_overlap_penalty(rect, edge_paths, edge_idx);
+            score += distance(center, anchor) * 0.02;
+            if score < best_score {
+                best_score = score;
+                best = center;
+            }
+        }
+    }
+
+    Some(best)
+}
+
+fn sequence_endpoint_base(
+    points: &[(f32, f32)],
+    start: bool,
+    theme: &Theme,
+) -> Option<((f32, f32), (f32, f32))> {
+    if points.len() < 2 {
+        return None;
+    }
+    let (p0, p1) = if start {
+        (points[0], points[1])
+    } else {
+        (points[points.len() - 1], points[points.len() - 2])
+    };
+    let dx = p1.0 - p0.0;
+    let dy = p1.1 - p0.1;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len <= f32::EPSILON {
+        return None;
+    }
+    let dir = (dx / len, dy / len);
+    let offset = (theme.font_size * 0.6).max(8.0);
+    let anchor = (p0.0 + dir.0 * offset * 1.4, p0.1 + dir.1 * offset * 1.4);
+    Some((anchor, dir))
+}
+
+fn edge_midpoint_with_direction(points: &[(f32, f32)]) -> ((f32, f32), (f32, f32)) {
+    if points.len() < 2 {
+        let point = points.first().copied().unwrap_or((0.0, 0.0));
+        return (point, (1.0, 0.0));
+    }
+    let mut lengths = Vec::with_capacity(points.len().saturating_sub(1));
+    let mut total = 0.0f32;
+    for segment in points.windows(2) {
+        let len = distance(segment[0], segment[1]);
+        lengths.push(len);
+        total += len;
+    }
+    if total <= f32::EPSILON {
+        let dx = points[1].0 - points[0].0;
+        let dy = points[1].1 - points[0].1;
+        let len = (dx * dx + dy * dy).sqrt().max(1e-6);
+        return (points[0], (dx / len, dy / len));
+    }
+    let target = total * 0.5;
+    let mut acc = 0.0f32;
+    for (idx, len) in lengths.iter().copied().enumerate() {
+        if acc + len >= target {
+            let seg = (points[idx], points[idx + 1]);
+            let local_t = ((target - acc) / len.max(1e-6)).clamp(0.0, 1.0);
+            let point = (
+                seg.0.0 + (seg.1.0 - seg.0.0) * local_t,
+                seg.0.1 + (seg.1.1 - seg.0.1) * local_t,
+            );
+            let dx = seg.1.0 - seg.0.0;
+            let dy = seg.1.1 - seg.0.1;
+            let dlen = (dx * dx + dy * dy).sqrt().max(1e-6);
+            return (point, (dx / dlen, dy / dlen));
+        }
+        acc += len;
+    }
+    let last = points[points.len() - 1];
+    let prev = points[points.len() - 2];
+    let dx = last.0 - prev.0;
+    let dy = last.1 - prev.1;
+    let len = (dx * dx + dy * dy).sqrt().max(1e-6);
+    (last, (dx / len, dy / len))
+}
+
+fn sequence_label_penalty(
+    rect: Rect,
+    center: (f32, f32),
+    anchor: (f32, f32),
+    own_points: &[(f32, f32)],
+    occupied: &[Rect],
+) -> f32 {
+    let mut overlap_area_sum = 0.0f32;
+    for obstacle in occupied {
+        overlap_area_sum += rect_overlap_area(rect, *obstacle);
+    }
+    let own_dist = point_to_polyline_distance(center, own_points);
+    overlap_area_sum * 0.025 + own_dist * 0.02 + distance(center, anchor) * 0.012
+}
+
+fn sequence_edge_overlap_penalty(
+    rect: Rect,
+    edge_paths: &[Vec<(f32, f32)>],
+    edge_idx: usize,
+) -> f32 {
+    let mut hits = 0usize;
+    for (idx, points) in edge_paths.iter().enumerate() {
+        if idx == edge_idx || points.len() < 2 {
+            continue;
+        }
+        if points
+            .windows(2)
+            .any(|segment| segment_intersects_rect(segment[0], segment[1], rect))
+        {
+            hits += 1;
+        }
+    }
+    hits as f32 * 3.0
+}
+
+fn label_rect(center: (f32, f32), label: &TextBlock, pad_x: f32, pad_y: f32) -> Rect {
+    (
+        center.0 - label.width / 2.0 - pad_x,
+        center.1 - label.height / 2.0 - pad_y,
+        label.width + pad_x * 2.0,
+        label.height + pad_y * 2.0,
+    )
+}
+
+fn rect_overlap_area(a: Rect, b: Rect) -> f32 {
+    let x1 = a.0.max(b.0);
+    let y1 = a.1.max(b.1);
+    let x2 = (a.0 + a.2).min(b.0 + b.2);
+    let y2 = (a.1 + a.3).min(b.1 + b.3);
+    if x2 <= x1 || y2 <= y1 {
+        return 0.0;
+    }
+    (x2 - x1) * (y2 - y1)
+}
+
+fn point_to_polyline_distance(point: (f32, f32), points: &[(f32, f32)]) -> f32 {
+    if points.is_empty() {
+        return 0.0;
+    }
+    if points.len() == 1 {
+        return distance(point, points[0]);
+    }
+    points
+        .windows(2)
+        .map(|segment| point_to_segment_distance(point, segment[0], segment[1]))
+        .fold(f32::INFINITY, f32::min)
+}
+
+fn point_to_segment_distance(point: (f32, f32), a: (f32, f32), b: (f32, f32)) -> f32 {
+    let ab = (b.0 - a.0, b.1 - a.1);
+    let len_sq = ab.0 * ab.0 + ab.1 * ab.1;
+    if len_sq <= f32::EPSILON {
+        return distance(point, a);
+    }
+    let ap = (point.0 - a.0, point.1 - a.1);
+    let t = ((ap.0 * ab.0 + ap.1 * ab.1) / len_sq).clamp(0.0, 1.0);
+    let proj = (a.0 + ab.0 * t, a.1 + ab.1 * t);
+    distance(point, proj)
+}
+
+fn distance(a: (f32, f32), b: (f32, f32)) -> f32 {
+    let dx = a.0 - b.0;
+    let dy = a.1 - b.1;
+    (dx * dx + dy * dy).sqrt()
+}
+
+fn segment_intersects_rect(a: (f32, f32), b: (f32, f32), rect: Rect) -> bool {
+    let (x, y, w, h) = rect;
+    let min_x = a.0.min(b.0);
+    let max_x = a.0.max(b.0);
+    let min_y = a.1.min(b.1);
+    let max_y = a.1.max(b.1);
+    if max_x < x || min_x > x + w || max_y < y || min_y > y + h {
+        return false;
+    }
+    if point_in_rect(a, rect) || point_in_rect(b, rect) {
+        return true;
+    }
+    let corners = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)];
+    for i in 0..4 {
+        let c = corners[i];
+        let d = corners[(i + 1) % 4];
+        if segments_intersect(a, b, c, d) {
+            return true;
+        }
+    }
+    false
+}
+
+fn point_in_rect(point: (f32, f32), rect: Rect) -> bool {
+    point.0 >= rect.0
+        && point.0 <= rect.0 + rect.2
+        && point.1 >= rect.1
+        && point.1 <= rect.1 + rect.3
+}
+
+fn segments_intersect(a: (f32, f32), b: (f32, f32), c: (f32, f32), d: (f32, f32)) -> bool {
+    const EPS: f32 = 1e-6;
+    let o1 = orient(a, b, c);
+    let o2 = orient(a, b, d);
+    let o3 = orient(c, d, a);
+    let o4 = orient(c, d, b);
+
+    if o1.abs() < EPS && on_segment(a, b, c) {
+        return true;
+    }
+    if o2.abs() < EPS && on_segment(a, b, d) {
+        return true;
+    }
+    if o3.abs() < EPS && on_segment(c, d, a) {
+        return true;
+    }
+    if o4.abs() < EPS && on_segment(c, d, b) {
+        return true;
+    }
+    (o1 > 0.0) != (o2 > 0.0) && (o3 > 0.0) != (o4 > 0.0)
+}
+
+fn orient(a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> f32 {
+    (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0)
+}
+
+fn on_segment(a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> bool {
+    const EPS: f32 = 1e-6;
+    c.0 >= a.0.min(b.0) - EPS
+        && c.0 <= a.0.max(b.0) + EPS
+        && c.1 >= a.1.min(b.1) - EPS
+        && c.1 <= a.1.max(b.1) + EPS
+}
+
+fn extend_bounds(
+    min_x: &mut f32,
+    min_y: &mut f32,
+    max_x: &mut f32,
+    max_y: &mut f32,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+) {
+    *min_x = (*min_x).min(x);
+    *min_y = (*min_y).min(y);
+    *max_x = (*max_x).max(x + w);
+    *max_y = (*max_y).max(y + h);
 }

@@ -1,12 +1,12 @@
 use crate::config::LayoutConfig;
 #[cfg(feature = "png")]
 use crate::config::RenderConfig;
+use crate::layout::label_placement::{
+    edge_endpoint_label_position, edge_label_padding, endpoint_label_padding,
+};
 use crate::layout::{
     C4BoundaryLayout, C4Layout, C4RelLayout, C4ShapeLayout, DiagramData, ErrorLayout,
     GitGraphLayout, JourneyLayout, Layout, PieData, SankeyLayout, TextBlock,
-};
-use crate::layout::label_placement::{
-    edge_endpoint_label_position, edge_label_padding, endpoint_label_padding,
 };
 use crate::text_metrics;
 use crate::theme::{Theme, adjust_color, parse_color_to_hsl};
@@ -94,7 +94,11 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             let height = layout.height.max(1.0);
             (width, height, 0.0, 0.0, width, height)
         };
-    let seq_data = if let DiagramData::Sequence(s) = &layout.diagram { Some(s) } else { None };
+    let seq_data = if let DiagramData::Sequence(s) = &layout.diagram {
+        Some(s)
+    } else {
+        None
+    };
     let is_sequence = seq_data.is_some();
     let is_state = layout.kind == crate::ir::DiagramKind::State;
     let is_class = layout.kind == crate::ir::DiagramKind::Class;
@@ -116,7 +120,9 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 height_attr.clear();
                 style_attr = format!(" style=\"max-width: {:.3}px;\"", viewbox_width);
             }
-        } else if matches!(layout.diagram, DiagramData::GitGraph(_)) && config.gitgraph.use_max_width {
+        } else if matches!(layout.diagram, DiagramData::GitGraph(_))
+            && config.gitgraph.use_max_width
+        {
             width_attr = "100%".to_string();
             height_attr.clear();
             style_attr = format!(" style=\"max-width: {:.3}px;\"", viewbox_width);
@@ -536,7 +542,10 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         ));
     }
 
-    for activation in seq_data.map(|s| s.activations.as_slice()).unwrap_or_default() {
+    for activation in seq_data
+        .map(|s| s.activations.as_slice())
+        .unwrap_or_default()
+    {
         svg.push_str(&format!(
             "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\"/>",
             activation.x,
@@ -642,7 +651,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             }
             let stroke_width = edge.override_style.stroke_width.unwrap_or(1.5);
             svg.push_str(&format!(
-                "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" {} {} {} stroke-linecap=\"round\" stroke-linejoin=\"round\" />",
+                "<path class=\"edgePath\" d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" {} {} {} stroke-linecap=\"round\" stroke-linejoin=\"round\" />",
                 d, stroke, stroke_width, marker_end, marker_start, dash
             ));
 
@@ -674,12 +683,14 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             }
 
             if let Some(label) = edge.label.as_ref() {
-                let start = edge.points.first().copied().unwrap_or((0.0, 0.0));
-                let end = edge.points.last().copied().unwrap_or(start);
-                let mid_x = (start.0 + end.0) / 2.0;
-                let line_y = start.1;
-                let gap = (theme.font_size * 0.6).max(8.0);
-                let label_y = line_y - gap - label.height / 2.0;
+                let (mid_x, label_y) = edge.label_anchor.unwrap_or_else(|| {
+                    let start = edge.points.first().copied().unwrap_or((0.0, 0.0));
+                    let end = edge.points.last().copied().unwrap_or(start);
+                    let mid_x = (start.0 + end.0) / 2.0;
+                    let line_y = start.1;
+                    let gap = (theme.font_size * 0.6).max(8.0);
+                    (mid_x, line_y - gap - label.height / 2.0)
+                });
                 let label_color = edge
                     .override_style
                     .label_color
@@ -703,7 +714,9 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 .as_deref()
                 .unwrap_or(theme.primary_text_color.as_str());
             if let Some(label) = edge.start_label.as_ref()
-                && let Some((x, y)) = edge_endpoint_label_position(edge, true, end_label_offset)
+                && let Some((x, y)) = edge
+                    .start_label_anchor
+                    .or_else(|| edge_endpoint_label_position(edge, true, end_label_offset))
             {
                 svg.push_str(&text_block_svg(
                     x,
@@ -716,7 +729,9 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 ));
             }
             if let Some(label) = edge.end_label.as_ref()
-                && let Some((x, y)) = edge_endpoint_label_position(edge, false, end_label_offset)
+                && let Some((x, y)) = edge
+                    .end_label_anchor
+                    .or_else(|| edge_endpoint_label_position(edge, false, end_label_offset))
             {
                 svg.push_str(&text_block_svg(
                     x,
@@ -817,7 +832,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 dash = format!("stroke-dasharray=\"{}\"", dash_override);
             }
             svg.push_str(&format!(
-                "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" {} {} {} stroke-linecap=\"round\" stroke-linejoin=\"round\" />",
+                "<path class=\"edgePath\" d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" {} {} {} stroke-linecap=\"round\" stroke-linejoin=\"round\" />",
                 d, stroke, stroke_width, marker_end, marker_start, dash
             ));
 
@@ -1286,164 +1301,31 @@ fn points_to_path(points: &[(f32, f32)]) -> String {
     if points.is_empty() {
         return String::new();
     }
-    if points.len() == 1 {
-        return format!("M {:.2} {:.2}", points[0].0, points[0].1);
+    let deduped = dedupe_points(points);
+    if deduped.len() == 1 {
+        return format!("M {:.3},{:.3}", deduped[0].0, deduped[0].1);
     }
-
-    // First, simplify collinear points
-    let simplified = simplify_collinear_points(points);
-
-    if simplified.len() == 2 {
-        // Straight line for direct 2-point connections
-        let (x1, y1) = simplified[0];
-        let (x2, y2) = simplified[1];
-        return format!("M {:.3},{:.3} L {:.3},{:.3}", x1, y1, x2, y2);
+    let mut d = format!("M {:.3},{:.3}", deduped[0].0, deduped[0].1);
+    for (x, y) in deduped.iter().skip(1) {
+        d.push_str(&format!(" L {:.3},{:.3}", x, y));
     }
-
-    // Use larger radius for smoother corner transitions
-    let smoothed = smooth_corner_points(&simplified, 12.0);
-
-    // Use d3.curveBasis for smooth, mermaid-like edges
-    basis_path(&smoothed)
-}
-
-/// Generate an SVG path using d3.curveBasis (B-spline) interpolation.
-fn basis_path(points: &[(f32, f32)]) -> String {
-    if points.is_empty() {
-        return String::new();
-    }
-    if points.len() == 1 {
-        return format!("M {:.3},{:.3}", points[0].0, points[0].1);
-    }
-
-    let mut d = String::new();
-    let mut x0 = f32::NAN;
-    let mut y0 = f32::NAN;
-    let mut x1 = f32::NAN;
-    let mut y1 = f32::NAN;
-    let mut point_state = 0;
-
-    for &(x, y) in points {
-        match point_state {
-            0 => {
-                point_state = 1;
-                d.push_str(&format!("M {:.3},{:.3}", x, y));
-            }
-            1 => {
-                point_state = 2;
-            }
-            2 => {
-                point_state = 3;
-                d.push_str(&format!(
-                    "L {:.3},{:.3}",
-                    (5.0 * x0 + x1) / 6.0,
-                    (5.0 * y0 + y1) / 6.0
-                ));
-                d.push_str(&basis_curve_segment(x0, y0, x1, y1, x, y));
-            }
-            _ => {
-                d.push_str(&basis_curve_segment(x0, y0, x1, y1, x, y));
-            }
-        }
-
-        x0 = x1;
-        x1 = x;
-        y0 = y1;
-        y1 = y;
-    }
-
-    match point_state {
-        3 => {
-            d.push_str(&basis_curve_segment(x0, y0, x1, y1, x1, y1));
-            d.push_str(&format!("L {:.3},{:.3}", x1, y1));
-        }
-        2 => {
-            d.push_str(&format!("L {:.3},{:.3}", x1, y1));
-        }
-        _ => {}
-    }
-
     d
 }
 
-fn basis_curve_segment(x0: f32, y0: f32, x1: f32, y1: f32, x: f32, y: f32) -> String {
-    let cp1x = (2.0 * x0 + x1) / 3.0;
-    let cp1y = (2.0 * y0 + y1) / 3.0;
-    let cp2x = (x0 + 2.0 * x1) / 3.0;
-    let cp2y = (y0 + 2.0 * y1) / 3.0;
-    let ex = (x0 + 4.0 * x1 + x) / 6.0;
-    let ey = (y0 + 4.0 * y1 + y) / 6.0;
-
-    format!(
-        "C{:.3},{:.3},{:.3},{:.3},{:.3},{:.3}",
-        cp1x, cp1y, cp2x, cp2y, ex, ey
-    )
-}
-
-/// Remove intermediate points that lie on a straight line
-fn simplify_collinear_points(points: &[(f32, f32)]) -> Vec<(f32, f32)> {
-    if points.len() <= 2 {
-        return points.to_vec();
-    }
-
-    let mut result = vec![points[0]];
-
-    for i in 1..points.len() - 1 {
-        let prev = result.last().unwrap();
-        let curr = points[i];
-        let next = points[i + 1];
-
-        // Check if curr is collinear with prev and next
-        // Using cross product: if (curr - prev) × (next - prev) ≈ 0, they're collinear
-        let cross = (curr.0 - prev.0) * (next.1 - prev.1) - (curr.1 - prev.1) * (next.0 - prev.0);
-
-        if cross.abs() > 0.1 {
-            // Not collinear, keep this point
-            result.push(curr);
-        }
-    }
-
-    result.push(*points.last().unwrap());
-    result
-}
-
-/// Soften orthogonal corners by inserting points near the turn.
-fn smooth_corner_points(points: &[(f32, f32)], radius: f32) -> Vec<(f32, f32)> {
-    if points.len() < 3 {
-        return points.to_vec();
-    }
-
-    let mut out = Vec::with_capacity(points.len() * 2);
-    out.push(points[0]);
-
-    for i in 1..points.len() - 1 {
-        let prev = points[i - 1];
-        let curr = points[i];
-        let next = points[i + 1];
-
-        let v1 = (curr.0 - prev.0, curr.1 - prev.1);
-        let v2 = (next.0 - curr.0, next.1 - curr.1);
-        let len1 = (v1.0 * v1.0 + v1.1 * v1.1).sqrt();
-        let len2 = (v2.0 * v2.0 + v2.1 * v2.1).sqrt();
-
-        if len1 < 1.0 || len2 < 1.0 {
-            out.push(curr);
+fn dedupe_points(points: &[(f32, f32)]) -> Vec<(f32, f32)> {
+    let mut out = Vec::with_capacity(points.len());
+    for point in points.iter().copied() {
+        if out
+            .last()
+            .map(|prev: &(f32, f32)| {
+                (prev.0 - point.0).abs() < 1e-3 && (prev.1 - point.1).abs() < 1e-3
+            })
+            .unwrap_or(false)
+        {
             continue;
         }
-
-        let n1 = (v1.0 / len1, v1.1 / len1);
-        let n2 = (v2.0 / len2, v2.1 / len2);
-        let r = radius.min(len1 * 0.5).min(len2 * 0.5);
-
-        let before = (curr.0 - n1.0 * r, curr.1 - n1.1 * r);
-        let after = (curr.0 + n2.0 * r, curr.1 + n2.1 * r);
-
-        out.push(before);
-        out.push(curr);
-        out.push(after);
+        out.push(point);
     }
-
-    out.push(*points.last().unwrap());
     out
 }
 
@@ -4607,7 +4489,6 @@ fn text_lines_svg(
     text
 }
 
-
 fn is_divider_line(line: &str) -> bool {
     line.trim() == "---"
 }
@@ -4978,7 +4859,6 @@ fn render_er_node(
 
     svg
 }
-
 
 pub fn write_output_svg(svg: &str, output: Option<&Path>) -> Result<()> {
     match output {

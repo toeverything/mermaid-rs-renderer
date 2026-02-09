@@ -18,9 +18,8 @@ mod sequence;
 mod text;
 mod timeline;
 mod treemap;
-mod xychart;
 pub(crate) mod types;
-pub use types::*;
+mod xychart;
 use architecture::*;
 use block::*;
 use c4::*;
@@ -40,6 +39,7 @@ use sequence::*;
 use text::*;
 use timeline::*;
 use treemap::*;
+pub use types::*;
 use xychart::*;
 
 use crate::config::{LayoutConfig, PieRenderMode, TreemapRenderMode};
@@ -184,7 +184,6 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
     layout
 }
 
-
 fn adaptive_spacing_for_nodes(
     nodes: &BTreeMap<String, NodeLayout>,
     min_spacing: f32,
@@ -213,8 +212,13 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         effective_config.max_label_width_chars = effective_config.max_label_width_chars.max(32);
     }
     if graph.kind == crate::ir::DiagramKind::Er {
-        effective_config.node_spacing *= 0.85;
-        effective_config.rank_spacing *= 0.85;
+        // ER diagrams are relationship-dense; tighter packing improves readability
+        // and significantly reduces long connector spans.
+        effective_config.node_spacing *= 0.80;
+        effective_config.rank_spacing *= 0.80;
+        // Extra rank-order sweeps reduce crossing-prone left/right inversions
+        // in dense relationship graphs.
+        effective_config.flowchart.order_passes = effective_config.flowchart.order_passes.max(10);
     }
     if graph.kind == crate::ir::DiagramKind::Flowchart {
         let node_count = graph.nodes.len();
@@ -298,7 +302,10 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         } else {
             theme.font_size * STATE_DEFAULT_HEIGHT_SCALE
         };
-        let marker_size = (avg_height / STATE_MARKER_DIV).clamp(theme.font_size * STATE_MARKER_MIN_SCALE, theme.font_size * STATE_MARKER_MAX_SCALE);
+        let marker_size = (avg_height / STATE_MARKER_DIV).clamp(
+            theme.font_size * STATE_MARKER_MIN_SCALE,
+            theme.font_size * STATE_MARKER_MAX_SCALE,
+        );
         for id in state_marker_ids {
             if let Some(node) = nodes.get_mut(&id) {
                 node.width = marker_size;
@@ -397,12 +404,21 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             measure_label(&label_text, theme, config)
         })
     };
-    let edge_route_labels: Vec<Option<TextBlock>> =
-        graph.edges.iter().map(|e| measure_edge_field(&e.label)).collect();
-    let edge_start_labels: Vec<Option<TextBlock>> =
-        graph.edges.iter().map(|e| measure_edge_field(&e.start_label)).collect();
-    let edge_end_labels: Vec<Option<TextBlock>> =
-        graph.edges.iter().map(|e| measure_edge_field(&e.end_label)).collect();
+    let edge_route_labels: Vec<Option<TextBlock>> = graph
+        .edges
+        .iter()
+        .map(|e| measure_edge_field(&e.label))
+        .collect();
+    let edge_start_labels: Vec<Option<TextBlock>> = graph
+        .edges
+        .iter()
+        .map(|e| measure_edge_field(&e.start_label))
+        .collect();
+    let edge_end_labels: Vec<Option<TextBlock>> = graph
+        .edges
+        .iter()
+        .map(|e| measure_edge_field(&e.end_label))
+        .collect();
 
     let mut label_dummy_ids: Vec<Option<String>> = vec![None; graph.edges.len()];
     assign_positions_manual(
@@ -480,10 +496,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         });
         let from = temp_from.as_ref().unwrap_or(from_layout);
         let to = temp_to.as_ref().unwrap_or(to_layout);
-        let use_balanced_sides = !matches!(
-            graph.kind,
-            crate::ir::DiagramKind::Architecture
-        );
+        let use_balanced_sides = !matches!(graph.kind, crate::ir::DiagramKind::Architecture);
         let (start_side, end_side, _is_backward) = if use_balanced_sides {
             edge_sides_balanced(
                 &edge.from,
@@ -567,9 +580,17 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         // other_pos is now an ideal port coordinate (x or y) in absolute
         // space.  Normalise it within the node's usable range so that ports
         // land where straight-line geometry dictates.
-        let node_start = if side_is_vertical(side) { node.y } else { node.x };
+        let node_start = if side_is_vertical(side) {
+            node.y
+        } else {
+            node.x
+        };
         let ideal_span = span; // span of ideal positions across the node
-        let span_frac = if usable > 1.0 { (ideal_span / usable).min(2.0) } else { 1.0 };
+        let span_frac = if usable > 1.0 {
+            (ideal_span / usable).min(2.0)
+        } else {
+            1.0
+        };
         let position_weight = (0.5 + 0.35 * span_frac).clamp(0.50, 0.85);
         let rank_weight = 1.0 - position_weight;
         let desired: Vec<(usize, f32)> = order
@@ -661,8 +682,16 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             let to_center = (to.x + to.width / 2.0, to.y + to.height / 2.0);
             let dx = to_center.0 - from_center.0;
             let dy = to_center.1 - from_center.1;
-            let cross_axis = if is_horizontal_layout { dy.abs() } else { dx.abs() };
-            let main_axis = if is_horizontal_layout { dx.abs() } else { dy.abs() };
+            let cross_axis = if is_horizontal_layout {
+                dy.abs()
+            } else {
+                dx.abs()
+            };
+            let main_axis = if is_horizontal_layout {
+                dx.abs()
+            } else {
+                dy.abs()
+            };
             let is_secondary = edge.style == crate::ir::EdgeStyle::Dotted || edge.label.is_some();
             if !is_secondary || cross_axis <= main_axis * 1.2 {
                 continue;
@@ -782,13 +811,18 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     let mut routed_points: Vec<Vec<(f32, f32)>> = vec![Vec::new(); graph.edges.len()];
     let use_occupancy = !tiny_graph && graph.edges.len() > 2;
     let mut edge_occupancy = if use_occupancy {
-        Some(EdgeOccupancy::new(config.node_spacing.max(MIN_NODE_SPACING_FLOOR) * EDGE_OCCUPANCY_CELL_RATIO))
+        Some(EdgeOccupancy::new(
+            config.node_spacing.max(MIN_NODE_SPACING_FLOOR) * EDGE_OCCUPANCY_CELL_RATIO,
+        ))
     } else {
         None
     };
-    let has_label_dummies = nodes.keys().any(|id| id.starts_with("__elabel_") && id.ends_with("__"));
+    let has_label_dummies = nodes
+        .keys()
+        .any(|id| id.starts_with("__elabel_") && id.ends_with("__"));
     let mut route_label_obstacles = label_obstacles;
-    let (edge_label_pad_x, edge_label_pad_y) = label_placement::edge_label_padding(graph.kind, config);
+    let (edge_label_pad_x, edge_label_pad_y) =
+        label_placement::edge_label_padding(graph.kind, config);
     let mut existing_segments: Vec<Segment> = Vec::new();
     for (_, _, _, idx) in &route_order {
         let edge = &graph.edges[*idx];
@@ -895,7 +929,8 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             if fast_hits == 0 && fast_label_hits == 0 {
                 let (fast_cross, fast_overlap) =
                     edge_crossings_with_existing(&fast_points, &existing_segments);
-                let (cur_cross, cur_overlap) = edge_crossings_with_existing(&points, &existing_segments);
+                let (cur_cross, cur_overlap) =
+                    edge_crossings_with_existing(&points, &existing_segments);
                 if fast_cross < cur_cross
                     || (fast_cross == cur_cross && fast_overlap + 0.25 < cur_overlap)
                 {
@@ -934,9 +969,12 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         deoverlap_flowchart_paths(graph, &nodes, &mut routed_points, config);
     } else if matches!(
         graph.kind,
-        crate::ir::DiagramKind::Class | crate::ir::DiagramKind::Er
+        crate::ir::DiagramKind::Class | crate::ir::DiagramKind::Er | crate::ir::DiagramKind::State
     ) {
         reduce_orthogonal_path_crossings(graph, &nodes, &mut routed_points, config);
+        if graph.kind == crate::ir::DiagramKind::Er {
+            deoverlap_flowchart_paths(graph, &nodes, &mut routed_points, config);
+        }
     }
 
     // Insert label dummy via-points so edges pass through label positions.
@@ -1244,8 +1282,7 @@ fn assign_positions_manual(
 
             // Determine dimensions: for horizontal layouts, main-axis = width, cross-axis = height.
             // Cap the main-axis size so long edge labels don't explode rank spacing.
-            let label_main_cap =
-                (theme.font_size * 8.0).max(config.node_spacing * 1.3);
+            let label_main_cap = (theme.font_size * 8.0).max(config.node_spacing * 1.3);
             let (raw_main, raw_cross) = if is_horizontal(graph.direction) {
                 (label.width, label.height)
             } else {
@@ -1264,8 +1301,16 @@ fn assign_positions_manual(
                     id: dummy_id.clone(),
                     x: 0.0,
                     y: 0.0,
-                    width: if is_horizontal(graph.direction) { main_dim } else { cross_dim },
-                    height: if is_horizontal(graph.direction) { cross_dim } else { main_dim },
+                    width: if is_horizontal(graph.direction) {
+                        main_dim
+                    } else {
+                        cross_dim
+                    },
+                    height: if is_horizontal(graph.direction) {
+                        cross_dim
+                    } else {
+                        main_dim
+                    },
                     label: TextBlock {
                         lines: vec![],
                         width: 0.0,
@@ -2440,7 +2485,8 @@ fn subgraph_padding_from_label(
     } else if graph.kind == crate::ir::DiagramKind::Kanban {
         pad_y.max(label_height + SUBGRAPH_LABEL_GAP_KANBAN)
     } else if graph.kind == crate::ir::DiagramKind::State {
-        (label_height + theme.font_size * STATE_SUBGRAPH_TOP_LABEL_SCALE).max(theme.font_size * STATE_SUBGRAPH_TOP_MIN_SCALE)
+        (label_height + theme.font_size * STATE_SUBGRAPH_TOP_LABEL_SCALE)
+            .max(theme.font_size * STATE_SUBGRAPH_TOP_MIN_SCALE)
     } else {
         pad_y + label_height + SUBGRAPH_LABEL_GAP_GENERIC
     };
@@ -2607,7 +2653,9 @@ fn apply_state_subgraph_layouts(
                 continue;
             }
             let b_id = sub_b.id.as_deref().unwrap_or("");
-            if sub_a.nodes.iter().any(|n| n == b_id) || sub_a.nodes.iter().any(|n| n == &sub_b.label) {
+            if sub_a.nodes.iter().any(|n| n == b_id)
+                || sub_a.nodes.iter().any(|n| n == &sub_b.label)
+            {
                 if parent_of[j].is_none() {
                     parent_of[j] = Some(i);
                 }
@@ -2622,7 +2670,9 @@ fn apply_state_subgraph_layouts(
         while let Some(p) = parent_of[cur] {
             d += 1;
             cur = p;
-            if d > sub_count { break; }
+            if d > sub_count {
+                break;
+            }
         }
         depth[i] = d;
     }
@@ -2697,7 +2747,11 @@ fn apply_state_subgraph_layouts(
         for (j, inner_sub) in graph.subgraphs.iter().enumerate() {
             if let Some(&(old_x, old_y, _, _)) = inner_boxes.get(&j) {
                 let inner_id = inner_sub.id.as_deref().unwrap_or("");
-                if !sub.nodes.iter().any(|n| n == inner_id || n == &inner_sub.label) {
+                if !sub
+                    .nodes
+                    .iter()
+                    .any(|n| n == inner_id || n == &inner_sub.label)
+                {
                     continue;
                 }
                 // Find the anchor node's new position
@@ -2738,7 +2792,11 @@ fn apply_state_subgraph_layouts(
         for (j, inner_sub) in graph.subgraphs.iter().enumerate() {
             if let Some(&(_, _, _, _)) = inner_boxes.get(&j) {
                 let inner_id = inner_sub.id.as_deref().unwrap_or("");
-                if sub.nodes.iter().any(|n| n == inner_id || n == &inner_sub.label) {
+                if sub
+                    .nodes
+                    .iter()
+                    .any(|n| n == inner_id || n == &inner_sub.label)
+                {
                     // Use inner node positions
                     for inner_node_id in &inner_sub.nodes {
                         if let Some(node) = nodes.get(inner_node_id) {
@@ -2753,7 +2811,15 @@ fn apply_state_subgraph_layouts(
         }
         let padding = config.node_spacing;
         if bmin_x < f32::MAX {
-            inner_boxes.insert(idx, (bmin_x, bmin_y, bmax_x - bmin_x + padding, bmax_y - bmin_y + padding));
+            inner_boxes.insert(
+                idx,
+                (
+                    bmin_x,
+                    bmin_y,
+                    bmax_x - bmin_x + padding,
+                    bmax_y - bmin_y + padding,
+                ),
+            );
         }
     }
 }
@@ -3040,6 +3106,11 @@ fn reduce_crossing_sweep(
 ) -> bool {
     let mut changed = false;
     let mut existing_segments: Vec<Segment> = Vec::new();
+    // Keep crossing fixes from introducing visually extreme detours.
+    const MAX_LEN_RATIO_HARD: f32 = 2.8;
+    const MAX_LEN_RATIO_NO_GAIN: f32 = 1.12;
+    const MAX_LEN_RATIO_ONE_GAIN: f32 = 1.8;
+    const MAX_LEN_RATIO_MULTI_GAIN: f32 = 2.6;
     for &idx in order {
         if routed_points[idx].len() < 2 {
             append_path_segments(&routed_points[idx], &mut existing_segments);
@@ -3055,7 +3126,8 @@ fn reduce_crossing_sweep(
         }
         let mut best_cross = baseline_cross;
         let mut best_overlap = baseline_overlap;
-        let mut best_len = path_length(&routed_points[idx]);
+        let baseline_len = path_length(&routed_points[idx]);
+        let mut best_len = baseline_len;
         let mut best_points = routed_points[idx].clone();
         let segment_count = routed_points[idx].len().saturating_sub(1);
         for seg_idx in 0..segment_count {
@@ -3067,8 +3139,12 @@ fn reduce_crossing_sweep(
                 if flowchart_path_hits_non_endpoint_nodes(&candidate, from_id, to_id, nodes) {
                     continue;
                 }
-                let (crossings, overlap) = edge_crossings_with_existing(&candidate, &existing_segments);
+                let (crossings, overlap) =
+                    edge_crossings_with_existing(&candidate, &existing_segments);
                 let len = path_length(&candidate);
+                if len > baseline_len * MAX_LEN_RATIO_HARD {
+                    continue;
+                }
                 if crossings < best_cross
                     || (crossings == best_cross && overlap + 0.05 < best_overlap)
                     || (crossings == best_cross
@@ -3083,7 +3159,8 @@ fn reduce_crossing_sweep(
             }
         }
         if use_perimeter_candidates
-            && let (Some(&start), Some(&end)) = (routed_points[idx].first(), routed_points[idx].last())
+            && let (Some(&start), Some(&end)) =
+                (routed_points[idx].first(), routed_points[idx].last())
         {
             for candidate in perimeter_route_candidates(
                 start,
@@ -3097,8 +3174,23 @@ fn reduce_crossing_sweep(
                 if flowchart_path_hits_non_endpoint_nodes(&candidate, from_id, to_id, nodes) {
                     continue;
                 }
-                let (crossings, overlap) = edge_crossings_with_existing(&candidate, &existing_segments);
+                let (crossings, overlap) =
+                    edge_crossings_with_existing(&candidate, &existing_segments);
                 let len = path_length(&candidate);
+                if len > baseline_len * MAX_LEN_RATIO_HARD {
+                    continue;
+                }
+                let crossing_gain = baseline_cross.saturating_sub(crossings);
+                let max_ratio = if crossing_gain >= 2 {
+                    MAX_LEN_RATIO_MULTI_GAIN
+                } else if crossing_gain == 1 {
+                    MAX_LEN_RATIO_ONE_GAIN
+                } else {
+                    MAX_LEN_RATIO_NO_GAIN
+                };
+                if len > baseline_len * max_ratio {
+                    continue;
+                }
                 if crossings < best_cross
                     || (crossings == best_cross && overlap + 0.05 < best_overlap)
                     || (crossings == best_cross
@@ -3112,7 +3204,22 @@ fn reduce_crossing_sweep(
                 }
             }
         }
-        if best_cross < baseline_cross || (best_cross == baseline_cross && best_overlap + 0.05 < baseline_overlap) {
+        let best_gain = baseline_cross.saturating_sub(best_cross);
+        let max_ratio = if best_gain >= 2 {
+            MAX_LEN_RATIO_MULTI_GAIN
+        } else if best_gain == 1 {
+            MAX_LEN_RATIO_ONE_GAIN
+        } else {
+            MAX_LEN_RATIO_NO_GAIN
+        };
+        let allow_apply = best_len <= baseline_len * max_ratio;
+        if best_cross < baseline_cross
+            || (best_cross == baseline_cross && best_overlap + 0.05 < baseline_overlap)
+        {
+            if !allow_apply {
+                append_path_segments(&routed_points[idx], &mut existing_segments);
+                continue;
+            }
             routed_points[idx] = best_points;
             changed = true;
         }
@@ -3213,7 +3320,11 @@ fn flowchart_path_hits_non_endpoint_nodes(
         let a = segment[0];
         let b = segment[1];
         for node in nodes.values() {
-            if node.id == from_id || node.id == to_id || node.hidden || node.anchor_subgraph.is_some() {
+            if node.id == from_id
+                || node.id == to_id
+                || node.hidden
+                || node.anchor_subgraph.is_some()
+            {
                 continue;
             }
             let obstacle = Obstacle {
@@ -3232,7 +3343,11 @@ fn flowchart_path_hits_non_endpoint_nodes(
     false
 }
 
-fn bump_orthogonal_segment(points: &[(f32, f32)], seg_idx: usize, delta: f32) -> Option<Vec<(f32, f32)>> {
+fn bump_orthogonal_segment(
+    points: &[(f32, f32)],
+    seg_idx: usize,
+    delta: f32,
+) -> Option<Vec<(f32, f32)>> {
     if seg_idx + 1 >= points.len() {
         return None;
     }
@@ -3304,7 +3419,8 @@ fn deoverlap_flowchart_paths(
                     if flowchart_path_hits_non_endpoint_nodes(&candidate, from_id, to_id, nodes) {
                         continue;
                     }
-                    let overlap = flowchart_path_overlap_with_prior(&candidate, &routed_points[..idx]);
+                    let overlap =
+                        flowchart_path_overlap_with_prior(&candidate, &routed_points[..idx]);
                     if overlap + 0.05 < best_overlap {
                         best_overlap = overlap;
                         best_points = candidate;
@@ -3717,15 +3833,14 @@ fn push_non_members_out_of_subgraphs(
                 max_y = max_y.max(node.y + node.height);
             }
         }
-        let (pad_x, pad_y, top_pad) =
-            subgraph_padding_from_label(graph, sub, theme, &measure_label(&sub.label, theme, config));
+        let (pad_x, pad_y, top_pad) = subgraph_padding_from_label(
+            graph,
+            sub,
+            theme,
+            &measure_label(&sub.label, theme, config),
+        );
         if min_x < f32::MAX {
-            sub_bounds.push((
-                min_x - pad_x,
-                min_y - top_pad,
-                max_x + pad_x,
-                max_y + pad_y,
-            ));
+            sub_bounds.push((min_x - pad_x, min_y - top_pad, max_x + pad_x, max_y + pad_y));
         } else {
             sub_bounds.push((0.0, 0.0, 0.0, 0.0));
         }
@@ -4330,7 +4445,11 @@ fn relax_edge_span_constraints(
 
             let mut required_main_gap =
                 (config.node_spacing * objective.edge_gap_floor_ratio).max(8.0);
-            if let Some(label) = edge.label.as_deref().filter(|label| !label.trim().is_empty()) {
+            if let Some(label) = edge
+                .label
+                .as_deref()
+                .filter(|label| !label.trim().is_empty())
+            {
                 let label_block = label_cache
                     .entry(label.to_string())
                     .or_insert_with(|| measure_label(label, theme, config))
@@ -4402,7 +4521,11 @@ fn relax_edge_span_constraints(
     }
 }
 
-fn resolve_node_overlaps(graph: &Graph, nodes: &mut BTreeMap<String, NodeLayout>, config: &LayoutConfig) {
+fn resolve_node_overlaps(
+    graph: &Graph,
+    nodes: &mut BTreeMap<String, NodeLayout>,
+    config: &LayoutConfig,
+) {
     let horizontal = is_horizontal(graph.direction);
     let min_gap = (config.node_spacing * OVERLAP_MIN_GAP_RATIO).max(OVERLAP_MIN_GAP_FLOOR);
     let mut ids: Vec<String> = nodes
@@ -4516,8 +4639,14 @@ fn rebalance_top_level_subgraphs_aspect(
         return;
     }
 
-    let min_main = groups.iter().map(|group| group.min_main).fold(f32::MAX, f32::min);
-    let max_main = groups.iter().map(|group| group.max_main).fold(f32::MIN, f32::max);
+    let min_main = groups
+        .iter()
+        .map(|group| group.min_main)
+        .fold(f32::MAX, f32::min);
+    let max_main = groups
+        .iter()
+        .map(|group| group.max_main)
+        .fold(f32::MIN, f32::max);
     let min_cross = groups
         .iter()
         .map(|group| group.min_cross)
@@ -4644,7 +4773,11 @@ fn collect_top_level_visual_groups(
             max_cross,
         });
     }
-    groups.sort_by(|a, b| a.min_main.partial_cmp(&b.min_main).unwrap_or(Ordering::Equal));
+    groups.sort_by(|a, b| {
+        a.min_main
+            .partial_cmp(&b.min_main)
+            .unwrap_or(Ordering::Equal)
+    });
     groups
 }
 
@@ -4759,12 +4892,8 @@ fn build_subgraph_layouts(
         let mut all_descendants: Vec<Vec<usize>> = vec![Vec::new(); subgraphs.len()];
         // Post-order traversal: collect leaves first, then parents.
         let mut order: Vec<usize> = Vec::with_capacity(subgraphs.len());
-        let mut stack: Vec<(usize, bool)> = tree
-            .top_level
-            .iter()
-            .rev()
-            .map(|&i| (i, false))
-            .collect();
+        let mut stack: Vec<(usize, bool)> =
+            tree.top_level.iter().rev().map(|&i| (i, false)).collect();
         while let Some((idx, visited)) = stack.pop() {
             if visited {
                 order.push(idx);
@@ -4875,8 +5004,10 @@ fn shape_size(
     let mut pad_x = config.node_padding_x * pad_x_factor * kind_pad_x_scale;
     let mut pad_y = config.node_padding_y * pad_y_factor * kind_pad_y_scale;
     if kind == crate::ir::DiagramKind::State {
-        let dynamic_pad_x = (theme.font_size * STATE_PAD_X_SCALE).max(label.width * STATE_PAD_X_LABEL_RATIO);
-        let dynamic_pad_y = (theme.font_size * STATE_PAD_Y_SCALE).max(label.height * STATE_PAD_Y_LABEL_RATIO);
+        let dynamic_pad_x =
+            (theme.font_size * STATE_PAD_X_SCALE).max(label.width * STATE_PAD_X_LABEL_RATIO);
+        let dynamic_pad_y =
+            (theme.font_size * STATE_PAD_Y_SCALE).max(label.height * STATE_PAD_Y_LABEL_RATIO);
         pad_x = dynamic_pad_x;
         pad_y = dynamic_pad_y;
     }
@@ -5166,7 +5297,9 @@ mod tests {
             fast_route: false,
             stub_len: port_stub_length(&config, &from, &to),
         };
-        let mut occupancy = EdgeOccupancy::new(config.node_spacing.max(MIN_NODE_SPACING_FLOOR) * EDGE_OCCUPANCY_CELL_RATIO);
+        let mut occupancy = EdgeOccupancy::new(
+            config.node_spacing.max(MIN_NODE_SPACING_FLOOR) * EDGE_OCCUPANCY_CELL_RATIO,
+        );
         let start = anchor_point_for_node(&from, EdgeSide::Right, 0.0);
         let end = anchor_point_for_node(&to, EdgeSide::Left, 0.0);
         occupancy.add_path(&[start, end]);

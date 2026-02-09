@@ -1,6 +1,10 @@
 use super::*;
 
-pub(super) fn compute_treemap_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
+pub(super) fn compute_treemap_layout(
+    graph: &Graph,
+    theme: &Theme,
+    config: &LayoutConfig,
+) -> Layout {
     let mut nodes: BTreeMap<String, NodeLayout> = BTreeMap::new();
     let edges = Vec::new();
     let subgraphs = Vec::new();
@@ -52,7 +56,9 @@ pub(super) fn compute_treemap_layout(graph: &Graph, theme: &Theme, config: &Layo
         subgraphs,
         width,
         height,
-        diagram: DiagramData::Graph { state_notes: Vec::new() },
+        diagram: DiagramData::Graph {
+            state_notes: Vec::new(),
+        },
     }
 }
 

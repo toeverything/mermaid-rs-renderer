@@ -13,11 +13,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 STRICT_METRICS = {
     "edge_crossings",
+    "svg_edge_crossings",
     "edge_node_crossings",
+    "arrow_path_intersections",
     "node_overlap_count",
     "label_overlap_count",
     "label_edge_overlap_count",
     "label_out_of_bounds_count",
+    "edge_label_alignment_bad_count",
 }
 
 RELATIVE_METRICS = {
@@ -28,6 +31,8 @@ RELATIVE_METRICS = {
     "angular_resolution_penalty",
     "port_congestion",
     "edge_overlap_length",
+    "svg_edge_overlap_length",
+    "arrow_path_overlap_length",
     "edge_node_near_miss_count",
     "node_spacing_violation_count",
     "node_spacing_violation_severity",
@@ -50,6 +55,9 @@ RELATIVE_METRICS = {
     "label_total_area",
     "label_out_of_bounds_area",
     "label_out_of_bounds_ratio",
+    "edge_label_alignment_mean",
+    "edge_label_alignment_p95",
+    "edge_label_alignment_bad_ratio",
     "node_overlap_area",
     "score",
 }
@@ -84,8 +92,24 @@ def resolve_bin(path_str: str) -> Path:
     return path
 
 
+def bin_needs_rebuild(bin_path: Path):
+    if not bin_path.exists():
+        return True
+    bin_mtime = bin_path.stat().st_mtime
+    candidates = [ROOT / "Cargo.toml", ROOT / "Cargo.lock"]
+    for path in candidates:
+        if path.exists() and path.stat().st_mtime > bin_mtime:
+            return True
+    src_dir = ROOT / "src"
+    if src_dir.exists():
+        for path in src_dir.rglob("*.rs"):
+            if path.stat().st_mtime > bin_mtime:
+                return True
+    return False
+
+
 def build_release(bin_path: Path):
-    if bin_path.exists():
+    if not bin_needs_rebuild(bin_path):
         return
     res = run(["cargo", "build", "--release"])
     if res.returncode != 0:
@@ -122,6 +146,7 @@ def compute_metrics(files, bin_path, config_path, out_dir):
     config_args = ["-c", str(config_path)] if config_path.exists() else []
     results = {}
     for file in files:
+        diagram_kind = quality_bench.detect_diagram_kind(file)
         key = layout_key(file, ROOT)
         layout_path = out_dir / f"{key}-layout.json"
         svg_path = out_dir / f"{key}.svg"
@@ -146,7 +171,14 @@ def compute_metrics(files, bin_path, config_path, out_dir):
         data, nodes, edges = layout_score.load_layout(layout_path)
         metrics = layout_score.compute_metrics(data, nodes, edges)
         metrics["score"] = layout_score.weighted_score(metrics)
-        metrics.update(quality_bench.compute_label_metrics(svg_path, nodes, edges))
+        _, _, svg_edges = quality_bench.load_mermaid_svg_graph(svg_path)
+        metrics.update(quality_bench.compute_label_metrics(svg_path, nodes, svg_edges, diagram_kind))
+        svg_metrics = quality_bench.compute_svg_edge_path_metrics(svg_edges)
+        metrics.update(svg_metrics)
+        metrics["arrow_path_intersections"] = svg_metrics.get("svg_edge_crossings", 0)
+        metrics["arrow_path_overlap_length"] = svg_metrics.get("svg_edge_overlap_length", 0.0)
+        layout_data = json.loads(layout_path.read_text())
+        metrics.update(quality_bench.compute_layout_anchor_metrics(layout_data.get("edges", [])))
         results[str(file)] = metrics
     return results
 
@@ -190,7 +222,7 @@ def main():
         "--fixtures",
         action="append",
         default=[],
-        help="fixture dir (repeatable). default: tests/fixtures, benches/fixtures",
+        help="fixture dir (repeatable). default: tests/fixtures, benches/fixtures, docs/comparison_sources",
     )
     parser.add_argument("--limit", type=int, default=0, help="limit number of fixtures")
     parser.add_argument(
@@ -220,7 +252,11 @@ def main():
 
     fixtures = [Path(p) for p in args.fixtures if p]
     if not fixtures:
-        fixtures = [ROOT / "tests" / "fixtures", ROOT / "benches" / "fixtures"]
+        fixtures = [
+            ROOT / "tests" / "fixtures",
+            ROOT / "benches" / "fixtures",
+            ROOT / "docs" / "comparison_sources",
+        ]
 
     files = collect_fixtures(fixtures, args.limit, args.pattern)
     if not files:

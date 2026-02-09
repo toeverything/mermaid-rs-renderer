@@ -174,7 +174,11 @@ pub(super) fn side_load_for_node(
         .unwrap_or(0)
 }
 
-pub(super) fn bump_side_load(side_loads: &mut HashMap<String, [usize; 4]>, node_id: &str, side: EdgeSide) {
+pub(super) fn bump_side_load(
+    side_loads: &mut HashMap<String, [usize; 4]>,
+    node_id: &str,
+    side: EdgeSide,
+) {
     let slots = side_loads.entry(node_id.to_string()).or_insert([0; 4]);
     slots[side_slot(side)] += 1;
 }
@@ -275,11 +279,8 @@ pub(super) fn edge_sides_balanced(
             2.0
         };
         let backward_penalty = if is_backward && !primary.2 { 4.0 } else { 0.0 };
-        let score = load_score * 9.0
-            + manhattan * 0.22
-            + axis_penalty
-            + primary_penalty
-            + backward_penalty;
+        let score =
+            load_score * 9.0 + manhattan * 0.22 + axis_penalty + primary_penalty + backward_penalty;
         let tiebreak = manhattan + from_load + to_load;
         if score < best_score || ((score - best_score).abs() < 1e-4 && tiebreak < best_tiebreak) {
             best = (start_side, end_side, is_backward);
@@ -545,7 +546,8 @@ pub(super) fn apply_port_offset(point: (f32, f32), side: EdgeSide, offset: f32) 
 
 pub(super) fn port_stub_length(config: &LayoutConfig, from: &NodeLayout, to: &NodeLayout) -> f32 {
     let base = config.node_spacing * PORT_STUB_RATIO;
-    let size_cap = from.width.min(from.height).min(to.width.min(to.height)) * PORT_STUB_SIZE_CAP_RATIO;
+    let size_cap =
+        from.width.min(from.height).min(to.width.min(to.height)) * PORT_STUB_SIZE_CAP_RATIO;
     let max_len = if size_cap.is_finite() && size_cap > 0.0 {
         size_cap
     } else {
@@ -722,16 +724,28 @@ pub(super) fn ideal_port_pos(remote: (f32, f32), node: &NodeLayout, side: EdgeSi
     let cy = node.y + node.height / 2.0;
     if side_is_vertical(side) {
         // Left / Right – port distributed along y-axis
-        let edge_x = if matches!(side, EdgeSide::Left) { node.x } else { node.x + node.width };
+        let edge_x = if matches!(side, EdgeSide::Left) {
+            node.x
+        } else {
+            node.x + node.width
+        };
         let dx = cx - remote.0;
-        if dx.abs() < 1.0 { return cy; }
+        if dx.abs() < 1.0 {
+            return cy;
+        }
         let t = (edge_x - remote.0) / dx;
         remote.1 + t * (cy - remote.1)
     } else {
         // Top / Bottom – port distributed along x-axis
-        let edge_y = if matches!(side, EdgeSide::Top) { node.y } else { node.y + node.height };
+        let edge_y = if matches!(side, EdgeSide::Top) {
+            node.y
+        } else {
+            node.y + node.height
+        };
         let dy = cy - remote.1;
-        if dy.abs() < 1.0 { return cx; }
+        if dy.abs() < 1.0 {
+            return cx;
+        }
         let t = (edge_y - remote.1) / dy;
         remote.0 + t * (cx - remote.0)
     }
@@ -788,7 +802,10 @@ pub(super) fn routing_cell_size(config: &LayoutConfig) -> f32 {
     cell.max(ROUTING_CELL_MIN)
 }
 
-pub(super) fn build_routing_grid(obstacles: &[Obstacle], config: &LayoutConfig) -> Option<RoutingGrid> {
+pub(super) fn build_routing_grid(
+    obstacles: &[Obstacle],
+    config: &LayoutConfig,
+) -> Option<RoutingGrid> {
     let cell = routing_cell_size(config);
     let margin = config.node_spacing.max(GRID_MARGIN_MIN_SPACING) * 2.0;
     let max_cells = (config.flowchart.routing.max_steps / 16).max(3000);
@@ -835,9 +852,7 @@ pub(super) fn insert_label_via_point(
     if points.len() < 2 {
         return;
     }
-    let main = |p: (f32, f32)| -> f32 {
-        if is_horizontal(direction) { p.0 } else { p.1 }
-    };
+    let main = |p: (f32, f32)| -> f32 { if is_horizontal(direction) { p.0 } else { p.1 } };
     let via_main = main(via);
     // Find the first segment where the via-point's main-axis coordinate
     // falls between the two endpoints.
@@ -848,11 +863,9 @@ pub(super) fn insert_label_via_point(
         let hi = a_main.max(b_main);
         if via_main >= lo - 1.0 && via_main <= hi + 1.0 {
             // Don't insert if very close to an existing point.
-            let dist_a = ((via.0 - points[i - 1].0).powi(2)
-                + (via.1 - points[i - 1].1).powi(2))
-            .sqrt();
-            let dist_b =
-                ((via.0 - points[i].0).powi(2) + (via.1 - points[i].1).powi(2)).sqrt();
+            let dist_a =
+                ((via.0 - points[i - 1].0).powi(2) + (via.1 - points[i - 1].1).powi(2)).sqrt();
+            let dist_b = ((via.0 - points[i].0).powi(2) + (via.1 - points[i].1).powi(2)).sqrt();
             if dist_a > 2.0 && dist_b > 2.0 {
                 points.insert(i, via);
             }
@@ -920,7 +933,8 @@ pub(super) fn route_edge_with_grid(
     let turn_penalty =
         (ctx.config.flowchart.routing.turn_penalty * grid.cell * ASTAR_COST_SCALE).round() as u32;
     let occupancy_weight =
-        (ctx.config.flowchart.routing.occupancy_weight * grid.cell * ASTAR_COST_SCALE).round() as u32;
+        (ctx.config.flowchart.routing.occupancy_weight * grid.cell * ASTAR_COST_SCALE).round()
+            as u32;
     let max_steps = ctx.config.flowchart.routing.max_steps.max(10_000);
 
     let cols = grid.cols;
@@ -1375,10 +1389,10 @@ pub(super) fn route_edge_with_avoidance(
     } else {
         (route_end.0 - route_start.0).abs()
     };
-    let use_channel_candidates =
-        (cross_axis_delta > step * CHANNEL_CANDIDATE_RATIO && ctx.obstacles.len() > 10)
-            || is_backward
-            || (ctx.start_side == ctx.end_side && ctx.obstacles.len() > 4);
+    let use_channel_candidates = (cross_axis_delta > step * CHANNEL_CANDIDATE_RATIO
+        && ctx.obstacles.len() > 10)
+        || is_backward
+        || (ctx.start_side == ctx.end_side && ctx.obstacles.len() > 4);
 
     for (offset_rank, offset) in offsets.iter().copied().enumerate() {
         if is_horizontal(ctx.direction) {
@@ -1543,10 +1557,7 @@ pub(super) fn route_edge_with_avoidance(
     let min_hits = intersections.iter().copied().min().unwrap_or(0);
     let min_crossings = crossings.iter().copied().min().unwrap_or(0);
     let min_label_hits = label_hits.iter().copied().min().unwrap_or(0);
-    let min_overlap = overlaps
-        .iter()
-        .copied()
-        .fold(f32::INFINITY, f32::min);
+    let min_overlap = overlaps.iter().copied().fold(f32::INFINITY, f32::min);
     let mut needs_detour = min_crossings > 0
         || min_label_hits > 0
         || (min_overlap.is_finite() && min_overlap >= OVERLAP_DETOUR_MIN);
@@ -1574,7 +1585,9 @@ pub(super) fn route_edge_with_avoidance(
         if let Some(points) = candidates.get(best_idx) {
             let overlap = occ.overlap_count(points);
             let path_len = path_length(points);
-            let overlap_trigger = ((path_len / occ.cell) * OVERLAP_TRIGGER_RATIO).max(OVERLAP_TRIGGER_MIN).ceil() as u32;
+            let overlap_trigger = ((path_len / occ.cell) * OVERLAP_TRIGGER_RATIO)
+                .max(OVERLAP_TRIGGER_MIN)
+                .ceil() as u32;
             if overlap >= overlap_trigger {
                 needs_detour = true;
             }
@@ -1774,7 +1787,10 @@ pub(super) fn path_obstacle_intersections(
     count
 }
 
-pub(super) fn path_label_intersections(points: &[(f32, f32)], label_obstacles: &[Obstacle]) -> usize {
+pub(super) fn path_label_intersections(
+    points: &[(f32, f32)],
+    label_obstacles: &[Obstacle],
+) -> usize {
     if points.len() < 2 || label_obstacles.is_empty() {
         return 0;
     }
@@ -2055,7 +2071,9 @@ pub(super) fn edge_pair_key(edge: &crate::ir::Edge) -> (String, String) {
     }
 }
 
-pub(super) fn build_edge_pair_counts(edges: &[crate::ir::Edge]) -> HashMap<(String, String), usize> {
+pub(super) fn build_edge_pair_counts(
+    edges: &[crate::ir::Edge],
+) -> HashMap<(String, String), usize> {
     let mut counts: HashMap<(String, String), usize> = HashMap::new();
     for edge in edges {
         let key = edge_pair_key(edge);
@@ -2106,7 +2124,12 @@ pub(super) fn segment_intersects_rect(a: (f32, f32), b: (f32, f32), rect: &Obsta
 
 pub(super) type Segment = ((f32, f32), (f32, f32));
 
-pub(super) fn segments_intersect(a: (f32, f32), b: (f32, f32), c: (f32, f32), d: (f32, f32)) -> bool {
+pub(super) fn segments_intersect(
+    a: (f32, f32),
+    b: (f32, f32),
+    c: (f32, f32),
+    d: (f32, f32),
+) -> bool {
     fn orient(a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> f32 {
         (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0)
     }
@@ -2141,7 +2164,12 @@ pub(super) fn segments_intersect(a: (f32, f32), b: (f32, f32), c: (f32, f32), d:
     false
 }
 
-pub(super) fn collinear_overlap_length(a: (f32, f32), b: (f32, f32), c: (f32, f32), d: (f32, f32)) -> f32 {
+pub(super) fn collinear_overlap_length(
+    a: (f32, f32),
+    b: (f32, f32),
+    c: (f32, f32),
+    d: (f32, f32),
+) -> f32 {
     let cross1 = (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0);
     let cross2 = (b.0 - a.0) * (d.1 - a.1) - (b.1 - a.1) * (d.0 - a.0);
     if cross1.abs() > 1e-6 || cross2.abs() > 1e-6 {
@@ -2162,7 +2190,10 @@ pub(super) fn collinear_overlap_length(a: (f32, f32), b: (f32, f32), c: (f32, f3
     overlap * seg_len_sq.sqrt()
 }
 
-pub(super) fn edge_crossings_with_existing(points: &[(f32, f32)], existing: &[Segment]) -> (usize, f32) {
+pub(super) fn edge_crossings_with_existing(
+    points: &[(f32, f32)],
+    existing: &[Segment],
+) -> (usize, f32) {
     if points.len() < 2 || existing.is_empty() {
         return (0, 0.0);
     }

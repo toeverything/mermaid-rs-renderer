@@ -5956,10 +5956,7 @@ mod tests {
         let input = "flowchart LR\n  A[Node 1] -- \"Some text\" --> B[Node 2]";
         let parsed = parse_mermaid(input).unwrap();
         assert_eq!(parsed.graph.edges.len(), 1);
-        assert_eq!(
-            parsed.graph.edges[0].label.as_deref(),
-            Some("Some text")
-        );
+        assert_eq!(parsed.graph.edges[0].label.as_deref(), Some("Some text"));
         assert!(parsed.graph.nodes.contains_key("A"));
         assert!(parsed.graph.nodes.contains_key("B"));
     }

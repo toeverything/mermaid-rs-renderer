@@ -1,10 +1,6 @@
 use super::*;
 
-pub(super) fn compute_block_layout(
-    graph: &Graph,
-    theme: &Theme,
-    config: &LayoutConfig,
-) -> Layout {
+pub(super) fn compute_block_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
     let mut nodes = build_graph_node_layouts(graph, theme, config);
 
     let node_gap = (theme.font_size * 0.4).max(4.0);
@@ -25,7 +21,9 @@ pub(super) fn compute_block_layout(
             subgraphs,
             width: max_x + 6.0,
             height: max_y + 6.0,
-            diagram: DiagramData::Graph { state_notes: Vec::new() },
+            diagram: DiagramData::Graph {
+                state_notes: Vec::new(),
+            },
         };
     };
 
@@ -174,6 +172,8 @@ pub(super) fn compute_block_layout(
         subgraphs,
         width,
         height,
-        diagram: DiagramData::Graph { state_notes: Vec::new() },
+        diagram: DiagramData::Graph {
+            state_notes: Vec::new(),
+        },
     }
 }
