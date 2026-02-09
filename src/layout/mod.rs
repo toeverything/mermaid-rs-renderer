@@ -49,9 +49,7 @@ use crate::theme::{Theme, adjust_color, parse_color_to_hsl};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
-// Label placement padding (shared with render.rs constants)
-const LABEL_PAD_X: f32 = 6.0;
-const LABEL_PAD_Y: f32 = 4.0;
+// Label placement padding (resolved per diagram kind).
 const LABEL_RANK_FONT_SCALE: f32 = 0.5;
 const LABEL_RANK_MIN_GAP: f32 = 8.0;
 
@@ -700,6 +698,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     };
     let has_label_dummies = nodes.keys().any(|id| id.starts_with("__elabel_") && id.ends_with("__"));
     let mut route_label_obstacles = label_obstacles;
+    let (edge_label_pad_x, edge_label_pad_y) = label_placement::edge_label_padding(graph.kind, config);
     let mut existing_segments: Vec<Segment> = Vec::new();
     for (_, _, _, idx) in &route_order {
         let edge = &graph.edges[*idx];
@@ -759,10 +758,10 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         {
             route_label_obstacles.push(Obstacle {
                 id: format!("edge-label:{}", idx),
-                x: label_x - label.width / 2.0 - LABEL_PAD_X,
-                y: label_y - label.height / 2.0 - LABEL_PAD_Y,
-                width: label.width + 2.0 * LABEL_PAD_X,
-                height: label.height + 2.0 * LABEL_PAD_Y,
+                x: label_x - label.width / 2.0 - edge_label_pad_x,
+                y: label_y - label.height / 2.0 - edge_label_pad_y,
+                width: label.width + 2.0 * edge_label_pad_x,
+                height: label.height + 2.0 * edge_label_pad_y,
                 members: None,
             });
         }
@@ -888,30 +887,9 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         nodes,
         edges,
         subgraphs,
-        lifelines: Vec::new(),
-        sequence_footboxes: Vec::new(),
-        sequence_boxes: Vec::new(),
-        sequence_frames: Vec::new(),
-        sequence_notes: Vec::new(),
-        sequence_activations: Vec::new(),
-        sequence_numbers: Vec::new(),
-        state_notes,
-        pie_slices: Vec::new(),
-        pie_legend: Vec::new(),
-        pie_center: (0.0, 0.0),
-        pie_radius: 0.0,
-        pie_title: None,
-        quadrant: None,
-        gantt: None,
-        sankey: None,
-        gitgraph: None,
-        c4: None,
-        xychart: None,
-        timeline: None,
-        journey: None,
-        error: None,
         width,
         height,
+        diagram: DiagramData::Graph { state_notes },
     }
 }
 

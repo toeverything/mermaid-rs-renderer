@@ -2,10 +2,12 @@ use crate::config::LayoutConfig;
 #[cfg(feature = "png")]
 use crate::config::RenderConfig;
 use crate::layout::{
-    C4BoundaryLayout, C4Layout, C4RelLayout, C4ShapeLayout, ErrorLayout,
-    GitGraphLayout, JourneyLayout, Layout, SankeyLayout, TextBlock,
+    C4BoundaryLayout, C4Layout, C4RelLayout, C4ShapeLayout, DiagramData, ErrorLayout,
+    GitGraphLayout, JourneyLayout, Layout, PieData, SankeyLayout, TextBlock,
 };
-use crate::layout::label_placement::edge_endpoint_label_position;
+use crate::layout::label_placement::{
+    edge_endpoint_label_position, edge_label_padding, endpoint_label_padding,
+};
 use crate::text_metrics;
 use crate::theme::{Theme, adjust_color, parse_color_to_hsl};
 use anyhow::Result;
@@ -21,7 +23,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         theme.font_size
     };
     let (width, height, viewbox_x, viewbox_y, viewbox_width, viewbox_height) =
-        if let Some(error) = layout.error.as_ref() {
+        if let DiagramData::Error(error) = &layout.diagram {
             (
                 error.render_width,
                 error.render_height,
@@ -38,7 +40,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             width = width.max(1.0);
             height = height.max(1.0);
             (width, height, 0.0, 0.0, width, height)
-        } else if let Some(c4) = layout.c4.as_ref() {
+        } else if let DiagramData::C4(c4) = &layout.diagram {
             let width = layout.width.max(1.0);
             let height = layout.height.max(1.0);
             (
@@ -49,7 +51,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 c4.viewbox_width,
                 c4.viewbox_height,
             )
-        } else if let Some(gitgraph) = layout.gitgraph.as_ref() {
+        } else if let DiagramData::GitGraph(gitgraph) = &layout.diagram {
             let width = layout.width.max(1.0);
             let height = layout.height.max(1.0);
             let viewbox_x = -gitgraph.offset_x;
@@ -92,29 +94,29 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             let height = layout.height.max(1.0);
             (width, height, 0.0, 0.0, width, height)
         };
-    let is_sequence = !layout.sequence_footboxes.is_empty();
+    let seq_data = if let DiagramData::Sequence(s) = &layout.diagram { Some(s) } else { None };
+    let is_sequence = seq_data.is_some();
     let is_state = layout.kind == crate::ir::DiagramKind::State;
     let is_class = layout.kind == crate::ir::DiagramKind::Class;
-    let is_pie = layout.kind == crate::ir::DiagramKind::Pie;
-    let is_c4 = layout.c4.is_some();
+    let is_c4 = matches!(layout.diagram, DiagramData::C4(_));
     let has_links = is_c4
         || layout.nodes.values().any(|node| node.link.is_some())
-        || layout
-            .sequence_footboxes
+        || seq_data
             .iter()
+            .flat_map(|s| s.footboxes.iter())
             .any(|node| node.link.is_some());
 
     let mut width_attr = width.to_string();
     let mut height_attr = height.to_string();
     let mut style_attr = String::new();
-    if layout.error.is_none() {
-        if let Some(c4) = layout.c4.as_ref() {
+    if !matches!(layout.diagram, DiagramData::Error(_)) {
+        if let DiagramData::C4(c4) = &layout.diagram {
             if c4.use_max_width {
                 width_attr = "100%".to_string();
                 height_attr.clear();
                 style_attr = format!(" style=\"max-width: {:.3}px;\"", viewbox_width);
             }
-        } else if layout.gitgraph.is_some() && config.gitgraph.use_max_width {
+        } else if matches!(layout.diagram, DiagramData::GitGraph(_)) && config.gitgraph.use_max_width {
             width_attr = "100%".to_string();
             height_attr.clear();
             style_attr = format!(" style=\"max-width: {:.3}px;\"", viewbox_width);
@@ -142,7 +144,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         }
     ));
 
-    if layout.error.is_some() {
+    if matches!(layout.diagram, DiagramData::Error(_)) {
         svg.push_str(&error_style_block(theme));
     }
 
@@ -151,7 +153,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         theme.background
     ));
 
-    if let Some(ref c4) = layout.c4 {
+    if let DiagramData::C4(ref c4) = layout.diagram {
         svg.push_str(&render_c4(c4, config));
         svg.push_str("</svg>");
         return svg;
@@ -221,13 +223,13 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
     }
     svg.push_str("</defs>");
 
-    if let Some(ref error) = layout.error {
+    if let DiagramData::Error(ref error) = layout.diagram {
         svg.push_str(&render_error(error, theme, config));
         svg.push_str("</svg>");
         return svg;
     }
 
-    if let Some(ref sankey) = layout.sankey {
+    if let DiagramData::Sankey(ref sankey) = layout.diagram {
         svg.push_str(&render_sankey(sankey, theme, config));
         svg.push_str("</svg>");
         return svg;
@@ -251,43 +253,43 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         return svg;
     }
 
-    if is_pie {
-        svg.push_str(&render_pie(layout, theme, config));
+    if let DiagramData::Pie(ref pie) = layout.diagram {
+        svg.push_str(&render_pie(pie, theme, config));
         svg.push_str("</svg>");
         return svg;
     }
 
-    if let Some(ref quadrant) = layout.quadrant {
+    if let DiagramData::Quadrant(ref quadrant) = layout.diagram {
         svg.push_str(&render_quadrant(quadrant, theme, config));
         svg.push_str("</svg>");
         return svg;
     }
 
-    if let Some(ref gantt) = layout.gantt {
+    if let DiagramData::Gantt(ref gantt) = layout.diagram {
         svg.push_str(&render_gantt(gantt, theme, config));
         svg.push_str("</svg>");
         return svg;
     }
 
-    if let Some(ref xychart) = layout.xychart {
+    if let DiagramData::XYChart(ref xychart) = layout.diagram {
         svg.push_str(&render_xychart(xychart, theme, config));
         svg.push_str("</svg>");
         return svg;
     }
 
-    if let Some(ref timeline) = layout.timeline {
+    if let DiagramData::Timeline(ref timeline) = layout.diagram {
         svg.push_str(&render_timeline(timeline, theme, config));
         svg.push_str("</svg>");
         return svg;
     }
 
-    if let Some(ref journey) = layout.journey {
+    if let DiagramData::Journey(ref journey) = layout.diagram {
         svg.push_str(&render_journey(journey, theme, config));
         svg.push_str("</svg>");
         return svg;
     }
 
-    if let Some(ref gitgraph) = layout.gitgraph {
+    if let DiagramData::GitGraph(ref gitgraph) = layout.diagram {
         svg.push_str(&render_gitgraph(gitgraph, theme, config));
         svg.push_str("</svg>");
         return svg;
@@ -442,8 +444,8 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
     let overlay_flowchart = layout.kind == crate::ir::DiagramKind::Flowchart;
     let mut overlay_arrows: Vec<(bool, (f32, f32), f32, String, f32)> = Vec::new();
 
-    if is_sequence {
-        for seq_box in &layout.sequence_boxes {
+    if let Some(seq) = seq_data {
+        for seq_box in &seq.boxes {
             let stroke = theme.primary_border_color.as_str();
             let fill = seq_box.color.as_deref().unwrap_or("none");
             let mut fill_attr = format!("fill=\"{}\"", fill);
@@ -472,7 +474,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         }
     }
 
-    for frame in &layout.sequence_frames {
+    for frame in seq_data.map(|s| s.frames.as_slice()).unwrap_or_default() {
         let stroke = theme.primary_border_color.as_str();
         svg.push_str(&format!(
             "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"none\" stroke=\"{}\" stroke-width=\"2.0\" stroke-dasharray=\"2 2\"/>",
@@ -523,7 +525,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         }
     }
 
-    for lifeline in &layout.lifelines {
+    for lifeline in seq_data.map(|s| s.lifelines.as_slice()).unwrap_or_default() {
         svg.push_str(&format!(
             "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" stroke-width=\"0.5\"/>",
             lifeline.x,
@@ -534,7 +536,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         ));
     }
 
-    for activation in &layout.sequence_activations {
+    for activation in seq_data.map(|s| s.activations.as_slice()).unwrap_or_default() {
         svg.push_str(&format!(
             "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\"/>",
             activation.x,
@@ -546,7 +548,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         ));
     }
 
-    for note in &layout.sequence_notes {
+    for note in seq_data.map(|s| s.notes.as_slice()).unwrap_or_default() {
         let fill = theme.sequence_note_fill.as_str();
         let stroke = theme.sequence_note_border.as_str();
         let fold = (theme.font_size * 0.8)
@@ -577,8 +579,8 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
         ));
     }
 
-    if is_state {
-        for note in &layout.state_notes {
+    if let DiagramData::Graph { state_notes } = &layout.diagram {
+        for note in state_notes {
             let fill = theme.sequence_note_fill.as_str();
             let stroke = theme.sequence_note_border.as_str();
             let fold = (theme.font_size * 0.8)
@@ -728,7 +730,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             }
         }
 
-        for number in &layout.sequence_numbers {
+        for number in seq_data.map(|s| s.numbers.as_slice()).unwrap_or_default() {
             let r = (theme.font_size * 0.45).max(6.0);
             svg.push_str(&format!(
                 "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1\"/>",
@@ -864,10 +866,11 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             if let Some(label) = edge.label.as_ref()
                 && let Some((x, y)) = edge.label_anchor
             {
-                let (pad_x, pad_y, fill_opacity, stroke_opacity) = match layout.kind {
-                    crate::ir::DiagramKind::State => (3.0, 1.6, 0.7, 0.25),
-                    crate::ir::DiagramKind::Flowchart => (4.5, 2.2, 0.95, 0.45),
-                    _ => (4.0, 2.0, 0.85, 0.35),
+                let (pad_x, pad_y) = edge_label_padding(layout.kind, config);
+                let (fill_opacity, stroke_opacity) = match layout.kind {
+                    crate::ir::DiagramKind::State => (0.7, 0.25),
+                    crate::ir::DiagramKind::Flowchart => (0.95, 0.45),
+                    _ => (0.85, 0.35),
                 };
                 let label_scale = if layout.kind == crate::ir::DiagramKind::State {
                     (state_font_size / theme.font_size).min(1.0)
@@ -920,13 +923,13 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             } else {
                 1.0
             };
-            let (endpoint_pad_x, endpoint_pad_y, endpoint_fill_opacity, endpoint_stroke_opacity) =
-                match layout.kind {
-                    crate::ir::DiagramKind::State => (2.6, 1.4, 0.7, 0.25),
-                    crate::ir::DiagramKind::Flowchart => (3.4, 1.8, 0.95, 0.45),
-                    crate::ir::DiagramKind::Class => (3.2, 1.6, 0.9, 0.4),
-                    _ => (3.0, 1.6, 0.85, 0.35),
-                };
+            let (endpoint_pad_x, endpoint_pad_y) = endpoint_label_padding(layout.kind);
+            let (endpoint_fill_opacity, endpoint_stroke_opacity) = match layout.kind {
+                crate::ir::DiagramKind::State => (0.7, 0.25),
+                crate::ir::DiagramKind::Flowchart => (0.95, 0.45),
+                crate::ir::DiagramKind::Class => (0.9, 0.4),
+                _ => (0.85, 0.35),
+            };
             let endpoint_label_fill = theme.edge_label_background.as_str();
             let label_color = edge
                 .override_style
@@ -1146,7 +1149,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             }
         }
 
-        for footbox in &layout.sequence_footboxes {
+        for footbox in seq_data.map(|s| s.footboxes.as_slice()).unwrap_or_default() {
             if let Some(link) = footbox.link.as_ref() {
                 svg.push_str(&format!("<a {}>", link_attrs(link)));
                 if let Some(title) = link.title.as_deref() {
@@ -1233,7 +1236,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 svg.push_str("</a>");
             }
         }
-        for footbox in &layout.sequence_footboxes {
+        for footbox in seq_data.map(|s| s.footboxes.as_slice()).unwrap_or_default() {
             if let Some(link) = footbox.link.as_ref() {
                 svg.push_str(&format!("<a {}>", link_attrs(link)));
                 if let Some(title) = link.title.as_deref() {
@@ -1696,8 +1699,7 @@ fn render_requirement(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> 
         if let Some(label) = edge.label.as_ref()
             && let Some((x, y)) = edge.label_anchor
         {
-            let pad_x = req.edge_label_padding_x;
-            let pad_y = req.edge_label_padding_y;
+            let (pad_x, pad_y) = edge_label_padding(layout.kind, config);
             let rect_x = x - label.width / 2.0 - pad_x;
             let rect_y = y - label.height / 2.0 - pad_y;
             let rect_w = label.width + pad_x * 2.0;
@@ -2266,24 +2268,24 @@ fn render_architecture(
     svg
 }
 
-fn render_pie(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
+fn render_pie(pie: &PieData, theme: &Theme, config: &LayoutConfig) -> String {
     let mut svg = String::new();
-    let (cx, cy) = layout.pie_center;
-    let radius = layout.pie_radius;
+    let (cx, cy) = pie.center;
+    let radius = pie.radius;
     if radius <= 0.0 {
         return svg;
     }
 
     let pie_cfg = &config.pie;
-    let mut total: f32 = layout.pie_legend.iter().map(|s| s.value.max(0.0)).sum();
+    let mut total: f32 = pie.legend.iter().map(|s| s.value.max(0.0)).sum();
     if total <= 0.0 {
-        total = layout.pie_slices.iter().map(|s| s.value.max(0.0)).sum();
+        total = pie.slices.iter().map(|s| s.value.max(0.0)).sum();
     }
 
     let slice_stroke = theme.background.as_str();
     let slice_stroke_width = theme.pie_stroke_width.max(1.2);
 
-    for slice in &layout.pie_slices {
+    for slice in &pie.slices {
         let span = (slice.end_angle - slice.start_angle).abs();
         if span <= 0.0001 {
             continue;
@@ -2339,7 +2341,7 @@ fn render_pie(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
     }
 
     let mut labels: Vec<PieLabel> = Vec::new();
-    for slice in &layout.pie_slices {
+    for slice in &pie.slices {
         let span = (slice.end_angle - slice.start_angle).abs();
         if span <= 0.0001 || total <= 0.0 {
             continue;
@@ -2503,7 +2505,7 @@ fn render_pie(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
         ));
     }
 
-    for item in &layout.pie_legend {
+    for item in &pie.legend {
         let rect_x = item.x;
         let rect_y = item.y;
         svg.push_str(&format!(
@@ -2531,7 +2533,7 @@ fn render_pie(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
         ));
     }
 
-    if let Some(title) = &layout.pie_title {
+    if let Some(title) = &pie.title {
         svg.push_str(&text_block_svg_with_font_size(
             title.x,
             title.y,

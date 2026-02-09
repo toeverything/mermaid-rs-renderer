@@ -5,7 +5,7 @@ use crate::ir::Graph;
 use crate::theme::Theme;
 
 use super::text::measure_label;
-use super::{build_node_layout, resolve_node_style, Layout};
+use super::{build_node_layout, resolve_node_style, DiagramData, Layout};
 
 pub(super) fn compute_radar_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
     const WIDTH: f32 = 680.0;
@@ -54,30 +54,8 @@ pub(super) fn compute_radar_layout(graph: &Graph, theme: &Theme, config: &Layout
         nodes,
         edges: Vec::new(),
         subgraphs: Vec::new(),
-        lifelines: Vec::new(),
-        sequence_footboxes: Vec::new(),
-        sequence_boxes: Vec::new(),
-        sequence_frames: Vec::new(),
-        sequence_notes: Vec::new(),
-        sequence_activations: Vec::new(),
-        sequence_numbers: Vec::new(),
-        state_notes: Vec::new(),
-        pie_slices: Vec::new(),
-        pie_legend: Vec::new(),
-        pie_center: (0.0, 0.0),
-        pie_radius: 0.0,
-        pie_title: None,
-        quadrant: None,
-        gantt: None,
-        sankey: None,
-        gitgraph: None,
-        c4: None,
-        xychart: None,
-        timeline: None,
-        journey: None,
-        error: None,
-
         width: WIDTH,
         height: HEIGHT,
+        diagram: DiagramData::Graph { state_notes: Vec::new() },
     }
 }

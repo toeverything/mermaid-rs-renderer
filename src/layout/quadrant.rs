@@ -5,7 +5,7 @@ use crate::ir::Graph;
 use crate::theme::Theme;
 
 use super::text::measure_label;
-use super::{Layout, QuadrantLayout, QuadrantPointLayout, TextBlock};
+use super::{DiagramData, Layout, QuadrantLayout, QuadrantPointLayout, TextBlock};
 
 fn quadrant_palette(_theme: &Theme) -> Vec<String> {
     vec![
@@ -110,20 +110,9 @@ pub(super) fn compute_quadrant_layout(
         nodes: BTreeMap::new(),
         edges: Vec::new(),
         subgraphs: Vec::new(),
-        lifelines: Vec::new(),
-        sequence_footboxes: Vec::new(),
-        sequence_boxes: Vec::new(),
-        sequence_frames: Vec::new(),
-        sequence_notes: Vec::new(),
-        sequence_activations: Vec::new(),
-        sequence_numbers: Vec::new(),
-        state_notes: Vec::new(),
-        pie_slices: Vec::new(),
-        pie_legend: Vec::new(),
-        pie_center: (0.0, 0.0),
-        pie_radius: 0.0,
-        pie_title: None,
-        quadrant: Some(QuadrantLayout {
+        width,
+        height,
+        diagram: DiagramData::Quadrant(QuadrantLayout {
             title,
             title_y: title_height / 2.0,
             x_axis_left: x_left,
@@ -137,16 +126,5 @@ pub(super) fn compute_quadrant_layout(
             grid_width: grid_size,
             grid_height: grid_size,
         }),
-        gantt: None,
-        sankey: None,
-        gitgraph: None,
-        c4: None,
-        xychart: None,
-        timeline: None,
-        journey: None,
-        error: None,
-
-        width,
-        height,
     }
 }

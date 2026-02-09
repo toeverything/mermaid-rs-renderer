@@ -6,7 +6,7 @@ use crate::theme::Theme;
 
 use super::text::measure_label;
 use super::{
-    resolve_node_style, EdgeLayout, Layout, NodeLayout, SankeyLayout, SankeyLinkLayout,
+    resolve_node_style, DiagramData, EdgeLayout, Layout, NodeLayout, SankeyLayout, SankeyLinkLayout,
     SankeyNodeLayout,
 };
 
@@ -338,36 +338,14 @@ pub(super) fn compute_sankey_layout(
         nodes,
         edges,
         subgraphs: Vec::new(),
-        lifelines: Vec::new(),
-        sequence_footboxes: Vec::new(),
-        sequence_boxes: Vec::new(),
-        sequence_frames: Vec::new(),
-        sequence_notes: Vec::new(),
-        sequence_activations: Vec::new(),
-        sequence_numbers: Vec::new(),
-        state_notes: Vec::new(),
-        pie_slices: Vec::new(),
-        pie_legend: Vec::new(),
-        pie_center: (0.0, 0.0),
-        pie_radius: 0.0,
-        pie_title: None,
-        quadrant: None,
-        gantt: None,
-        sankey: Some(SankeyLayout {
+        width: SANKEY_WIDTH,
+        height: SANKEY_HEIGHT,
+        diagram: DiagramData::Sankey(SankeyLayout {
             width: SANKEY_WIDTH,
             height: SANKEY_HEIGHT,
             node_width: SANKEY_NODE_WIDTH,
             nodes: sankey_nodes,
             links: sankey_links,
         }),
-        gitgraph: None,
-        c4: None,
-        xychart: None,
-        timeline: None,
-        journey: None,
-        error: None,
-
-        width: SANKEY_WIDTH,
-        height: SANKEY_HEIGHT,
     }
 }

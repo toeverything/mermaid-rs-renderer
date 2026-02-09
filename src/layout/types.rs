@@ -425,35 +425,50 @@ pub struct JourneyLayout {
 }
 
 #[derive(Debug, Clone)]
+pub struct SequenceData {
+    pub lifelines: Vec<Lifeline>,
+    pub footboxes: Vec<NodeLayout>,
+    pub boxes: Vec<SequenceBoxLayout>,
+    pub frames: Vec<SequenceFrameLayout>,
+    pub notes: Vec<SequenceNoteLayout>,
+    pub activations: Vec<SequenceActivationLayout>,
+    pub numbers: Vec<SequenceNumberLayout>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PieData {
+    pub slices: Vec<PieSliceLayout>,
+    pub legend: Vec<PieLegendItem>,
+    pub center: (f32, f32),
+    pub radius: f32,
+    pub title: Option<PieTitleLayout>,
+}
+
+#[derive(Debug, Clone)]
+pub enum DiagramData {
+    Graph { state_notes: Vec<StateNoteLayout> },
+    Sequence(SequenceData),
+    Pie(PieData),
+    Quadrant(QuadrantLayout),
+    Gantt(GanttLayout),
+    Sankey(SankeyLayout),
+    GitGraph(GitGraphLayout),
+    C4(C4Layout),
+    XYChart(XYChartLayout),
+    Timeline(TimelineLayout),
+    Journey(JourneyLayout),
+    Error(ErrorLayout),
+}
+
+#[derive(Debug, Clone)]
 pub struct Layout {
     pub kind: crate::ir::DiagramKind,
     pub nodes: BTreeMap<String, NodeLayout>,
     pub edges: Vec<EdgeLayout>,
     pub subgraphs: Vec<SubgraphLayout>,
-    pub lifelines: Vec<Lifeline>,
-    pub sequence_footboxes: Vec<NodeLayout>,
-    pub sequence_boxes: Vec<SequenceBoxLayout>,
-    pub sequence_frames: Vec<SequenceFrameLayout>,
-    pub sequence_notes: Vec<SequenceNoteLayout>,
-    pub sequence_activations: Vec<SequenceActivationLayout>,
-    pub sequence_numbers: Vec<SequenceNumberLayout>,
-    pub state_notes: Vec<StateNoteLayout>,
-    pub pie_slices: Vec<PieSliceLayout>,
-    pub pie_legend: Vec<PieLegendItem>,
-    pub pie_center: (f32, f32),
-    pub pie_radius: f32,
-    pub pie_title: Option<PieTitleLayout>,
-    pub quadrant: Option<QuadrantLayout>,
-    pub gantt: Option<GanttLayout>,
-    pub sankey: Option<SankeyLayout>,
-    pub gitgraph: Option<GitGraphLayout>,
-    pub c4: Option<C4Layout>,
-    pub xychart: Option<XYChartLayout>,
-    pub timeline: Option<TimelineLayout>,
-    pub journey: Option<JourneyLayout>,
-    pub error: Option<ErrorLayout>,
     pub width: f32,
     pub height: f32,
+    pub diagram: DiagramData,
 }
 
 #[derive(Debug, Clone)]

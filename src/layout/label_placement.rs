@@ -3,24 +3,39 @@
 // no SVG dependency.
 
 use super::{EdgeLayout, NodeLayout, SubgraphLayout};
+use crate::config::LayoutConfig;
 use crate::ir::DiagramKind;
 use crate::theme::Theme;
-use crate::config::LayoutConfig;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-pub(crate) const LABEL_PAD_X: f32 = 6.0;
-pub(crate) const LABEL_PAD_Y: f32 = 4.0;
-const NODE_OBSTACLE_PAD: f32 = 6.0;
-const EDGE_OBSTACLE_PAD: f32 = 6.0;
-const LABEL_STEP_NORMAL_PAD: f32 = 4.0;
-const LABEL_STEP_TANGENT_PAD: f32 = 6.0;
 const LABEL_OVERLAP_WIDE_THRESHOLD: f32 = 1e-4;
-const LABEL_ANCHOR_FRACTIONS: [f32; 3] = [0.35, 0.5, 0.65];
+const LABEL_ANCHOR_FRACTIONS: [f32; 3] = [0.5, 0.35, 0.65];
 const LABEL_ANCHOR_POS_EPS: f32 = 1.0;
 const LABEL_ANCHOR_DIR_EPS: f32 = 0.02;
 
 type Rect = (f32, f32, f32, f32);
 type EdgeObstacle = (usize, Rect);
+
+pub(crate) fn edge_label_padding(kind: DiagramKind, config: &LayoutConfig) -> (f32, f32) {
+    match kind {
+        DiagramKind::Requirement => (
+            config.requirement.edge_label_padding_x,
+            config.requirement.edge_label_padding_y,
+        ),
+        DiagramKind::State => (3.0, 1.6),
+        DiagramKind::Flowchart => (4.5, 2.2),
+        _ => (4.0, 2.0),
+    }
+}
+
+pub(crate) fn endpoint_label_padding(kind: DiagramKind) -> (f32, f32) {
+    match kind {
+        DiagramKind::State => (2.6, 1.4),
+        DiagramKind::Flowchart => (3.4, 1.8),
+        DiagramKind::Class => (3.2, 1.6),
+        _ => (3.0, 1.6),
+    }
+}
 
 /// Resolve all edge label positions using collision avoidance.
 ///
@@ -30,7 +45,7 @@ type EdgeObstacle = (usize, Rect);
 pub fn resolve_all_label_positions(
     layout: &mut super::Layout,
     theme: &Theme,
-    _config: &LayoutConfig,
+    config: &LayoutConfig,
 ) {
     // Sequence and ZenUML diagrams place labels inline with trivial midpoint
     // math in the renderer — skip them.
@@ -41,7 +56,15 @@ pub fn resolve_all_label_positions(
     let bounds = Some((layout.width, layout.height));
 
     // Step 1: Resolve center labels (label_anchor).
-    resolve_center_labels(&mut layout.edges, &layout.nodes, &layout.subgraphs, bounds);
+    resolve_center_labels(
+        &mut layout.edges,
+        &layout.nodes,
+        &layout.subgraphs,
+        bounds,
+        layout.kind,
+        theme,
+        config,
+    );
 
     // Step 2: Resolve endpoint labels (start_label_anchor, end_label_anchor).
     resolve_endpoint_labels(
@@ -51,6 +74,7 @@ pub fn resolve_all_label_positions(
         bounds,
         layout.kind,
         theme,
+        config,
     );
 }
 
@@ -60,10 +84,27 @@ fn resolve_center_labels(
     nodes: &BTreeMap<String, NodeLayout>,
     subgraphs: &[SubgraphLayout],
     bounds: Option<(f32, f32)>,
+    kind: DiagramKind,
+    theme: &Theme,
+    config: &LayoutConfig,
 ) {
-    let mut occupied: Vec<Rect> = build_label_obstacles(nodes, subgraphs);
+    let (label_pad_x, label_pad_y) = edge_label_padding(kind, config);
+    let node_obstacle_pad = (theme.font_size * 0.45).max(label_pad_x.max(label_pad_y));
+    let edge_obstacle_pad = (theme.font_size * 0.35).max(label_pad_y);
+    let step_normal_pad = (theme.font_size * 0.25).max(label_pad_y);
+    let step_tangent_pad = (theme.font_size * 0.35).max(label_pad_x);
+    let subgraph_label_pad = (theme.font_size * 0.35).max(3.0);
+
+    let mut occupied: Vec<Rect> = build_label_obstacles(
+        nodes,
+        subgraphs,
+        kind,
+        theme,
+        node_obstacle_pad,
+        subgraph_label_pad,
+    );
     let node_obstacle_count = occupied.len();
-    let edge_obstacles = build_edge_obstacles(edges, EDGE_OBSTACLE_PAD);
+    let edge_obstacles = build_edge_obstacles(edges, edge_obstacle_pad);
     let edge_obs_rects: Vec<Rect> = edge_obstacles.iter().map(|(_, r)| *r).collect();
     let edge_grid = ObstacleGrid::new(48.0, &edge_obs_rects);
     let mut occupied_grid = ObstacleGrid::new(48.0, &occupied);
@@ -76,7 +117,7 @@ fn resolve_center_labels(
     order.sort_by(|&a, &b| {
         let a_fixed = edges[a].label_anchor.is_some();
         let b_fixed = edges[b].label_anchor.is_some();
-        // Pre-set anchors go first (they just need to be registered).
+        // Pre-set anchors go first (they get first pick near their preferred spot).
         match (a_fixed, b_fixed) {
             (true, false) => return std::cmp::Ordering::Less,
             (false, true) => return std::cmp::Ordering::Greater,
@@ -93,48 +134,26 @@ fn resolve_center_labels(
             Some(l) => l,
             None => continue,
         };
-        let pad_w = label.width + 2.0 * LABEL_PAD_X;
-        let pad_h = label.height + 2.0 * LABEL_PAD_Y;
+        let pad_w = label.width + 2.0 * label_pad_x;
+        let pad_h = label.height + 2.0 * label_pad_y;
 
-        // When a label dummy provided the anchor, clamp and keep it.
-        if let Some((ax, ay)) = edges[idx].label_anchor {
-            let clamped = if let Some(bound) = bounds {
-                clamp_label_center_to_bounds(
-                    (ax, ay),
-                    label.width,
-                    label.height,
-                    LABEL_PAD_X,
-                    LABEL_PAD_Y,
-                    bound,
-                )
-            } else {
-                (ax, ay)
-            };
-            let rect = (
-                clamped.0 - label.width / 2.0 - LABEL_PAD_X,
-                clamped.1 - label.height / 2.0 - LABEL_PAD_Y,
-                pad_w,
-                pad_h,
-            );
-            occupied_grid.insert(occupied.len(), &rect);
-            occupied.push(rect);
-            edges[idx].label_anchor = Some(clamped);
-            continue;
-        }
         let edge = &edges[idx];
-        let mut anchors: Vec<(f32, f32, f32, f32)> = vec![edge_label_anchor(edge)];
+        let mut anchors: Vec<(f32, f32, f32, f32)> = Vec::new();
+
+        if let Some((ax, ay)) = edges[idx].label_anchor {
+            if let Some(candidate) = edge_label_anchor_from_point(edge, (ax, ay)) {
+                push_anchor_unique(&mut anchors, candidate);
+            }
+        }
         for frac in LABEL_ANCHOR_FRACTIONS {
             if let Some(candidate) = edge_label_anchor_at_fraction(edge, frac) {
-                let duplicate = anchors.iter().any(|anchor| {
-                    (anchor.0 - candidate.0).abs() <= LABEL_ANCHOR_POS_EPS
-                        && (anchor.1 - candidate.1).abs() <= LABEL_ANCHOR_POS_EPS
-                        && (anchor.2 - candidate.2).abs() <= LABEL_ANCHOR_DIR_EPS
-                        && (anchor.3 - candidate.3).abs() <= LABEL_ANCHOR_DIR_EPS
-                });
-                if !duplicate {
-                    anchors.push(candidate);
-                }
+                push_anchor_unique(&mut anchors, candidate);
             }
+        }
+        if anchors.is_empty() {
+            anchors.push(edge_label_anchor(edge));
+        } else {
+            push_anchor_unique(&mut anchors, edge_label_anchor(edge));
         }
         let normal_steps = [0.0, 0.15, -0.15, 0.35, -0.35, 0.6, -0.6, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0];
         let tangent_steps = [0.0, 0.2, -0.2, 0.6, -0.6, 1.2, -1.2];
@@ -149,14 +168,14 @@ fn resolve_center_labels(
             let normal_x = -dir_y;
             let normal_y = dir_x;
             let step_n = if normal_x.abs() > normal_y.abs() {
-                label.width + LABEL_PAD_X + LABEL_STEP_NORMAL_PAD
+                label.width + label_pad_x + step_normal_pad
             } else {
-                label.height + LABEL_PAD_Y + LABEL_STEP_NORMAL_PAD
+                label.height + label_pad_y + step_normal_pad
             };
             let step_t = if dir_x.abs() > dir_y.abs() {
-                label.width + LABEL_PAD_X + LABEL_STEP_TANGENT_PAD
+                label.width + label_pad_x + step_tangent_pad
             } else {
-                label.height + LABEL_PAD_Y + LABEL_STEP_TANGENT_PAD
+                label.height + label_pad_y + step_tangent_pad
             };
             for t in tangents {
                 let base_x = anchor_x + dir_x * step_t * *t;
@@ -165,8 +184,8 @@ fn resolve_center_labels(
                     let x = base_x + normal_x * step_n * *n;
                     let y = base_y + normal_y * step_n * *n;
                     let rect = (
-                        x - label.width / 2.0 - LABEL_PAD_X,
-                        y - label.height / 2.0 - LABEL_PAD_Y,
+                        x - label.width / 2.0 - label_pad_x,
+                        y - label.height / 2.0 - label_pad_y,
                         pad_w,
                         pad_h,
                     );
@@ -213,13 +232,20 @@ fn resolve_center_labels(
             }
         }
         let clamped_pos = if let Some(bound) = bounds {
-            clamp_label_center_to_bounds(best_pos, label.width, label.height, LABEL_PAD_X, LABEL_PAD_Y, bound)
+            clamp_label_center_to_bounds(
+                best_pos,
+                label.width,
+                label.height,
+                label_pad_x,
+                label_pad_y,
+                bound,
+            )
         } else {
             best_pos
         };
         let rect = (
-            clamped_pos.0 - label.width / 2.0 - LABEL_PAD_X,
-            clamped_pos.1 - label.height / 2.0 - LABEL_PAD_Y,
+            clamped_pos.0 - label.width / 2.0 - label_pad_x,
+            clamped_pos.1 - label.height / 2.0 - label_pad_y,
             pad_w,
             pad_h,
         );
@@ -237,26 +263,40 @@ fn resolve_endpoint_labels(
     bounds: Option<(f32, f32)>,
     kind: DiagramKind,
     theme: &Theme,
+    config: &LayoutConfig,
 ) {
     let has_endpoint_labels = edges.iter().any(|e| e.start_label.is_some() || e.end_label.is_some());
     if !has_endpoint_labels {
         return;
     }
 
-    let edge_obstacles = build_edge_obstacles(edges, EDGE_OBSTACLE_PAD);
+    let (center_pad_x, center_pad_y) = edge_label_padding(kind, config);
+    let node_obstacle_pad = (theme.font_size * 0.45).max(center_pad_x.max(center_pad_y));
+    let edge_obstacle_pad = (theme.font_size * 0.35).max(center_pad_y);
+    let subgraph_label_pad = (theme.font_size * 0.35).max(3.0);
+    let (endpoint_pad_x, endpoint_pad_y) = endpoint_label_padding(kind);
+
+    let edge_obstacles = build_edge_obstacles(edges, edge_obstacle_pad);
     let edge_obs_rects: Vec<Rect> = edge_obstacles.iter().map(|(_, r)| *r).collect();
     let endpoint_edge_grid = ObstacleGrid::new(48.0, &edge_obs_rects);
 
     // Start with node/subgraph obstacles + center label positions as obstacles.
-    let mut endpoint_occupied = build_label_obstacles(nodes, subgraphs);
+    let mut endpoint_occupied = build_label_obstacles(
+        nodes,
+        subgraphs,
+        kind,
+        theme,
+        node_obstacle_pad,
+        subgraph_label_pad,
+    );
     let endpoint_node_obstacle_count = endpoint_occupied.len();
     for edge in edges.iter() {
         if let (Some(label), Some((ax, ay))) = (&edge.label, edge.label_anchor) {
             endpoint_occupied.push((
-                ax - label.width / 2.0 - LABEL_PAD_X,
-                ay - label.height / 2.0 - LABEL_PAD_Y,
-                label.width + 2.0 * LABEL_PAD_X,
-                label.height + 2.0 * LABEL_PAD_Y,
+                ax - label.width / 2.0 - center_pad_x,
+                ay - label.height / 2.0 - center_pad_y,
+                label.width + 2.0 * center_pad_x,
+                label.height + 2.0 * center_pad_y,
             ));
         }
     }
@@ -292,6 +332,8 @@ fn resolve_endpoint_labels(
                 end_label_offset,
                 label_w,
                 label_h,
+                endpoint_pad_x,
+                endpoint_pad_y,
                 &endpoint_occupied,
                 &endpoint_grid,
                 endpoint_node_obstacle_count,
@@ -300,12 +342,6 @@ fn resolve_endpoint_labels(
                 bounds,
             ) {
                 edges[idx].start_label_anchor = Some((x, y));
-                let (endpoint_pad_x, endpoint_pad_y) = match kind {
-                    DiagramKind::State => (2.6, 1.4),
-                    DiagramKind::Flowchart => (3.4, 1.8),
-                    DiagramKind::Class => (3.2, 1.6),
-                    _ => (3.0, 1.6),
-                };
                 let rect = (
                     x - label_w / 2.0 - endpoint_pad_x,
                     y - label_h / 2.0 - endpoint_pad_y,
@@ -328,6 +364,8 @@ fn resolve_endpoint_labels(
                 end_label_offset,
                 label_w,
                 label_h,
+                endpoint_pad_x,
+                endpoint_pad_y,
                 &endpoint_occupied,
                 &endpoint_grid,
                 endpoint_node_obstacle_count,
@@ -336,12 +374,6 @@ fn resolve_endpoint_labels(
                 bounds,
             ) {
                 edges[idx].end_label_anchor = Some((x, y));
-                let (endpoint_pad_x, endpoint_pad_y) = match kind {
-                    DiagramKind::State => (2.6, 1.4),
-                    DiagramKind::Flowchart => (3.4, 1.8),
-                    DiagramKind::Class => (3.2, 1.6),
-                    _ => (3.0, 1.6),
-                };
                 let rect = (
                     x - label_w / 2.0 - endpoint_pad_x,
                     y - label_h / 2.0 - endpoint_pad_y,
@@ -369,9 +401,40 @@ fn edge_path_length(edge: &EdgeLayout) -> f32 {
     total
 }
 
+fn subgraph_label_rect(
+    sub: &SubgraphLayout,
+    kind: DiagramKind,
+    theme: &Theme,
+) -> Option<Rect> {
+    if sub.label.trim().is_empty() {
+        return None;
+    }
+    let width = sub.label_block.width;
+    let height = sub.label_block.height;
+    if width <= 0.0 || height <= 0.0 {
+        return None;
+    }
+    if kind == DiagramKind::State {
+        let header_h =
+            (height + theme.font_size * 0.75).max(theme.font_size * 1.4);
+        let label_pad_x = (theme.font_size * 0.6).max(height * 0.35);
+        let x = sub.x + label_pad_x;
+        let y = sub.y + header_h / 2.0 - height / 2.0;
+        Some((x, y, width, height))
+    } else {
+        let x = sub.x + sub.width / 2.0 - width / 2.0;
+        let y = sub.y + 12.0;
+        Some((x, y, width, height))
+    }
+}
+
 fn build_label_obstacles(
     nodes: &BTreeMap<String, NodeLayout>,
     subgraphs: &[SubgraphLayout],
+    kind: DiagramKind,
+    theme: &Theme,
+    node_obstacle_pad: f32,
+    subgraph_label_pad: f32,
 ) -> Vec<Rect> {
     let mut occupied: Vec<Rect> = Vec::new();
     for node in nodes.values() {
@@ -379,21 +442,21 @@ fn build_label_obstacles(
             continue;
         }
         occupied.push((
-            node.x - NODE_OBSTACLE_PAD,
-            node.y - NODE_OBSTACLE_PAD,
-            node.width + 2.0 * NODE_OBSTACLE_PAD,
-            node.height + 2.0 * NODE_OBSTACLE_PAD,
+            node.x - node_obstacle_pad,
+            node.y - node_obstacle_pad,
+            node.width + 2.0 * node_obstacle_pad,
+            node.height + 2.0 * node_obstacle_pad,
         ));
     }
     for sub in subgraphs {
-        if sub.label.trim().is_empty() {
-            continue;
+        if let Some(rect) = subgraph_label_rect(sub, kind, theme) {
+            occupied.push((
+                rect.0 - subgraph_label_pad,
+                rect.1 - subgraph_label_pad,
+                rect.2 + subgraph_label_pad * 2.0,
+                rect.3 + subgraph_label_pad * 2.0,
+            ));
         }
-        let width = sub.label_block.width;
-        let height = sub.label_block.height;
-        let x = sub.x + 12.0;
-        let y = sub.y + NODE_OBSTACLE_PAD;
-        occupied.push((x - LABEL_PAD_Y, y, width + 2.0 * LABEL_PAD_Y, height + LABEL_PAD_Y));
     }
     occupied
 }
@@ -513,6 +576,55 @@ fn edge_label_anchor_at_fraction(edge: &EdgeLayout, t: f32) -> Option<(f32, f32,
     }
 
     Some(edge_label_anchor(edge))
+}
+
+fn edge_label_anchor_from_point(
+    edge: &EdgeLayout,
+    point: (f32, f32),
+) -> Option<(f32, f32, f32, f32)> {
+    if edge.points.len() < 2 {
+        return None;
+    }
+    let mut best_dist2 = f32::INFINITY;
+    let mut best_dir: Option<(f32, f32)> = None;
+    for segment in edge.points.windows(2) {
+        let p1 = segment[0];
+        let p2 = segment[1];
+        let dx = p2.0 - p1.0;
+        let dy = p2.1 - p1.1;
+        let seg_len2 = dx * dx + dy * dy;
+        if seg_len2 <= 1e-6 {
+            continue;
+        }
+        let t = ((point.0 - p1.0) * dx + (point.1 - p1.1) * dy) / seg_len2;
+        let t_clamped = t.clamp(0.0, 1.0);
+        let proj_x = p1.0 + dx * t_clamped;
+        let proj_y = p1.1 + dy * t_clamped;
+        let dist2 = (point.0 - proj_x) * (point.0 - proj_x)
+            + (point.1 - proj_y) * (point.1 - proj_y);
+        if dist2 < best_dist2 {
+            best_dist2 = dist2;
+            best_dir = Some((dx, dy));
+        }
+    }
+    let (dx, dy) = best_dir?;
+    let len = (dx * dx + dy * dy).sqrt().max(1e-3);
+    Some((point.0, point.1, dx / len, dy / len))
+}
+
+fn push_anchor_unique(
+    anchors: &mut Vec<(f32, f32, f32, f32)>,
+    candidate: (f32, f32, f32, f32),
+) {
+    let duplicate = anchors.iter().any(|anchor| {
+        (anchor.0 - candidate.0).abs() <= LABEL_ANCHOR_POS_EPS
+            && (anchor.1 - candidate.1).abs() <= LABEL_ANCHOR_POS_EPS
+            && (anchor.2 - candidate.2).abs() <= LABEL_ANCHOR_DIR_EPS
+            && (anchor.3 - candidate.3).abs() <= LABEL_ANCHOR_DIR_EPS
+    });
+    if !duplicate {
+        anchors.push(candidate);
+    }
 }
 
 fn overlap_area(a: &Rect, b: &Rect) -> f32 {
@@ -719,6 +831,8 @@ fn edge_endpoint_label_position_with_avoid(
     offset: f32,
     label_w: f32,
     label_h: f32,
+    pad_x: f32,
+    pad_y: f32,
     occupied: &[Rect],
     occupied_grid: &ObstacleGrid,
     node_obstacle_count: usize,
@@ -762,10 +876,10 @@ fn edge_endpoint_label_position_with_avoid(
             let x = base_x + perp_x * offset * step;
             let y = base_y + perp_y * offset * step;
             let rect = (
-                x - label_w / 2.0 - 4.0,
-                y - label_h / 2.0 - 3.0,
-                label_w + 8.0,
-                label_h + 6.0,
+                x - label_w / 2.0 - pad_x,
+                y - label_h / 2.0 - pad_y,
+                label_w + pad_x * 2.0,
+                label_h + pad_y * 2.0,
             );
             let penalty = label_penalties(
                 rect,
@@ -787,7 +901,7 @@ fn edge_endpoint_label_position_with_avoid(
         }
     }
     if let Some(bound) = bounds {
-        let clamped = clamp_label_center_to_bounds(best_pos, label_w, label_h, 4.0, 3.0, bound);
+        let clamped = clamp_label_center_to_bounds(best_pos, label_w, label_h, pad_x, pad_y, bound);
         return Some(clamped);
     }
     Some(best_pos)
@@ -902,5 +1016,33 @@ mod tests {
         let (x, y, _dx, _dy) = edge_label_anchor(&edge);
         assert!((x - 50.0).abs() < 1.0, "midpoint x should be ~50, got {}", x);
         assert!((y - 0.0).abs() < 1.0, "midpoint y should be ~0, got {}", y);
+    }
+
+    #[test]
+    fn edge_label_anchor_from_point_uses_nearest_segment() {
+        let edge = EdgeLayout {
+            from: "A".into(),
+            to: "B".into(),
+            points: vec![(0.0, 0.0), (100.0, 0.0), (100.0, 100.0)],
+            label: None,
+            start_label: None,
+            end_label: None,
+            label_anchor: None,
+            start_label_anchor: None,
+            end_label_anchor: None,
+            directed: true,
+            arrow_end: true,
+            arrow_start: false,
+            arrow_end_kind: None,
+            arrow_start_kind: None,
+            end_decoration: None,
+            start_decoration: None,
+            style: crate::ir::EdgeStyle::Solid,
+            override_style: crate::ir::EdgeStyleOverride::default(),
+        };
+        let (_x, _y, dx, dy) = edge_label_anchor_from_point(&edge, (100.0, 60.0))
+            .expect("anchor should resolve");
+        assert!(dx.abs() < 0.1, "dx should be ~0 for vertical segment, got {}", dx);
+        assert!(dy > 0.9, "dy should be positive for vertical segment, got {}", dy);
     }
 }

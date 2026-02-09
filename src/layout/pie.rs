@@ -6,7 +6,7 @@ use crate::ir::Graph;
 use crate::theme::Theme;
 
 use super::text::measure_label_with_font_size;
-use super::{Layout, PieLegendItem, PieSliceLayout, PieTitleLayout, TextBlock};
+use super::{DiagramData, Layout, PieData, PieLegendItem, PieSliceLayout, PieTitleLayout, TextBlock};
 
 fn pie_palette(theme: &Theme) -> Vec<String> {
     theme.pie_colors.to_vec()
@@ -171,30 +171,14 @@ pub(super) fn compute_pie_layout(graph: &Graph, theme: &Theme, config: &LayoutCo
         nodes: BTreeMap::new(),
         edges: Vec::new(),
         subgraphs: Vec::new(),
-        lifelines: Vec::new(),
-        sequence_footboxes: Vec::new(),
-        sequence_boxes: Vec::new(),
-        sequence_frames: Vec::new(),
-        sequence_notes: Vec::new(),
-        sequence_activations: Vec::new(),
-        sequence_numbers: Vec::new(),
-        state_notes: Vec::new(),
-        pie_slices: slices,
-        pie_legend: legend,
-        pie_center: (center_x, center_y),
-        pie_radius: radius,
-        pie_title: title_layout,
-        quadrant: None,
-        gantt: None,
-        sankey: None,
-        gitgraph: None,
-        c4: None,
-        xychart: None,
-        timeline: None,
-        journey: None,
-        error: None,
-
         width: width.max(200.0),
         height: height.max(1.0),
+        diagram: DiagramData::Pie(PieData {
+            slices,
+            legend,
+            center: (center_x, center_y),
+            radius,
+            title: title_layout,
+        }),
     }
 }

@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use crate::config::LayoutConfig;
 use crate::ir::Graph;
 
-use super::{ErrorLayout, Layout};
+use super::{DiagramData, ErrorLayout, Layout};
 
 pub(super) fn compute_error_layout(graph: &Graph, config: &LayoutConfig) -> Layout {
     let viewbox_width = config.treemap.error_viewbox_width.max(1.0);
@@ -20,28 +20,9 @@ pub(super) fn compute_error_layout(graph: &Graph, config: &LayoutConfig) -> Layo
         nodes: BTreeMap::new(),
         edges: Vec::new(),
         subgraphs: Vec::new(),
-        lifelines: Vec::new(),
-        sequence_footboxes: Vec::new(),
-        sequence_boxes: Vec::new(),
-        sequence_frames: Vec::new(),
-        sequence_notes: Vec::new(),
-        sequence_activations: Vec::new(),
-        sequence_numbers: Vec::new(),
-        state_notes: Vec::new(),
-        pie_slices: Vec::new(),
-        pie_legend: Vec::new(),
-        pie_center: (0.0, 0.0),
-        pie_radius: 0.0,
-        pie_title: None,
-        quadrant: None,
-        gantt: None,
-        sankey: None,
-        gitgraph: None,
-        c4: None,
-        xychart: None,
-        timeline: None,
-        journey: None,
-        error: Some(ErrorLayout {
+        width: render_width,
+        height: render_height,
+        diagram: DiagramData::Error(ErrorLayout {
             viewbox_width,
             viewbox_height,
             render_width,
@@ -58,9 +39,6 @@ pub(super) fn compute_error_layout(graph: &Graph, config: &LayoutConfig) -> Layo
             icon_tx: config.treemap.icon_tx,
             icon_ty: config.treemap.icon_ty,
         }),
-
-        width: render_width,
-        height: render_height,
     }
 }
 
@@ -79,28 +57,9 @@ pub(super) fn compute_pie_error_layout(graph: &Graph, config: &LayoutConfig) -> 
         nodes: BTreeMap::new(),
         edges: Vec::new(),
         subgraphs: Vec::new(),
-        lifelines: Vec::new(),
-        sequence_footboxes: Vec::new(),
-        sequence_boxes: Vec::new(),
-        sequence_frames: Vec::new(),
-        sequence_notes: Vec::new(),
-        sequence_activations: Vec::new(),
-        sequence_numbers: Vec::new(),
-        state_notes: Vec::new(),
-        pie_slices: Vec::new(),
-        pie_legend: Vec::new(),
-        pie_center: (0.0, 0.0),
-        pie_radius: 0.0,
-        pie_title: None,
-        quadrant: None,
-        gantt: None,
-        sankey: None,
-        gitgraph: None,
-        c4: None,
-        xychart: None,
-        timeline: None,
-        journey: None,
-        error: Some(ErrorLayout {
+        width: render_width,
+        height: render_height,
+        diagram: DiagramData::Error(ErrorLayout {
             viewbox_width,
             viewbox_height,
             render_width,
@@ -117,8 +76,5 @@ pub(super) fn compute_pie_error_layout(graph: &Graph, config: &LayoutConfig) -> 
             icon_tx: config.pie.icon_tx,
             icon_ty: config.pie.icon_ty,
         }),
-
-        width: render_width,
-        height: render_height,
     }
 }
