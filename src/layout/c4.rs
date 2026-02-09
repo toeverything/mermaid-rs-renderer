@@ -116,6 +116,54 @@ pub(super) fn compute_c4_layout(graph: &Graph, config: &LayoutConfig) -> Layout 
         });
     }
 
+    let mut nodes: BTreeMap<String, NodeLayout> = BTreeMap::new();
+    for shape in &shapes_out {
+        nodes.insert(
+            shape.id.clone(),
+            NodeLayout {
+                id: shape.id.clone(),
+                x: shape.x,
+                y: shape.y,
+                width: shape.width,
+                height: shape.height,
+                label: TextBlock {
+                    lines: shape.label.lines.clone(),
+                    width: shape.label.width,
+                    height: shape.label.height,
+                },
+                shape: crate::ir::NodeShape::Rectangle,
+                style: crate::ir::NodeStyle::default(),
+                link: None,
+                anchor_subgraph: None,
+                hidden: false,
+                icon: None,
+            },
+        );
+    }
+    let mut edges: Vec<EdgeLayout> = Vec::new();
+    for rel in &rels_out {
+        edges.push(EdgeLayout {
+            from: rel.from.clone(),
+            to: rel.to.clone(),
+            label: None,
+            start_label: None,
+            end_label: None,
+            label_anchor: None,
+            start_label_anchor: None,
+            end_label_anchor: None,
+            points: vec![rel.start, rel.end],
+            directed: rel.kind != crate::ir::C4RelKind::BiRel,
+            arrow_start: false,
+            arrow_end: rel.kind != crate::ir::C4RelKind::BiRel,
+            arrow_start_kind: None,
+            arrow_end_kind: None,
+            start_decoration: None,
+            end_decoration: None,
+            style: crate::ir::EdgeStyle::Solid,
+            override_style: crate::ir::EdgeStyleOverride::default(),
+        });
+    }
+
     let width = (global_max_x - conf.diagram_margin_x + 2.0 * conf.diagram_margin_x).max(1.0);
     let height = (global_max_y - conf.diagram_margin_y + 2.0 * conf.diagram_margin_y).max(1.0);
     let viewbox_x = 0.0;
@@ -125,8 +173,8 @@ pub(super) fn compute_c4_layout(graph: &Graph, config: &LayoutConfig) -> Layout 
 
     Layout {
         kind: graph.kind,
-        nodes: BTreeMap::new(),
-        edges: Vec::new(),
+        nodes,
+        edges,
         subgraphs: Vec::new(),
         width,
         height,

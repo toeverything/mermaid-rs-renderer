@@ -304,6 +304,7 @@ pub(super) struct RouteContext<'a> {
     pub(super) end_side: EdgeSide,
     pub(super) start_offset: f32,
     pub(super) end_offset: f32,
+    pub(super) stub_len: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -1185,7 +1186,7 @@ pub(super) fn route_edge_with_avoidance(
     // Anchor edges using resolved port offsets to reduce overlap
     let start = anchor_point_for_node(ctx.from, ctx.start_side, ctx.start_offset);
     let end = anchor_point_for_node(ctx.to, ctx.end_side, ctx.end_offset);
-    let stub_len = port_stub_length(ctx.config, ctx.from, ctx.to);
+    let stub_len = ctx.stub_len;
     let mut route_start = port_stub_point(start, ctx.start_side, stub_len);
     let mut route_end = port_stub_point(end, ctx.end_side, stub_len);
     let stub_hits_node = |a: (f32, f32), b: (f32, f32)| {

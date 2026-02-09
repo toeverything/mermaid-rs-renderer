@@ -23,9 +23,17 @@ pub(super) fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &Lay
         label_blocks.insert(id.clone(), label);
     }
 
-    let actor_width = (max_label_width + theme.font_size * 2.1).max(130.0);
-    let actor_height = (max_label_height + theme.font_size * 2.0).max(56.0);
-    let actor_gap = (theme.font_size * 3.0).max(30.0);
+    let participant_count = participants.len();
+    let base_actor_width = max_label_width + theme.font_size * 1.2;
+    let min_actor_width = (theme.font_size * 4.0).max(80.0);
+    let actor_width = base_actor_width.max(min_actor_width);
+    let actor_height = (max_label_height + theme.font_size * 1.6).max(48.0);
+    let mut actor_gap = (theme.font_size * 1.4).max(16.0);
+    if participant_count >= 7 {
+        actor_gap *= 0.75;
+    } else if participant_count >= 5 {
+        actor_gap *= 0.82;
+    }
 
     // Add consistent margins to center the diagram
     let margin = 8.0;
@@ -500,74 +508,112 @@ pub(super) fn compute_sequence_layout(graph: &Graph, theme: &Theme, config: &Lay
         }
     }
 
-    let (mut width, mut height) = bounds_from_layout(&nodes, &subgraphs);
-    let mut max_x = width.max(cursor_x + 40.0) - 60.0;
-    let mut max_y = height - 60.0;
-    let mut min_x: f32 = 0.0;
-    for note in &sequence_notes {
-        min_x = min_x.min(note.x);
-        max_x = max_x.max(note.x + note.width);
-        max_y = max_y.max(note.y + note.height);
+    let mut min_x = f32::INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+    let mut update_rect = |x: f32, y: f32, w: f32, h: f32| {
+        min_x = min_x.min(x);
+        min_y = min_y.min(y);
+        max_x = max_x.max(x + w);
+        max_y = max_y.max(y + h);
+    };
+    for node in nodes.values() {
+        update_rect(node.x, node.y, node.width, node.height);
+    }
+    for footbox in &sequence_footboxes {
+        update_rect(footbox.x, footbox.y, footbox.width, footbox.height);
+    }
+    for seq_box in &sequence_boxes {
+        update_rect(seq_box.x, seq_box.y, seq_box.width, seq_box.height);
     }
     for frame in &sequence_frames {
-        min_x = min_x.min(frame.x);
-        max_x = max_x.max(frame.x + frame.width);
-        max_y = max_y.max(frame.y + frame.height);
+        update_rect(frame.x, frame.y, frame.width, frame.height);
+    }
+    for note in &sequence_notes {
+        update_rect(note.x, note.y, note.width, note.height);
     }
     for activation in &sequence_activations {
-        min_x = min_x.min(activation.x);
-        max_x = max_x.max(activation.x + activation.width);
-        max_y = max_y.max(activation.y + activation.height);
+        update_rect(activation.x, activation.y, activation.width, activation.height);
     }
     for number in &sequence_numbers {
-        min_x = min_x.min(number.x);
-        max_x = max_x.max(number.x);
-        max_y = max_y.max(number.y);
+        update_rect(number.x, number.y, 0.0, 0.0);
+    }
+    for edge in &edges {
+        for point in &edge.points {
+            min_x = min_x.min(point.0);
+            min_y = min_y.min(point.1);
+            max_x = max_x.max(point.0);
+            max_y = max_y.max(point.1);
+        }
+    }
+    if !min_x.is_finite() || !min_y.is_finite() || !max_x.is_finite() || !max_y.is_finite() {
+        min_x = 0.0;
+        min_y = 0.0;
+        max_x = 1.0;
+        max_y = 1.0;
     }
 
-    let shift_x = if min_x < 0.0 { -min_x + 20.0 } else { 0.0 };
-    if shift_x > 0.0 {
+    let margin = 8.0;
+    let shift_x = margin - min_x;
+    let shift_y = margin - min_y;
+    if shift_x.abs() > 1e-3 || shift_y.abs() > 1e-3 {
         for node in nodes.values_mut() {
             node.x += shift_x;
+            node.y += shift_y;
         }
         for edge in &mut edges {
             for point in &mut edge.points {
                 point.0 += shift_x;
+                point.1 += shift_y;
             }
         }
         for lifeline in &mut lifelines {
             lifeline.x += shift_x;
+            lifeline.y1 += shift_y;
+            lifeline.y2 += shift_y;
         }
         for footbox in &mut sequence_footboxes {
             footbox.x += shift_x;
+            footbox.y += shift_y;
+        }
+        for seq_box in &mut sequence_boxes {
+            seq_box.x += shift_x;
+            seq_box.y += shift_y;
         }
         for frame in &mut sequence_frames {
             frame.x += shift_x;
+            frame.y += shift_y;
             frame.label_box.0 += shift_x;
+            frame.label_box.1 += shift_y;
             frame.label.x += shift_x;
+            frame.label.y += shift_y;
             for label in &mut frame.section_labels {
                 label.x += shift_x;
+                label.y += shift_y;
+            }
+            for divider in &mut frame.dividers {
+                *divider += shift_y;
             }
         }
         for note in &mut sequence_notes {
             note.x += shift_x;
+            note.y += shift_y;
         }
         for activation in &mut sequence_activations {
             activation.x += shift_x;
+            activation.y += shift_y;
         }
         for number in &mut sequence_numbers {
             number.x += shift_x;
+            number.y += shift_y;
         }
         max_x += shift_x;
+        max_y += shift_y;
     }
 
-    let footbox_height = sequence_footboxes
-        .iter()
-        .map(|node| node.height)
-        .fold(0.0, f32::max);
-    max_y = max_y.max(lifeline_end + footbox_height);
-    width = max_x + 60.0;
-    height = max_y + 60.0;
+    let width = (max_x - min_x + margin * 2.0).max(1.0);
+    let height = (max_y - min_y + margin * 2.0).max(1.0);
 
     Layout {
         kind: graph.kind,

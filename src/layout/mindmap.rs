@@ -433,16 +433,41 @@ pub(super) fn compute_mindmap_layout(graph: &Graph, theme: &Theme, config: &Layo
         max_x = max_x.max(node.x + node.width);
         max_y = max_y.max(node.y + node.height);
     }
-    let width = if min_x == f32::MAX {
-        1.0
-    } else {
-        (max_x - min_x).max(1.0)
-    };
-    let height = if min_y == f32::MAX {
-        1.0
-    } else {
-        (max_y - min_y).max(1.0)
-    };
+    for edge in &edges {
+        for point in &edge.points {
+            min_x = min_x.min(point.0);
+            min_y = min_y.min(point.1);
+            max_x = max_x.max(point.0);
+            max_y = max_y.max(point.1);
+        }
+    }
+    if min_x == f32::MAX || min_y == f32::MAX {
+        min_x = 0.0;
+        min_y = 0.0;
+        max_x = 1.0;
+        max_y = 1.0;
+    }
+    let pad = config.mindmap.padding.max(8.0);
+    let shift_x = pad - min_x;
+    let shift_y = pad - min_y;
+    if shift_x.abs() > 1e-3 || shift_y.abs() > 1e-3 {
+        for node in nodes.values_mut() {
+            node.x += shift_x;
+            node.y += shift_y;
+        }
+        for edge in &mut edges {
+            for point in &mut edge.points {
+                point.0 += shift_x;
+                point.1 += shift_y;
+            }
+        }
+        min_x += shift_x;
+        min_y += shift_y;
+        max_x += shift_x;
+        max_y += shift_y;
+    }
+    let width = (max_x - min_x + pad * 2.0).max(1.0);
+    let height = (max_y - min_y + pad * 2.0).max(1.0);
 
     Layout {
         kind: graph.kind,

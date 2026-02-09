@@ -210,6 +210,10 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     if graph.kind == crate::ir::DiagramKind::Requirement {
         effective_config.max_label_width_chars = effective_config.max_label_width_chars.max(32);
     }
+    if graph.kind == crate::ir::DiagramKind::Er {
+        effective_config.node_spacing *= 0.85;
+        effective_config.rank_spacing *= 0.85;
+    }
     if graph.kind == crate::ir::DiagramKind::Flowchart {
         let node_count = graph.nodes.len();
         let edge_count = graph.edges.len() as f32;
@@ -787,6 +791,13 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             .get(*idx)
             .copied()
             .expect("edge port info missing");
+        let default_stub = port_stub_length(config, from, to);
+        let stub_len = match graph.kind {
+            crate::ir::DiagramKind::Class
+            | crate::ir::DiagramKind::Er
+            | crate::ir::DiagramKind::Requirement => 0.0,
+            _ => default_stub,
+        };
         let route_ctx = RouteContext {
             from_id: &edge.from,
             to_id: &edge.to,
@@ -802,6 +813,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             end_side: port_info.end_side,
             start_offset: port_info.start_offset,
             end_offset: port_info.end_offset,
+            stub_len,
         };
         let points = route_edge_with_avoidance(
             &route_ctx,
@@ -990,7 +1002,13 @@ fn assign_positions_manual(
         }
     }
 
-    let use_label_dummies = graph.kind != crate::ir::DiagramKind::Flowchart;
+    let use_label_dummies = !matches!(
+        graph.kind,
+        crate::ir::DiagramKind::Flowchart
+            | crate::ir::DiagramKind::Class
+            | crate::ir::DiagramKind::Er
+            | crate::ir::DiagramKind::Requirement
+    );
     // Collect gaps (original rank index) where at least one labeled forward edge exists.
     let gaps_needing_label_rank: Vec<usize> = if use_label_dummies {
         let mut gap_set: HashSet<usize> = HashSet::new();
@@ -2755,14 +2773,6 @@ fn assign_positions(
     }
 }
 
-fn bounds_from_layout(
-    nodes: &BTreeMap<String, NodeLayout>,
-    subgraphs: &[SubgraphLayout],
-) -> (f32, f32) {
-    let (max_x, max_y) = bounds_without_padding(nodes, subgraphs);
-    (max_x + 60.0, max_y + 60.0)
-}
-
 fn bounds_without_padding(
     nodes: &BTreeMap<String, NodeLayout>,
     subgraphs: &[SubgraphLayout],
@@ -2865,19 +2875,14 @@ fn normalize_layout(
         }
     }
 
+    if !min_x.is_finite() || !min_y.is_finite() {
+        return;
+    }
     let padding = LAYOUT_BOUNDARY_PAD;
-    let shift_x = if min_x < padding {
-        padding - min_x
-    } else {
-        0.0
-    };
-    let shift_y = if min_y < padding {
-        padding - min_y
-    } else {
-        0.0
-    };
+    let shift_x = padding - min_x;
+    let shift_y = padding - min_y;
 
-    if shift_x == 0.0 && shift_y == 0.0 {
+    if shift_x.abs() < 1e-3 && shift_y.abs() < 1e-3 {
         return;
     }
 
@@ -4685,6 +4690,7 @@ mod tests {
             start_offset: 0.0,
             end_offset: 0.0,
             fast_route: false,
+            stub_len: port_stub_length(&config, &from, &to),
         };
         let mut occupancy = EdgeOccupancy::new(config.node_spacing.max(MIN_NODE_SPACING_FLOOR) * EDGE_OCCUPANCY_CELL_RATIO);
         let start = anchor_point_for_node(&from, EdgeSide::Right, 0.0);
@@ -4720,6 +4726,7 @@ mod tests {
             start_offset: 0.0,
             end_offset: 0.0,
             fast_route: false,
+            stub_len: port_stub_length(&config, &from, &to),
         };
         let points = route_edge_with_avoidance(&ctx, None, None, None);
         assert!(!points.is_empty());
@@ -4757,6 +4764,7 @@ mod tests {
             start_offset: 0.0,
             end_offset: 0.0,
             fast_route: false,
+            stub_len: port_stub_length(&config, &from, &to),
         };
         let start = anchor_point_for_node(&from, EdgeSide::Right, 0.0);
         let end = anchor_point_for_node(&to, EdgeSide::Left, 0.0);
