@@ -1,8 +1,13 @@
 use super::*;
 
-pub(super) fn compute_kanban_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
+pub(super) fn compute_kanban_layout(
+    graph: &Graph,
+    theme: &Theme,
+    config: &LayoutConfig,
+    stage_metrics: Option<&mut LayoutStageMetrics>,
+) -> Layout {
     if !graph.edges.is_empty() {
-        return compute_flowchart_layout(graph, theme, config);
+        return compute_flowchart_layout(graph, theme, config, stage_metrics);
     }
 
     let mut nodes = build_graph_node_layouts(graph, theme, config);

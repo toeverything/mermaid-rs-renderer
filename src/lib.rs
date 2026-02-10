@@ -106,7 +106,10 @@ pub use ir::{
     NodeShape, SequenceActivation, SequenceActivationKind, SequenceBox, StateNote,
     StateNotePosition, Subgraph,
 };
-pub use layout::{EdgeLayout, Layout, NodeLayout, SubgraphLayout, compute_layout};
+pub use layout::{
+    EdgeLayout, Layout, LayoutStageMetrics, NodeLayout, SubgraphLayout, compute_layout,
+    compute_layout_with_metrics,
+};
 pub use parser::{ParseOutput, parse_mermaid};
 #[cfg(feature = "png")]
 pub use render::write_output_png;
@@ -224,6 +227,33 @@ impl RenderResult {
     }
 }
 
+/// Result of rendering with detailed layout stage timing information.
+#[derive(Debug, Clone)]
+pub struct RenderDetailedResult {
+    /// The rendered SVG string.
+    pub svg: String,
+    /// Time spent parsing (microseconds).
+    pub parse_us: u128,
+    /// Time spent computing layout (microseconds).
+    pub layout_us: u128,
+    /// Time spent rendering to SVG (microseconds).
+    pub render_us: u128,
+    /// Fine-grained layout stage timings (microseconds).
+    pub layout_stages: LayoutStageMetrics,
+}
+
+impl RenderDetailedResult {
+    /// Total render time in microseconds.
+    pub fn total_us(&self) -> u128 {
+        self.parse_us + self.layout_us + self.render_us
+    }
+
+    /// Total render time in milliseconds.
+    pub fn total_ms(&self) -> f64 {
+        self.total_us() as f64 / 1000.0
+    }
+}
+
 /// Render a Mermaid diagram to SVG with timing information.
 ///
 /// Useful for benchmarking and profiling.
@@ -240,6 +270,23 @@ impl RenderResult {
 /// println!("  Render: {}us", result.render_us);
 /// ```
 pub fn render_with_timing(input: &str, options: RenderOptions) -> anyhow::Result<RenderResult> {
+    let detailed = render_with_detailed_timing(input, options)?;
+    Ok(RenderResult {
+        svg: detailed.svg,
+        parse_us: detailed.parse_us,
+        layout_us: detailed.layout_us,
+        render_us: detailed.render_us,
+    })
+}
+
+/// Render a Mermaid diagram to SVG with detailed timing information.
+///
+/// Includes a stage-level timing breakdown for layout (port assignment, edge
+/// routing, label placement) to support architecture-level profiling.
+pub fn render_with_detailed_timing(
+    input: &str,
+    options: RenderOptions,
+) -> anyhow::Result<RenderDetailedResult> {
     use std::time::Instant;
 
     let t0 = Instant::now();
@@ -247,18 +294,20 @@ pub fn render_with_timing(input: &str, options: RenderOptions) -> anyhow::Result
     let parse_us = t0.elapsed().as_micros();
 
     let t1 = Instant::now();
-    let layout = compute_layout(&parsed.graph, &options.theme, &options.layout);
+    let (layout, layout_stages) =
+        compute_layout_with_metrics(&parsed.graph, &options.theme, &options.layout);
     let layout_us = t1.elapsed().as_micros();
 
     let t2 = Instant::now();
     let svg = render_svg(&layout, &options.theme, &options.layout);
     let render_us = t2.elapsed().as_micros();
 
-    Ok(RenderResult {
+    Ok(RenderDetailedResult {
         svg,
         parse_us,
         layout_us,
         render_us,
+        layout_stages,
     })
 }
 

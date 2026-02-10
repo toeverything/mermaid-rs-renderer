@@ -48,6 +48,7 @@ use crate::text_metrics;
 use crate::theme::{Theme, adjust_color, parse_color_to_hsl};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::time::Instant;
 
 // Label placement padding (resolved per diagram kind).
 const LABEL_RANK_FONT_SCALE: f32 = 0.5;
@@ -138,7 +139,29 @@ fn is_region_subgraph(sub: &crate::ir::Subgraph) -> bool {
             .unwrap_or(false)
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct LayoutStageMetrics {
+    pub port_assignment_us: u128,
+    pub edge_routing_us: u128,
+    pub label_placement_us: u128,
+}
+
+impl LayoutStageMetrics {
+    pub fn total_us(&self) -> u128 {
+        self.port_assignment_us + self.edge_routing_us + self.label_placement_us
+    }
+}
+
 pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
+    compute_layout_with_metrics(graph, theme, config).0
+}
+
+pub fn compute_layout_with_metrics(
+    graph: &Graph,
+    theme: &Theme,
+    config: &LayoutConfig,
+) -> (Layout, LayoutStageMetrics) {
+    let mut stage_metrics = LayoutStageMetrics::default();
     let mut layout = match graph.kind {
         crate::ir::DiagramKind::Sequence | crate::ir::DiagramKind::ZenUML => {
             compute_sequence_layout(graph, theme, config)
@@ -152,7 +175,9 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         }
         crate::ir::DiagramKind::Quadrant => compute_quadrant_layout(graph, theme, config),
         crate::ir::DiagramKind::Gantt => compute_gantt_layout(graph, theme, config),
-        crate::ir::DiagramKind::Kanban => compute_kanban_layout(graph, theme, config),
+        crate::ir::DiagramKind::Kanban => {
+            compute_kanban_layout(graph, theme, config, Some(&mut stage_metrics))
+        }
         crate::ir::DiagramKind::Block => compute_block_layout(graph, theme, config),
         crate::ir::DiagramKind::Sankey => compute_sankey_layout(graph, theme, config),
         crate::ir::DiagramKind::Architecture => compute_architecture_layout(graph, theme, config),
@@ -175,13 +200,19 @@ pub fn compute_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> La
         | crate::ir::DiagramKind::Er
         | crate::ir::DiagramKind::Requirement
         | crate::ir::DiagramKind::Packet
-        | crate::ir::DiagramKind::Flowchart => compute_flowchart_layout(graph, theme, config),
+        | crate::ir::DiagramKind::Flowchart => {
+            compute_flowchart_layout(graph, theme, config, Some(&mut stage_metrics))
+        }
     };
 
     // Final pass: resolve all edge label positions using collision avoidance.
+    let label_start = Instant::now();
     label_placement::resolve_all_label_positions(&mut layout, theme, config);
+    stage_metrics.label_placement_us = stage_metrics
+        .label_placement_us
+        .saturating_add(label_start.elapsed().as_micros());
 
-    layout
+    (layout, stage_metrics)
 }
 
 fn adaptive_spacing_for_nodes(
@@ -206,7 +237,12 @@ fn adaptive_spacing_for_nodes(
     target.min(max_spacing)
 }
 
-fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
+fn compute_flowchart_layout(
+    graph: &Graph,
+    theme: &Theme,
+    config: &LayoutConfig,
+    mut stage_metrics: Option<&mut LayoutStageMetrics>,
+) -> Layout {
     let mut effective_config = config.clone();
     if graph.kind == crate::ir::DiagramKind::Requirement {
         effective_config.max_label_width_chars = effective_config.max_label_width_chars.max(32);
@@ -473,6 +509,7 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
     } else {
         None
     };
+    let port_assignment_start = Instant::now();
     let mut node_degrees: HashMap<String, usize> = HashMap::new();
     for edge in &graph.edges {
         *node_degrees.entry(edge.from.clone()).or_insert(0) += 1;
@@ -648,6 +685,13 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
             }
         }
     }
+    if let Some(metrics) = stage_metrics.as_deref_mut() {
+        metrics.port_assignment_us = metrics
+            .port_assignment_us
+            .saturating_add(port_assignment_start.elapsed().as_micros());
+    }
+
+    let edge_routing_start = Instant::now();
     let pair_counts = build_edge_pair_counts(&graph.edges);
     let mut pair_seen: HashMap<(String, String), usize> = HashMap::new();
     let mut pair_index: Vec<usize> = vec![0; graph.edges.len()];
@@ -996,6 +1040,11 @@ fn compute_flowchart_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig)
         if points.len() >= 2 {
             insert_label_via_point(points, (cx, cy), graph.direction);
         }
+    }
+    if let Some(metrics) = stage_metrics.as_deref_mut() {
+        metrics.edge_routing_us = metrics
+            .edge_routing_us
+            .saturating_add(edge_routing_start.elapsed().as_micros());
     }
 
     let mut edges = Vec::new();

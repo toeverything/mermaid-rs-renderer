@@ -1,5 +1,5 @@
 use crate::config::{Config, load_config};
-use crate::layout::compute_layout;
+use crate::layout::compute_layout_with_metrics;
 use crate::layout_dump::write_layout_dump;
 use crate::parser::parse_mermaid;
 #[cfg(feature = "png")]
@@ -114,7 +114,8 @@ pub fn run() -> Result<()> {
         }
 
         let t_layout_start = std::time::Instant::now();
-        let layout = compute_layout(&parsed.graph, &config.theme, &config.layout);
+        let (layout, layout_stages) =
+            compute_layout_with_metrics(&parsed.graph, &config.theme, &config.layout);
         let layout_us = t_layout_start.elapsed().as_micros();
 
         if let Some(outputs) = layout_outputs.as_ref()
@@ -146,10 +147,19 @@ pub fn run() -> Result<()> {
 
         if args.timing {
             let total_us = parse_us + layout_us + render_us;
-            eprintln!(
-                r#"{{"parse_us":{},"layout_us":{},"render_us":{},"total_us":{}}}"#,
-                parse_us, layout_us, render_us, total_us
-            );
+            let payload = serde_json::json!({
+                "parse_us": parse_us,
+                "layout_us": layout_us,
+                "render_us": render_us,
+                "total_us": total_us,
+                "layout_stage_us": {
+                    "port_assignment_us": layout_stages.port_assignment_us,
+                    "edge_routing_us": layout_stages.edge_routing_us,
+                    "label_placement_us": layout_stages.label_placement_us,
+                    "total_us": layout_stages.total_us(),
+                }
+            });
+            eprintln!("{payload}");
         }
         return Ok(());
     }
@@ -163,7 +173,8 @@ pub fn run() -> Result<()> {
         if let Some(init_cfg) = parsed.init_config.clone() {
             config = merge_init_config(config, init_cfg);
         }
-        let layout = compute_layout(&parsed.graph, &config.theme, &config.layout);
+        let (layout, _layout_stages) =
+            compute_layout_with_metrics(&parsed.graph, &config.theme, &config.layout);
         if let Some(outputs) = layout_outputs.as_ref()
             && let Some(path) = outputs.get(idx)
         {

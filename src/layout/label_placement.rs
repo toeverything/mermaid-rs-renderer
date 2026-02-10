@@ -12,6 +12,7 @@ const LABEL_OVERLAP_WIDE_THRESHOLD: f32 = 1e-4;
 const LABEL_ANCHOR_FRACTIONS: [f32; 3] = [0.5, 0.35, 0.65];
 const LABEL_ANCHOR_POS_EPS: f32 = 1.0;
 const LABEL_ANCHOR_DIR_EPS: f32 = 0.02;
+const LABEL_EDGE_DISTANCE_WEIGHT: f32 = 0.14;
 
 type Rect = (f32, f32, f32, f32);
 type EdgeObstacle = (usize, Rect);
@@ -206,6 +207,19 @@ fn resolve_center_labels(
                         idx,
                         bounds,
                     );
+                    let overlap_pressure = penalty.0;
+                    let edge_dist = point_polyline_distance((x, y), &edge.points);
+                    let edge_target = (label.height * 0.65 + label_pad_y).max(6.0);
+                    let edge_dist_weight = if overlap_pressure <= 0.02 {
+                        LABEL_EDGE_DISTANCE_WEIGHT
+                    } else if overlap_pressure <= 0.08 {
+                        LABEL_EDGE_DISTANCE_WEIGHT * 0.45
+                    } else {
+                        LABEL_EDGE_DISTANCE_WEIGHT * 0.15
+                    };
+                    let edge_dist_penalty =
+                        ((edge_dist - edge_target).max(0.0) / edge_target) * edge_dist_weight;
+                    let penalty = (penalty.0 + edge_dist_penalty, penalty.1);
                     if candidate_better(penalty, *best_penalty) {
                         *best_penalty = penalty;
                         *best_pos = (x, y);
@@ -405,6 +419,38 @@ fn edge_path_length(edge: &EdgeLayout) -> f32 {
     total
 }
 
+fn point_segment_distance(point: (f32, f32), a: (f32, f32), b: (f32, f32)) -> f32 {
+    let vx = b.0 - a.0;
+    let vy = b.1 - a.1;
+    let len2 = vx * vx + vy * vy;
+    if len2 <= 1e-6 {
+        let dx = point.0 - a.0;
+        let dy = point.1 - a.1;
+        return (dx * dx + dy * dy).sqrt();
+    }
+    let t = ((point.0 - a.0) * vx + (point.1 - a.1) * vy) / len2;
+    let t = t.clamp(0.0, 1.0);
+    let proj_x = a.0 + vx * t;
+    let proj_y = a.1 + vy * t;
+    let dx = point.0 - proj_x;
+    let dy = point.1 - proj_y;
+    (dx * dx + dy * dy).sqrt()
+}
+
+fn point_polyline_distance(point: (f32, f32), points: &[(f32, f32)]) -> f32 {
+    if points.len() < 2 {
+        return 0.0;
+    }
+    let mut best = f32::INFINITY;
+    for seg in points.windows(2) {
+        let dist = point_segment_distance(point, seg[0], seg[1]);
+        if dist < best {
+            best = dist;
+        }
+    }
+    if best.is_finite() { best } else { 0.0 }
+}
+
 fn subgraph_label_rect(sub: &SubgraphLayout, kind: DiagramKind, theme: &Theme) -> Option<Rect> {
     if sub.label.trim().is_empty() {
         return None;
@@ -585,6 +631,7 @@ fn edge_label_anchor_from_point(
         return None;
     }
     let mut best_dist2 = f32::INFINITY;
+    let mut best_proj: Option<(f32, f32)> = None;
     let mut best_dir: Option<(f32, f32)> = None;
     for segment in edge.points.windows(2) {
         let p1 = segment[0];
@@ -603,12 +650,14 @@ fn edge_label_anchor_from_point(
             (point.0 - proj_x) * (point.0 - proj_x) + (point.1 - proj_y) * (point.1 - proj_y);
         if dist2 < best_dist2 {
             best_dist2 = dist2;
+            best_proj = Some((proj_x, proj_y));
             best_dir = Some((dx, dy));
         }
     }
+    let (proj_x, proj_y) = best_proj?;
     let (dx, dy) = best_dir?;
     let len = (dx * dx + dy * dy).sqrt().max(1e-3);
-    Some((point.0, point.1, dx / len, dy / len))
+    Some((proj_x, proj_y, dx / len, dy / len))
 }
 
 fn push_anchor_unique(anchors: &mut Vec<(f32, f32, f32, f32)>, candidate: (f32, f32, f32, f32)) {
@@ -740,8 +789,8 @@ impl ObstacleGrid {
 // Overlap penalty weights: node/subgraph overlap is worst, label overlap is
 // moderate, edge overlap is mild (labels on edges is common and often acceptable).
 const WEIGHT_NODE_OVERLAP: f32 = 1.0;
-const WEIGHT_LABEL_OVERLAP: f32 = 0.7;
-const WEIGHT_EDGE_OVERLAP: f32 = 0.25;
+const WEIGHT_LABEL_OVERLAP: f32 = 0.9;
+const WEIGHT_EDGE_OVERLAP: f32 = 0.5;
 const WEIGHT_OUTSIDE: f32 = 1.2;
 
 fn label_penalties(
