@@ -797,7 +797,9 @@ fn compute_flowchart_layout(
             dy.abs()
         };
         let (_, _, is_backward) = edge_sides(from, to, graph.direction);
-        let is_secondary = edge.style == crate::ir::EdgeStyle::Dotted || edge.label.is_some();
+        let is_dotted = edge.style == crate::ir::EdgeStyle::Dotted;
+        let has_label = edge.label.is_some();
+        let is_secondary = is_dotted || has_label;
         let has_open_triangle = matches!(
             edge.arrow_start_kind,
             Some(crate::ir::EdgeArrowhead::OpenTriangle)
@@ -815,9 +817,9 @@ fn compute_flowchart_layout(
             } else {
                 1u8
             }
-        } else if is_secondary {
+        } else if is_dotted {
             2u8
-        } else if is_backward {
+        } else if has_label || is_backward {
             1u8
         } else {
             0u8

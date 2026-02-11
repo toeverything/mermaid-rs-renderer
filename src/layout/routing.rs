@@ -11,6 +11,12 @@ use super::{NodeLayout, SubgraphLayout};
 const DIRECTION_PREF_RATIO: f32 = 1.35;
 /// Maximum detour penalty before a non-primary side is rejected.
 const ROUTE_DETOUR_THRESHOLD: f32 = 120.0;
+/// Soft side load cap used to encourage side diversification on dense hubs.
+const SIDE_LOAD_SOFT_CAP: f32 = 6.0;
+/// For hub->leaf edges, keep main-axis forcing unless geometric cross-axis
+/// separation is clearly stronger and the forced sides are already saturated.
+const HUB_DIVERSIFY_GEOM_RATIO: f32 = 1.35;
+const HUB_DIVERSIFY_LOAD_SUM: usize = 14;
 
 // ── Port stub sizing ────────────────────────────────────────────────
 /// Ratio of node_spacing used as base port stub length.
@@ -209,18 +215,38 @@ pub(super) fn edge_sides_balanced(
     // For hub-to-leaf edges, side balancing can over-disperse ports and
     // introduce fan crossing. Prefer the diagram's main direction axis.
     if (from_degree >= 10 && to_degree <= 4) || (to_degree >= 10 && from_degree <= 4) {
-        if is_horizontal(direction) {
+        let forced = if is_horizontal(direction) {
             let is_backward = to.x + to.width < from.x;
             if dx >= 0.0 {
-                return (EdgeSide::Right, EdgeSide::Left, is_backward);
+                (EdgeSide::Right, EdgeSide::Left, is_backward)
+            } else {
+                (EdgeSide::Left, EdgeSide::Right, is_backward)
             }
-            return (EdgeSide::Left, EdgeSide::Right, is_backward);
+        } else {
+            let is_backward = to.y + to.height < from.y;
+            if dy >= 0.0 {
+                (EdgeSide::Bottom, EdgeSide::Top, is_backward)
+            } else {
+                (EdgeSide::Top, EdgeSide::Bottom, is_backward)
+            }
+        };
+        let forced_load = side_load_for_node(side_loads, from_id, forced.0)
+            + side_load_for_node(side_loads, to_id, forced.1);
+        let main_axis = if is_horizontal(direction) {
+            dx.abs()
+        } else {
+            dy.abs()
+        };
+        let cross_axis = if is_horizontal(direction) {
+            dy.abs()
+        } else {
+            dx.abs()
+        };
+        let can_diversify = forced_load >= HUB_DIVERSIFY_LOAD_SUM
+            && cross_axis > main_axis * HUB_DIVERSIFY_GEOM_RATIO;
+        if !can_diversify {
+            return forced;
         }
-        let is_backward = to.y + to.height < from.y;
-        if dy >= 0.0 {
-            return (EdgeSide::Bottom, EdgeSide::Top, is_backward);
-        }
-        return (EdgeSide::Top, EdgeSide::Bottom, is_backward);
     }
 
     let horizontal = if dx >= 0.0 {
@@ -260,6 +286,9 @@ pub(super) fn edge_sides_balanced(
         let from_load = side_load_for_node(side_loads, from_id, start_side) as f32;
         let to_load = side_load_for_node(side_loads, to_id, end_side) as f32;
         let load_score = from_load * from_load + to_load * to_load + (from_load + to_load) * 0.5;
+        let overload =
+            (from_load - SIDE_LOAD_SOFT_CAP).max(0.0) + (to_load - SIDE_LOAD_SOFT_CAP).max(0.0);
+        let overload_penalty = overload * overload * 6.0;
         let from_anchor = anchor_point_for_node(from, start_side, 0.0);
         let to_anchor = anchor_point_for_node(to, end_side, 0.0);
         let manhattan = (to_anchor.0 - from_anchor.0).abs() + (to_anchor.1 - from_anchor.1).abs();
@@ -279,8 +308,12 @@ pub(super) fn edge_sides_balanced(
             2.0
         };
         let backward_penalty = if is_backward && !primary.2 { 4.0 } else { 0.0 };
-        let score =
-            load_score * 9.0 + manhattan * 0.22 + axis_penalty + primary_penalty + backward_penalty;
+        let score = load_score * 9.0
+            + overload_penalty
+            + manhattan * 0.22
+            + axis_penalty
+            + primary_penalty
+            + backward_penalty;
         let tiebreak = manhattan + from_load + to_load;
         if score < best_score || ((score - best_score).abs() < 1e-4 && tiebreak < best_tiebreak) {
             best = (start_side, end_side, is_backward);
