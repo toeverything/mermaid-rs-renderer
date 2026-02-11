@@ -2545,7 +2545,7 @@ fn subgraph_padding_from_label(
     let label_empty = sub.label.trim().is_empty();
     let label_height = if label_empty { 0.0 } else { label_block.height };
 
-    let (pad_x, pad_y) = if graph.kind == crate::ir::DiagramKind::Flowchart {
+    let (mut pad_x, mut pad_y) = if graph.kind == crate::ir::DiagramKind::Flowchart {
         flowchart_subgraph_padding(graph.direction)
     } else if graph.kind == crate::ir::DiagramKind::Kanban {
         (KANBAN_SUBGRAPH_PAD, KANBAN_SUBGRAPH_PAD)
@@ -2557,6 +2557,13 @@ fn subgraph_padding_from_label(
         };
         (base_padding, base_padding)
     };
+    if graph.kind == crate::ir::DiagramKind::Flowchart
+        && sub.nodes.len() <= 3
+        && graph.edges.len() <= 8
+    {
+        pad_x *= 0.7;
+        pad_y *= 0.7;
+    }
 
     let top_padding = if label_empty {
         pad_y
