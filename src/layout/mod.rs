@@ -795,6 +795,9 @@ fn compute_flowchart_layout(
     }
 
     let mut route_order: Vec<(u8, f32, f32, usize)> = Vec::with_capacity(graph.edges.len());
+    let dense_flowchart_routing = graph.kind == crate::ir::DiagramKind::Flowchart
+        && graph.edges.len() >= 18
+        && graph.edges.len() * 2 >= layout_node_ids.len() * 3;
     for (idx, edge) in graph.edges.iter().enumerate() {
         let from_layout = nodes.get(&edge.from).expect("from node missing");
         let to_layout = nodes.get(&edge.to).expect("to node missing");
@@ -846,7 +849,7 @@ fn compute_flowchart_layout(
                 1u8
             }
         } else if is_dotted {
-            2u8
+            if dense_flowchart_routing { 1u8 } else { 2u8 }
         } else if has_label || is_backward {
             1u8
         } else {
