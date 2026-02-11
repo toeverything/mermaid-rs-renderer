@@ -518,6 +518,7 @@ fn compute_flowchart_layout(
     let mut side_loads: HashMap<String, [usize; 4]> = HashMap::new();
     let mut edge_ports: Vec<EdgePortInfo> = Vec::with_capacity(graph.edges.len());
     let mut port_candidates: HashMap<(String, EdgeSide), Vec<PortCandidate>> = HashMap::new();
+    let mut side_choice_segments: Vec<Segment> = Vec::with_capacity(graph.edges.len());
     for (idx, edge) in graph.edges.iter().enumerate() {
         let from_layout = nodes.get(&edge.from).expect("from node missing");
         let to_layout = nodes.get(&edge.to).expect("to node missing");
@@ -534,19 +535,45 @@ fn compute_flowchart_layout(
         let from = temp_from.as_ref().unwrap_or(from_layout);
         let to = temp_to.as_ref().unwrap_or(to_layout);
         let use_balanced_sides = !matches!(graph.kind, crate::ir::DiagramKind::Architecture);
-        let (start_side, end_side, _is_backward) = if use_balanced_sides {
+        let from_degree = node_degrees.get(&edge.from).copied().unwrap_or(0);
+        let to_degree = node_degrees.get(&edge.to).copied().unwrap_or(0);
+        let allow_low_degree_balancing =
+            edge.style == crate::ir::EdgeStyle::Dotted && from_degree <= 4 && to_degree <= 4;
+        let primary_sides = edge_sides(from, to, graph.direction);
+        let mut selected_sides = if use_balanced_sides {
             edge_sides_balanced(
                 &edge.from,
                 &edge.to,
                 from,
                 to,
+                allow_low_degree_balancing,
                 graph.direction,
                 &node_degrees,
                 &side_loads,
             )
         } else {
-            edge_sides(from, to, graph.direction)
+            primary_sides
         };
+        if use_balanced_sides
+            && (selected_sides.0 != primary_sides.0 || selected_sides.1 != primary_sides.1)
+        {
+            let candidate_points = [
+                anchor_point_for_node(from, selected_sides.0, 0.0),
+                anchor_point_for_node(to, selected_sides.1, 0.0),
+            ];
+            let primary_points = [
+                anchor_point_for_node(from, primary_sides.0, 0.0),
+                anchor_point_for_node(to, primary_sides.1, 0.0),
+            ];
+            let (candidate_crossings, _) =
+                edge_crossings_with_existing(&candidate_points, &side_choice_segments);
+            let (primary_crossings, _) =
+                edge_crossings_with_existing(&primary_points, &side_choice_segments);
+            if candidate_crossings > primary_crossings {
+                selected_sides = primary_sides;
+            }
+        }
+        let (start_side, end_side, _is_backward) = selected_sides;
         bump_side_load(&mut side_loads, &edge.from, start_side);
         bump_side_load(&mut side_loads, &edge.to, end_side);
         edge_ports.push(EdgePortInfo {
@@ -581,6 +608,7 @@ fn compute_flowchart_layout(
                 is_start: false,
                 other_pos: end_other,
             });
+        side_choice_segments.push((from_anchor, to_anchor));
     }
     let routing_cell = routing_cell_size(config);
     for ((node_id, side), candidates) in port_candidates {

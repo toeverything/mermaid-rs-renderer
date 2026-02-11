@@ -17,6 +17,7 @@ const SIDE_LOAD_SOFT_CAP: f32 = 6.0;
 /// separation is clearly stronger and the forced sides are already saturated.
 const HUB_DIVERSIFY_GEOM_RATIO: f32 = 1.35;
 const HUB_DIVERSIFY_LOAD_SUM: usize = 14;
+const LOW_DEGREE_BALANCE_MIN_PRIMARY_LOAD: usize = 4;
 
 // ── Port stub sizing ────────────────────────────────────────────────
 /// Ratio of node_spacing used as base port stub length.
@@ -194,6 +195,7 @@ pub(super) fn edge_sides_balanced(
     to_id: &str,
     from: &NodeLayout,
     to: &NodeLayout,
+    allow_low_degree_balancing: bool,
     direction: Direction,
     node_degrees: &HashMap<String, usize>,
     side_loads: &HashMap<String, [usize; 4]>,
@@ -202,7 +204,14 @@ pub(super) fn edge_sides_balanced(
     let from_degree = node_degrees.get(from_id).copied().unwrap_or(0);
     let to_degree = node_degrees.get(to_id).copied().unwrap_or(0);
     if from_degree < 6 && to_degree < 6 {
-        return primary;
+        if !allow_low_degree_balancing {
+            return primary;
+        }
+        let primary_load = side_load_for_node(side_loads, from_id, primary.0)
+            + side_load_for_node(side_loads, to_id, primary.1);
+        if primary_load < LOW_DEGREE_BALANCE_MIN_PRIMARY_LOAD {
+            return primary;
+        }
     }
 
     let from_cx = from.x + from.width / 2.0;
