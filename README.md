@@ -445,6 +445,17 @@ cargo test
 cargo run -- -i docs/diagrams/architecture.mmd -o /tmp/out.svg -e svg
 ```
 
+**Remote build/test over SSH (optional):**
+```bash
+export MMDR_REMOTE_HOST=<your-ssh-host-alias>
+scripts/remote-cargo.sh test
+scripts/remote-cargo.sh build --release
+scripts/remote-cargo.sh bench --bench renderer
+```
+
+The wrapper uses `rsync` + `ssh` and keeps host/IP details in your local environment
+or `~/.ssh/config`, not in this repository.
+
 **Benchmarks:**
 ```bash
 cargo bench --bench renderer              # Microbenchmarks
