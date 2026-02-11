@@ -2559,7 +2559,14 @@ fn subgraph_padding_from_label(
     };
     if graph.kind == crate::ir::DiagramKind::Flowchart
         && sub.nodes.len() <= 3
-        && graph.edges.len() <= 8
+        && ((is_horizontal(graph.direction) && graph.edges.len() <= 20)
+            || (!is_horizontal(graph.direction) && graph.edges.len() <= 13))
+        && !graph.edges.iter().any(|edge| {
+            edge.label
+                .as_ref()
+                .map(|label| label.chars().count() > 24)
+                .unwrap_or(false)
+        })
     {
         pad_x *= 0.7;
         pad_y *= 0.7;

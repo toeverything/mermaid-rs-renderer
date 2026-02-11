@@ -9,10 +9,11 @@ use crate::theme::Theme;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 const LABEL_OVERLAP_WIDE_THRESHOLD: f32 = 1e-4;
-const LABEL_ANCHOR_FRACTIONS: [f32; 3] = [0.5, 0.35, 0.65];
+const LABEL_ANCHOR_FRACTIONS: [f32; 5] = [0.5, 0.35, 0.65, 0.2, 0.8];
 const LABEL_ANCHOR_POS_EPS: f32 = 1.0;
 const LABEL_ANCHOR_DIR_EPS: f32 = 0.02;
 const LABEL_EDGE_DISTANCE_WEIGHT: f32 = 0.14;
+const LABEL_EXTRA_SEGMENT_ANCHORS: usize = 6;
 
 type Rect = (f32, f32, f32, f32);
 type EdgeObstacle = (usize, Rect);
@@ -152,6 +153,9 @@ fn resolve_center_labels(
             if let Some(candidate) = edge_label_anchor_at_fraction(edge, frac) {
                 push_anchor_unique(&mut anchors, candidate);
             }
+        }
+        for candidate in edge_segment_anchors(edge, LABEL_EXTRA_SEGMENT_ANCHORS) {
+            push_anchor_unique(&mut anchors, candidate);
         }
         if anchors.is_empty() {
             anchors.push(edge_label_anchor(edge));
@@ -658,6 +662,45 @@ fn edge_label_anchor_from_point(
     let (dx, dy) = best_dir?;
     let len = (dx * dx + dy * dy).sqrt().max(1e-3);
     Some((proj_x, proj_y, dx / len, dy / len))
+}
+
+fn edge_segment_anchors(edge: &EdgeLayout, max_count: usize) -> Vec<(f32, f32, f32, f32)> {
+    if edge.points.len() < 2 || max_count == 0 {
+        return Vec::new();
+    }
+    let segment_count = edge.points.len() - 1;
+    let (mut start_idx, mut end_idx) = if segment_count >= 3 {
+        (1, segment_count - 1)
+    } else {
+        (0, segment_count)
+    };
+    if start_idx >= end_idx {
+        start_idx = 0;
+        end_idx = segment_count;
+    }
+    let mut scored: Vec<(f32, (f32, f32, f32, f32))> = Vec::new();
+    for idx in start_idx..end_idx {
+        let p1 = edge.points[idx];
+        let p2 = edge.points[idx + 1];
+        let dx = p2.0 - p1.0;
+        let dy = p2.1 - p1.1;
+        let len = (dx * dx + dy * dy).sqrt();
+        if len <= 1.0 {
+            continue;
+        }
+        let dir_x = dx / len;
+        let dir_y = dy / len;
+        scored.push((
+            len,
+            ((p1.0 + p2.0) * 0.5, (p1.1 + p2.1) * 0.5, dir_x, dir_y),
+        ));
+    }
+    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    scored
+        .into_iter()
+        .take(max_count)
+        .map(|(_, anchor)| anchor)
+        .collect()
 }
 
 fn push_anchor_unique(anchors: &mut Vec<(f32, f32, f32, f32)>, candidate: (f32, f32, f32, f32)) {
