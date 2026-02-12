@@ -342,7 +342,8 @@ pub(super) fn compute_gantt_layout(graph: &Graph, theme: &Theme, config: &Layout
         .fold(0.0_f32, f32::max);
     let axis_pad = row_height * 0.9 + theme.font_size;
     let height = y + padding + axis_pad;
-    let width = (chart_x + chart_width + padding).max(chart_x + chart_width + max_tick_half_width + padding * 0.4);
+    let width = (chart_x + chart_width + padding)
+        .max(chart_x + chart_width + max_tick_half_width + padding * 0.4);
 
     Layout {
         kind: graph.kind,

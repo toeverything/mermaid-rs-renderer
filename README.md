@@ -299,6 +299,7 @@ Supported:
 ```bash
 mmdr -i diagram.mmd -o out.svg -c config.json
 mmdr -i diagram.mmd -o out.svg --nodeSpacing 60 --rankSpacing 120
+mmdr -i diagram.mmd -o out.svg --preferredAspectRatio 16:9
 ```
 
 <details>
@@ -320,6 +321,7 @@ mmdr -i diagram.mmd -o out.svg --nodeSpacing 60 --rankSpacing 120
     "fontFamily": "Inter, system-ui, sans-serif",
     "fontSize": 13
   },
+  "preferredAspectRatio": "16:9",
   "flowchart": {
     "nodeSpacing": 50,
     "rankSpacing": 50

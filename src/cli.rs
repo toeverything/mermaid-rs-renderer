@@ -41,6 +41,10 @@ pub struct Args {
     #[arg(short = 'H', long = "height", default_value_t = 800.0)]
     pub height: f32,
 
+    /// Preferred output aspect ratio (`width:height`, `width/height`, or decimal)
+    #[arg(long = "preferredAspectRatio", value_parser = parse_aspect_ratio_value)]
+    pub preferred_aspect_ratio: Option<f32>,
+
     /// Node spacing
     #[arg(long = "nodeSpacing")]
     pub node_spacing: Option<f32>,
@@ -68,11 +72,72 @@ pub enum OutputFormat {
     Png,
 }
 
+fn parse_aspect_ratio_value(raw: &str) -> Result<f32, String> {
+    let value = raw.trim();
+    if value.is_empty() {
+        return Err("aspect ratio cannot be empty".to_string());
+    }
+    let parse_pair = |parts: (&str, &str)| -> Result<f32, String> {
+        let w = parts
+            .0
+            .trim()
+            .parse::<f32>()
+            .map_err(|_| "invalid ratio width".to_string())?;
+        let h = parts
+            .1
+            .trim()
+            .parse::<f32>()
+            .map_err(|_| "invalid ratio height".to_string())?;
+        if !w.is_finite() || !h.is_finite() || w <= 0.0 || h <= 0.0 {
+            return Err("ratio values must be finite and > 0".to_string());
+        }
+        Ok(w / h)
+    };
+
+    if let Some((w, h)) = value.split_once(':') {
+        return parse_pair((w, h));
+    }
+    if let Some((w, h)) = value.split_once('/') {
+        return parse_pair((w, h));
+    }
+
+    let ratio = value
+        .parse::<f32>()
+        .map_err(|_| "invalid aspect ratio".to_string())?;
+    if !ratio.is_finite() || ratio <= 0.0 {
+        return Err("ratio must be finite and > 0".to_string());
+    }
+    Ok(ratio)
+}
+
+fn parse_aspect_ratio_json(value: &serde_json::Value) -> Option<f32> {
+    match value {
+        serde_json::Value::Number(num) => num
+            .as_f64()
+            .map(|val| val as f32)
+            .filter(|ratio| ratio.is_finite() && *ratio > 0.0),
+        serde_json::Value::String(text) => parse_aspect_ratio_value(text).ok(),
+        serde_json::Value::Object(map) => {
+            let width = map.get("width").and_then(|v| v.as_f64())? as f32;
+            let height = map.get("height").and_then(|v| v.as_f64())? as f32;
+            if width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0 {
+                Some(width / height)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
 pub fn run() -> Result<()> {
     let args = Args::parse();
     let mut base_config = load_config(args.config.as_deref())?;
     base_config.render.width = args.width;
     base_config.render.height = args.height;
+    if let Some(ratio) = args.preferred_aspect_ratio {
+        base_config.layout.preferred_aspect_ratio = Some(ratio);
+    }
     if let Some(spacing) = args.node_spacing {
         base_config.layout.node_spacing = spacing;
     }
@@ -410,6 +475,23 @@ sequenceDiagram
         assert_eq!(merged.theme.background, "#101010");
         assert_eq!(merged.render.background, "#101010");
     }
+
+    #[test]
+    fn parse_aspect_ratio_accepts_common_formats() {
+        assert_eq!(parse_aspect_ratio_value("16:9").unwrap(), 16.0 / 9.0);
+        assert_eq!(parse_aspect_ratio_value("4/3").unwrap(), 4.0 / 3.0);
+        assert_eq!(parse_aspect_ratio_value("1.5").unwrap(), 1.5);
+    }
+
+    #[test]
+    fn merge_init_config_updates_preferred_aspect_ratio() {
+        let config = Config::default();
+        let init = json!({
+            "preferredAspectRatio": "16:9"
+        });
+        let merged = merge_init_config(config, init);
+        assert_eq!(merged.layout.preferred_aspect_ratio, Some(16.0 / 9.0));
+    }
 }
 
 fn merge_init_config(mut config: Config, init: serde_json::Value) -> Config {
@@ -597,6 +679,12 @@ fn merge_init_config(mut config: Config, init: serde_json::Value) -> Config {
         if let Some(val) = theme_vars.get("fontSize").and_then(|v| v.as_f64()) {
             config.theme.font_size = val as f32;
         }
+    }
+    if let Some(ratio) = init
+        .get("preferredAspectRatio")
+        .and_then(parse_aspect_ratio_json)
+    {
+        config.layout.preferred_aspect_ratio = Some(ratio);
     }
     if let Some(flowchart) = init.get("flowchart") {
         if let Some(val) = flowchart.get("nodeSpacing").and_then(|v| v.as_f64()) {

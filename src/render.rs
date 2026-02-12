@@ -15,6 +15,31 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::path::Path;
 
+fn fit_dimensions_to_preferred_ratio(
+    width: f32,
+    height: f32,
+    preferred_ratio: Option<f32>,
+) -> (f32, f32) {
+    let mut width = width.max(1.0);
+    let mut height = height.max(1.0);
+    let Some(target_ratio) = preferred_ratio else {
+        return (width, height);
+    };
+    if !target_ratio.is_finite() || target_ratio <= 0.0 {
+        return (width, height);
+    }
+    let current_ratio = width / height;
+    if (current_ratio - target_ratio).abs() < 1e-6 {
+        return (width, height);
+    }
+    if current_ratio < target_ratio {
+        width = height * target_ratio;
+    } else {
+        height = width / target_ratio;
+    }
+    (width.max(1.0), height.max(1.0))
+}
+
 pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
     let mut svg = String::new();
     let state_font_size = if layout.kind == crate::ir::DiagramKind::State {
@@ -110,31 +135,56 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             .flat_map(|s| s.footboxes.iter())
             .any(|node| node.link.is_some());
 
-    let mut width_attr = width.to_string();
-    let mut height_attr = height.to_string();
+    let preferred_ratio = config
+        .preferred_aspect_ratio
+        .filter(|ratio| ratio.is_finite() && *ratio > 0.0);
+    let (target_width, target_height) =
+        fit_dimensions_to_preferred_ratio(width, height, preferred_ratio);
+
+    let mut width_attr = target_width.to_string();
+    let mut height_attr = target_height.to_string();
     let mut style_attr = String::new();
+    let preferred_ratio_style = preferred_ratio
+        .map(|ratio| format!("aspect-ratio: {:.6};", ratio))
+        .unwrap_or_default();
     if !matches!(layout.diagram, DiagramData::Error(_)) {
         if let DiagramData::C4(c4) = &layout.diagram {
             if c4.use_max_width {
                 width_attr = "100%".to_string();
                 height_attr.clear();
-                style_attr = format!(" style=\"max-width: {:.3}px;\"", viewbox_width);
+                style_attr = format!(
+                    " style=\"max-width: {:.3}px;{}\"",
+                    viewbox_width, preferred_ratio_style
+                );
             }
         } else if matches!(layout.diagram, DiagramData::GitGraph(_))
             && config.gitgraph.use_max_width
         {
             width_attr = "100%".to_string();
             height_attr.clear();
-            style_attr = format!(" style=\"max-width: {:.3}px;\"", viewbox_width);
+            style_attr = format!(
+                " style=\"max-width: {:.3}px;{}\"",
+                viewbox_width, preferred_ratio_style
+            );
         } else if layout.kind == crate::ir::DiagramKind::Mindmap && config.mindmap.use_max_width {
             width_attr = "100%".to_string();
             height_attr.clear();
-            style_attr = format!(" style=\"max-width: {:.3}px;\"", viewbox_width);
+            style_attr = format!(
+                " style=\"max-width: {:.3}px;{}\"",
+                viewbox_width, preferred_ratio_style
+            );
         } else if layout.kind == crate::ir::DiagramKind::Pie && config.pie.use_max_width {
             width_attr = "100%".to_string();
             height_attr.clear();
-            style_attr = format!(" style=\"max-width: {:.3}px;\"", viewbox_width);
+            style_attr = format!(
+                " style=\"max-width: {:.3}px;{}\"",
+                viewbox_width, preferred_ratio_style
+            );
+        } else if !preferred_ratio_style.is_empty() {
+            style_attr = format!(" style=\"{preferred_ratio_style}\"");
         }
+    } else if !preferred_ratio_style.is_empty() {
+        style_attr = format!(" style=\"{preferred_ratio_style}\"");
     }
     svg.push_str(&format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\"{} width=\"{width_attr}\"{} viewBox=\"{viewbox_x} {viewbox_y} {viewbox_width} {viewbox_height}\"{style_attr}>",

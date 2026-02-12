@@ -907,14 +907,10 @@ fn c4_rel_label_rect(
     conf: &crate::config::C4Config,
     delta: (f32, f32),
 ) -> C4Rect {
-    let center_x = rel.start.0.min(rel.end.0)
-        + (rel.start.0 - rel.end.0).abs() / 2.0
-        + rel.offset_x
-        + delta.0;
-    let center_y = rel.start.1.min(rel.end.1)
-        + (rel.start.1 - rel.end.1).abs() / 2.0
-        + rel.offset_y
-        + delta.1;
+    let center_x =
+        rel.start.0.min(rel.end.0) + (rel.start.0 - rel.end.0).abs() / 2.0 + rel.offset_x + delta.0;
+    let center_y =
+        rel.start.1.min(rel.end.1) + (rel.start.1 - rel.end.1).abs() / 2.0 + rel.offset_y + delta.1;
     let primary_height = rel.label.height.max(conf.message_font_size);
     let secondary_height = rel
         .techn

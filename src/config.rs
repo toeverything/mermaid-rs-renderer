@@ -744,6 +744,7 @@ pub struct LayoutConfig {
     pub node_padding_y: f32,
     pub label_line_height: f32,
     pub max_label_width_chars: usize,
+    pub preferred_aspect_ratio: Option<f32>,
     pub fast_text_metrics: bool,
     pub requirement: RequirementConfig,
     pub mindmap: MindmapConfig,
@@ -763,6 +764,7 @@ impl Default for LayoutConfig {
             node_padding_y: 15.0,
             label_line_height: 1.5,
             max_label_width_chars: 22,
+            preferred_aspect_ratio: None,
             fast_text_metrics: false,
             requirement: RequirementConfig::default(),
             mindmap: MindmapConfig::default(),
@@ -1444,6 +1446,7 @@ struct TreemapConfigFile {
 struct ConfigFile {
     theme: Option<String>,
     theme_variables: Option<ThemeVariables>,
+    preferred_aspect_ratio: Option<NumberOrString>,
     flowchart: Option<FlowchartConfig>,
     pie: Option<PieConfigFile>,
     requirement: Option<RequirementConfigFile>,
@@ -1705,6 +1708,15 @@ pub fn load_config(path: Option<&Path>) -> anyhow::Result<Config> {
         {
             config.theme.pie_opacity = opacity;
         }
+    }
+
+    if let Some(ratio) = parsed
+        .preferred_aspect_ratio
+        .as_ref()
+        .and_then(NumberOrString::as_f32)
+        .filter(|ratio| ratio.is_finite() && *ratio > 0.0)
+    {
+        config.layout.preferred_aspect_ratio = Some(ratio);
     }
 
     if let Some(flow) = parsed.flowchart {

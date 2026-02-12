@@ -159,6 +159,25 @@ impl RenderOptions {
         self.layout.rank_spacing = spacing;
         self
     }
+
+    /// Hint the renderer to target a preferred output aspect ratio (`width / height`).
+    ///
+    /// Invalid values (non-finite or `<= 0`) are ignored.
+    pub fn with_preferred_aspect_ratio(mut self, ratio: f32) -> Self {
+        if ratio.is_finite() && ratio > 0.0 {
+            self.layout.preferred_aspect_ratio = Some(ratio);
+        }
+        self
+    }
+
+    /// Hint the renderer to target a preferred output aspect ratio from
+    /// explicit width and height parts (e.g. `16` and `9`).
+    pub fn with_preferred_aspect_ratio_parts(mut self, width: f32, height: f32) -> Self {
+        if width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0 {
+            self.layout.preferred_aspect_ratio = Some(width / height);
+        }
+        self
+    }
 }
 
 /// Render a Mermaid diagram to SVG with default options.
@@ -319,6 +338,13 @@ pub use cli::run;
 mod tests {
     use super::*;
 
+    fn parse_svg_attr(svg: &str, attr: &str) -> Option<f32> {
+        let marker = format!("{attr}=\"");
+        let start = svg.find(&marker)? + marker.len();
+        let end = svg[start..].find('"')? + start;
+        svg[start..end].parse::<f32>().ok()
+    }
+
     #[test]
     fn test_render_simple() {
         let svg = render("flowchart LR; A-->B").unwrap();
@@ -387,5 +413,15 @@ mod tests {
         assert!(svg.contains("<svg"));
         assert!(svg.contains("Dogs"));
         assert!(!svg.contains("Syntax error in text"));
+    }
+
+    #[test]
+    fn test_preferred_aspect_ratio_applies_to_svg_dimensions() {
+        let opts = RenderOptions::default().with_preferred_aspect_ratio_parts(16.0, 9.0);
+        let svg = render_with_options("flowchart LR; A-->B-->C", opts).unwrap();
+        let width = parse_svg_attr(&svg, "width").expect("width");
+        let height = parse_svg_attr(&svg, "height").expect("height");
+        let ratio = width / height;
+        assert!((ratio - (16.0 / 9.0)).abs() < 0.001);
     }
 }

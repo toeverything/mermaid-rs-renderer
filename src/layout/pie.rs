@@ -136,8 +136,8 @@ pub(super) fn compute_pie_layout(graph: &Graph, theme: &Theme, config: &LayoutCo
     }
 
     let legend_text_height = theme.pie_legend_text_size * 1.25;
-    let legend_item_height = (pie_cfg.legend_rect_size + pie_cfg.legend_spacing)
-        .max(legend_text_height);
+    let legend_item_height =
+        (pie_cfg.legend_rect_size + pie_cfg.legend_spacing).max(legend_text_height);
     let legend_offset = legend_item_height * legend_items.len() as f32 / 2.0;
 
     let height = pie_cfg.height.max(1.0);

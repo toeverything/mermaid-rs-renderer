@@ -265,9 +265,9 @@ fn infer_block_grid(graph: &Graph) -> (Vec<crate::ir::BlockNode>, usize) {
                     continue;
                 }
                 if let Some(parent_rank) = rank.get(&edge.from).copied() {
-                    inferred_rank = Some(inferred_rank.map_or(parent_rank + 1, |r: usize| {
-                        r.max(parent_rank + 1)
-                    }));
+                    inferred_rank = Some(
+                        inferred_rank.map_or(parent_rank + 1, |r: usize| r.max(parent_rank + 1)),
+                    );
                 }
             }
             rank.insert(id.clone(), inferred_rank.unwrap_or(0));
