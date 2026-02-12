@@ -1202,6 +1202,81 @@ def summarize_common_comparison(left, right):
     return lines
 
 
+def summarize_weighted_dominance(left, right):
+    common = collect_common_scored(left, right)
+    if not common:
+        return []
+    layout_score = load_layout_score()
+    weights = getattr(layout_score, "WEIGHTS", {})
+    if not weights:
+        return []
+
+    by_metric_debt = {metric: 0.0 for metric in weights}
+    comparable = 0
+    non_worse = 0
+    strict = 0
+    worst_fixture = ("", 0.0)
+
+    for key in common:
+        fixture_debt = 0.0
+        has_weighted_metric = False
+        fixture_worse = False
+        fixture_better = False
+        for metric, weight in weights.items():
+            lval = left[key].get(metric)
+            rval = right[key].get(metric)
+            if not isinstance(lval, (int, float)) or not isinstance(rval, (int, float)):
+                continue
+            has_weighted_metric = True
+            delta = lval - rval
+            if delta > 1e-9:
+                fixture_worse = True
+                debt = delta * weight
+                fixture_debt += debt
+                by_metric_debt[metric] += debt
+            elif delta < -1e-9:
+                fixture_better = True
+        if not has_weighted_metric:
+            continue
+        comparable += 1
+        if not fixture_worse:
+            non_worse += 1
+            if fixture_better:
+                strict += 1
+        if fixture_debt > worst_fixture[1]:
+            worst_fixture = (key, fixture_debt)
+
+    if comparable == 0:
+        return []
+
+    total_debt = sum(by_metric_debt.values())
+    lines = [
+        "Weighted-dominance "
+        f"({len(weights)} weighted metrics): non-worse {non_worse}/{comparable}, "
+        f"strictly better {strict}/{comparable}",
+        f"Weighted regression debt vs mermaid-cli: {total_debt:.2f}",
+    ]
+
+    ranked = sorted(
+        ((metric, debt) for metric, debt in by_metric_debt.items() if debt > 0.0),
+        key=lambda item: item[1],
+        reverse=True,
+    )
+    if ranked:
+        lines.append("Top weighted regression contributors:")
+        for metric, debt in ranked[:6]:
+            better, equal, worse, _ = metric_compare_counts(left, right, common, metric)
+            lines.append(
+                f"  {metric}: debt={debt:.2f}, better={better}, equal={equal}, worse={worse}"
+            )
+    if worst_fixture[1] > 0.0:
+        lines.append(
+            "Worst weighted-regression fixture: "
+            f"{Path(worst_fixture[0]).name} (debt={worst_fixture[1]:.2f})"
+        )
+    return lines
+
+
 def compute_sequence_cli_conformance(layout_path: Path, mermaid_svg_path: Path):
     layout_diff = load_layout_diff()
     mmdr_nodes, _ = layout_diff.load_mmdr_layout(layout_path)
@@ -1421,6 +1496,10 @@ def main():
         if mmdc_label_align_count:
             print(f"mermaid-cli: avg edge-label distance to nearest edge: {mmdc_label_align:.3f}")
         for line in summarize_common_comparison(
+            results.get("mmdr", {}), results.get("mermaid_cli", {})
+        ):
+            print(line)
+        for line in summarize_weighted_dominance(
             results.get("mmdr", {}), results.get("mermaid_cli", {})
         ):
             print(line)
