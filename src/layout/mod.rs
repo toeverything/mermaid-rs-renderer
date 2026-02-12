@@ -298,9 +298,9 @@ fn compute_flowchart_layout(
             0.0
         };
         if node_count >= 10 && hub_ratio >= 0.30 && density <= 3.0 {
-            let hub_scale = (0.95 - (hub_ratio - 0.30) * 0.40).clamp(0.78, 0.95);
+            let hub_scale = (0.92 - (hub_ratio - 0.30) * 0.55).clamp(0.62, 0.92);
             hub_compaction_scale = Some(hub_scale);
-            hub_compaction_floor = auto.min_spacing * 0.7;
+            hub_compaction_floor = auto.min_spacing * 0.5;
         }
     }
     let node_count = graph.nodes.len();
