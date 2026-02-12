@@ -645,6 +645,60 @@ def parse_text_boxes(svg_path: Path):
     return boxes
 
 
+def parse_edge_label_boxes(svg_path: Path):
+    root = ET.fromstring(svg_path.read_text())
+    boxes = []
+
+    def looks_like_edge_label_rect(elem, in_edge_label_group):
+        if in_edge_label_group:
+            return True
+        h = parse_svg_number(elem.attrib.get("height", ""))
+        if h <= 0.0 or h > 40.0:
+            return False
+        rx = parse_svg_number(elem.attrib.get("rx", ""))
+        if rx > 6.0:
+            return False
+        style = parse_style_map(elem.attrib.get("style", ""))
+        fill = (elem.attrib.get("fill") or style.get("fill") or "").strip().lower()
+        stroke_opacity = parse_svg_number(
+            elem.attrib.get("stroke-opacity", "") or style.get("stroke-opacity", "")
+        )
+        if stroke_opacity <= 0.0:
+            return False
+        return fill in {"#fff", "#ffffff", "white", "rgb(255,255,255)"}
+
+    def visit(elem, acc_tx, acc_ty, in_edge_label_group):
+        tag = strip_ns(elem.tag)
+        if tag in {"defs", "style", "script"}:
+            return
+        tx, ty = parse_transform(elem.attrib.get("transform", ""))
+        cur_tx = acc_tx + tx
+        cur_ty = acc_ty + ty
+        cls = elem.attrib.get("class", "").lower()
+        is_edge_label_group = in_edge_label_group or "edgelabel" in cls
+
+        if tag == "foreignObject" and is_edge_label_group:
+            width = parse_svg_number(elem.attrib.get("width", ""))
+            height = parse_svg_number(elem.attrib.get("height", ""))
+            if width > 0.0 and height > 0.0:
+                x = parse_svg_number(elem.attrib.get("x", "")) + cur_tx
+                y = parse_svg_number(elem.attrib.get("y", "")) + cur_ty
+                boxes.append({"x": x, "y": y, "width": width, "height": height})
+        elif tag == "rect" and looks_like_edge_label_rect(elem, is_edge_label_group):
+            width = parse_svg_number(elem.attrib.get("width", ""))
+            height = parse_svg_number(elem.attrib.get("height", ""))
+            if width > 0.0 and height > 0.0:
+                x = parse_svg_number(elem.attrib.get("x", "")) + cur_tx
+                y = parse_svg_number(elem.attrib.get("y", "")) + cur_ty
+                boxes.append({"x": x, "y": y, "width": width, "height": height})
+
+        for child in list(elem):
+            visit(child, cur_tx, cur_ty, is_edge_label_group)
+
+    visit(root, 0.0, 0.0, False)
+    return boxes
+
+
 def rect_overlap_area(a, b):
     ax1 = a["x"]
     ay1 = a["y"]
@@ -874,6 +928,7 @@ def infer_label_owner(label, nodes):
 
 def compute_label_metrics(svg_path: Path, nodes, edges, diagram_kind=""):
     labels = parse_text_boxes(svg_path)
+    explicit_edge_label_boxes = parse_edge_label_boxes(svg_path)
     root = ET.fromstring(svg_path.read_text())
     canvas_width, canvas_height = svg_size(root)
     canvas_rect = {
@@ -934,9 +989,13 @@ def compute_label_metrics(svg_path: Path, nodes, edges, diagram_kind=""):
     edge_label_path_gaps = []
     edge_label_path_bad_count = 0
     edge_label_path_touch_count = 0
-    for label in labels:
-        if label.get("owner") is not None:
-            continue
+    candidate_edge_labels = explicit_edge_label_boxes
+    use_fallback_candidate_filter = False
+    if not candidate_edge_labels:
+        candidate_edge_labels = [label for label in labels if label.get("owner") is None]
+        use_fallback_candidate_filter = True
+
+    for label in candidate_edge_labels:
         center = (
             label["x"] + label["width"] * 0.5,
             label["y"] + label["height"] * 0.5,
@@ -960,7 +1019,11 @@ def compute_label_metrics(svg_path: Path, nodes, edges, diagram_kind=""):
             candidate_cutoff = max(24.0, label["height"] * 4.0)
             bad_limit = max(10.0, label["height"] * 1.75)
             path_bad_limit = max(8.0, label["height"] * 0.9)
-        if min_dist > candidate_cutoff and min_gap > candidate_cutoff:
+        if (
+            use_fallback_candidate_filter
+            and min_dist > candidate_cutoff
+            and min_gap > candidate_cutoff
+        ):
             continue
         edge_label_distances.append(min_dist)
         edge_label_path_gaps.append(min_gap)
@@ -1014,6 +1077,7 @@ def compute_label_metrics(svg_path: Path, nodes, edges, diagram_kind=""):
             else 0.0
         ),
         "edge_label_path_gap_count": len(edge_label_path_gaps),
+        "edge_label_detected_count": len(candidate_edge_labels),
         "edge_label_path_gap_mean": edge_label_path_gap_mean,
         "edge_label_path_gap_p95": edge_label_path_gap_p95,
         "edge_label_path_touch_count": edge_label_path_touch_count,

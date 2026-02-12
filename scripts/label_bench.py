@@ -54,6 +54,37 @@ def summarize(results):
     }
 
 
+def compare_metric(left, right, keys, metric, higher_is_better=False, eps=1e-9):
+    better = 0
+    equal = 0
+    worse = 0
+    regressions = []
+    for key in keys:
+        lval = left.get(key, {}).get(metric)
+        rval = right.get(key, {}).get(metric)
+        if not isinstance(lval, (int, float)) or not isinstance(rval, (int, float)):
+            continue
+        delta = lval - rval
+        if higher_is_better:
+            if delta > eps:
+                better += 1
+            elif delta < -eps:
+                worse += 1
+                regressions.append((-delta, key, lval, rval))
+            else:
+                equal += 1
+        else:
+            if delta < -eps:
+                better += 1
+            elif delta > eps:
+                worse += 1
+                regressions.append((delta, key, lval, rval))
+            else:
+                equal += 1
+    regressions.sort(reverse=True, key=lambda item: item[0])
+    return better, equal, worse, regressions
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Benchmark edge-label placement by path gap (0 means touching path)"
@@ -188,8 +219,13 @@ def main():
             "edge_label_path_touch_ratio",
             "edge_label_path_gap_bad_ratio",
         ]:
-            better, equal, worse, regressions = qb.metric_compare_counts(
-                results["mmdr"], results["mermaid_cli"], common, metric
+            higher_is_better = metric == "edge_label_path_touch_ratio"
+            better, equal, worse, regressions = compare_metric(
+                results["mmdr"],
+                results["mermaid_cli"],
+                common,
+                metric,
+                higher_is_better=higher_is_better,
             )
             metric_stats = {
                 "better": better,
