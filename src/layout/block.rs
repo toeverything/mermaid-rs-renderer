@@ -27,7 +27,20 @@ pub(super) fn compute_block_layout(graph: &Graph, theme: &Theme, config: &Layout
         };
     };
 
-    let columns = block.columns.unwrap_or_else(|| block.nodes.len().max(1));
+    let (placement_nodes, inferred_columns) = if block.nodes.is_empty() {
+        infer_block_grid(graph)
+    } else {
+        (block.nodes.clone(), 0)
+    };
+    let columns = block.columns.unwrap_or_else(|| {
+        if placement_nodes.is_empty() {
+            1
+        } else if inferred_columns > 0 {
+            inferred_columns
+        } else {
+            placement_nodes.len().max(1)
+        }
+    });
     let mut column_widths = vec![0.0f32; columns];
     let mut column_x = vec![0.0f32; columns];
     let mut row_y = Vec::<f32>::new();
@@ -36,7 +49,7 @@ pub(super) fn compute_block_layout(graph: &Graph, theme: &Theme, config: &Layout
     let mut col = 0usize;
     let mut row_heights: Vec<f32> = vec![0.0];
 
-    for node in &block.nodes {
+    for node in &placement_nodes {
         if col >= columns {
             col = 0;
             row += 1;
@@ -76,7 +89,7 @@ pub(super) fn compute_block_layout(graph: &Graph, theme: &Theme, config: &Layout
 
     row = 0;
     col = 0;
-    for node in &block.nodes {
+    for node in &placement_nodes {
         if col >= columns {
             col = 0;
             row += 1;
@@ -176,4 +189,122 @@ pub(super) fn compute_block_layout(graph: &Graph, theme: &Theme, config: &Layout
             state_notes: Vec::new(),
         },
     }
+}
+
+fn infer_block_grid(graph: &Graph) -> (Vec<crate::ir::BlockNode>, usize) {
+    let mut ids: Vec<String> = graph.nodes.keys().cloned().collect();
+    ids.sort_by(|a, b| {
+        let ao = graph.node_order.get(a).copied().unwrap_or(usize::MAX);
+        let bo = graph.node_order.get(b).copied().unwrap_or(usize::MAX);
+        ao.cmp(&bo).then_with(|| a.cmp(b))
+    });
+    if ids.is_empty() {
+        return (Vec::new(), 1);
+    }
+
+    let mut indegree: HashMap<String, usize> = ids.iter().cloned().map(|id| (id, 0usize)).collect();
+    let mut outgoing: HashMap<String, Vec<String>> = HashMap::new();
+    for edge in &graph.edges {
+        if edge.from == edge.to {
+            continue;
+        }
+        if !indegree.contains_key(&edge.from) || !indegree.contains_key(&edge.to) {
+            continue;
+        }
+        outgoing
+            .entry(edge.from.clone())
+            .or_default()
+            .push(edge.to.clone());
+        if let Some(value) = indegree.get_mut(&edge.to) {
+            *value += 1;
+        }
+    }
+    for children in outgoing.values_mut() {
+        children.sort_by(|a, b| {
+            let ao = graph.node_order.get(a).copied().unwrap_or(usize::MAX);
+            let bo = graph.node_order.get(b).copied().unwrap_or(usize::MAX);
+            ao.cmp(&bo).then_with(|| a.cmp(b))
+        });
+        children.dedup();
+    }
+
+    let mut queue: Vec<String> = ids
+        .iter()
+        .filter(|id| indegree.get(*id).copied().unwrap_or(0) == 0)
+        .cloned()
+        .collect();
+    let mut rank: HashMap<String, usize> = HashMap::new();
+    let mut head = 0usize;
+    while head < queue.len() {
+        let id = queue[head].clone();
+        head += 1;
+        let base_rank = rank.get(&id).copied().unwrap_or(0);
+        if let Some(children) = outgoing.get(&id) {
+            for child in children {
+                rank.entry(child.clone())
+                    .and_modify(|r| *r = (*r).max(base_rank + 1))
+                    .or_insert(base_rank + 1);
+                if let Some(value) = indegree.get_mut(child) {
+                    *value = value.saturating_sub(1);
+                    if *value == 0 {
+                        queue.push(child.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    if rank.len() < ids.len() {
+        for id in &ids {
+            if rank.contains_key(id) {
+                continue;
+            }
+            let mut inferred_rank = None;
+            for edge in &graph.edges {
+                if edge.to != *id {
+                    continue;
+                }
+                if let Some(parent_rank) = rank.get(&edge.from).copied() {
+                    inferred_rank = Some(inferred_rank.map_or(parent_rank + 1, |r: usize| {
+                        r.max(parent_rank + 1)
+                    }));
+                }
+            }
+            rank.insert(id.clone(), inferred_rank.unwrap_or(0));
+        }
+    }
+
+    let mut rows: BTreeMap<usize, Vec<String>> = BTreeMap::new();
+    for id in ids {
+        let row = rank.get(&id).copied().unwrap_or(0);
+        rows.entry(row).or_default().push(id);
+    }
+    for row_ids in rows.values_mut() {
+        row_ids.sort_by(|a, b| {
+            let ao = graph.node_order.get(a).copied().unwrap_or(usize::MAX);
+            let bo = graph.node_order.get(b).copied().unwrap_or(usize::MAX);
+            ao.cmp(&bo).then_with(|| a.cmp(b))
+        });
+    }
+
+    let columns = rows.values().map(Vec::len).max().unwrap_or(1).max(1);
+    let mut block_nodes = Vec::new();
+    for row_ids in rows.values() {
+        for id in row_ids {
+            block_nodes.push(crate::ir::BlockNode {
+                id: id.clone(),
+                span: 1,
+                is_space: false,
+            });
+        }
+        let missing = columns.saturating_sub(row_ids.len());
+        for _ in 0..missing {
+            block_nodes.push(crate::ir::BlockNode {
+                id: "__space".to_string(),
+                span: 1,
+                is_space: true,
+            });
+        }
+    }
+    (block_nodes, columns)
 }

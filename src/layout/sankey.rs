@@ -11,7 +11,7 @@ use super::{
 };
 
 pub(super) fn compute_sankey_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
-    const SANKEY_WIDTH: f32 = 560.0;
+    const SANKEY_WIDTH: f32 = 640.0;
     const SANKEY_HEIGHT: f32 = 360.0;
     const SANKEY_NODE_WIDTH: f32 = 10.0;
     const SANKEY_PALETTE: [&str; 10] = [

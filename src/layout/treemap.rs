@@ -133,6 +133,7 @@ fn layout_treemap_nodes(
             TreemapRect::new(rect.x, y, rect.w, span)
         };
 
+        let mut child_header_reserve = 0.0_f32;
         if let Some(node) = graph.nodes.get(id) {
             let mut style = resolve_node_style(id, graph);
             if style.fill.is_none() {
@@ -155,6 +156,7 @@ fn layout_treemap_nodes(
                 && label.height <= (node_rect.h - pad_y * 2.0).max(0.0);
             let area = node_rect.w * node_rect.h;
             let label = if fits && area >= config.treemap.min_label_area {
+                child_header_reserve = (label.height + pad_y * 2.0).max(0.0);
                 label
             } else {
                 TextBlock {
@@ -184,7 +186,12 @@ fn layout_treemap_nodes(
         }
 
         if let Some(children_ids) = children.get(id) {
-            let child_rect = node_rect.inset(config.treemap.padding);
+            let mut child_rect = node_rect.inset(config.treemap.padding);
+            if child_header_reserve > 0.0 {
+                let reserve = child_header_reserve.min(child_rect.h * 0.35);
+                child_rect.y += reserve;
+                child_rect.h = (child_rect.h - reserve).max(0.0);
+            }
             if child_rect.w > 1.0 && child_rect.h > 1.0 {
                 layout_treemap_nodes(
                     children_ids,

@@ -3609,9 +3609,9 @@ fn parse_block_diagram(input: &str) -> Result<ParseOutput> {
         }
     }
 
-    if !block.nodes.is_empty() || block.columns.is_some() {
-        graph.block = Some(block);
-    }
+    // Keep block metadata even when the DSL only contains edge lines.
+    // The layout stage infers an implicit grid from graph topology in that case.
+    graph.block = Some(block);
 
     Ok(ParseOutput { graph, init_config })
 }

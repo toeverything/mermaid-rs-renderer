@@ -325,9 +325,24 @@ pub(super) fn compute_gantt_layout(graph: &Graph, theme: &Theme, config: &Layout
         sections[prev_idx].height = height;
     }
 
+    let tick_font = theme.font_size * 0.8;
+    let max_tick_half_width = ticks
+        .iter()
+        .map(|tick| {
+            measure_label_with_font_size(
+                tick.label.as_str(),
+                tick_font,
+                config,
+                false,
+                theme.font_family.as_str(),
+            )
+            .width
+                / 2.0
+        })
+        .fold(0.0_f32, f32::max);
     let axis_pad = row_height * 0.9 + theme.font_size;
     let height = y + padding + axis_pad;
-    let width = chart_x + chart_width + padding;
+    let width = (chart_x + chart_width + padding).max(chart_x + chart_width + max_tick_half_width + padding * 0.4);
 
     Layout {
         kind: graph.kind,

@@ -1364,24 +1364,71 @@ fn render_sankey(layout: &SankeyLayout, theme: &Theme, _config: &LayoutConfig) -
     }
     svg.push_str("</g>");
 
+    let mut label_y: Vec<f32> = layout
+        .nodes
+        .iter()
+        .map(|node| node.y + node.height / 2.0)
+        .collect();
+    let min_label_y = label_font_size * 0.9;
+    let max_label_y = (layout.height - label_font_size * 0.7).max(min_label_y + 1.0);
+    let min_label_gap = label_font_size * 1.35;
+    for rank in 0..=max_rank {
+        let mut indices: Vec<usize> = layout
+            .nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, node)| (node.rank == rank).then_some(idx))
+            .collect();
+        if indices.len() < 2 {
+            continue;
+        }
+        indices.sort_by(|a, b| {
+            label_y[*a]
+                .partial_cmp(&label_y[*b])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let mut prev = min_label_y - min_label_gap;
+        for idx in &indices {
+            let y = label_y[*idx].max(prev + min_label_gap);
+            label_y[*idx] = y;
+            prev = y;
+        }
+        if let Some(last_idx) = indices.last().copied() {
+            let overflow = label_y[last_idx] - max_label_y;
+            if overflow > 0.0 {
+                for idx in &indices {
+                    label_y[*idx] -= overflow;
+                }
+            }
+        }
+        if let Some(first_idx) = indices.first().copied() {
+            let underflow = min_label_y - label_y[first_idx];
+            if underflow > 0.0 {
+                for idx in &indices {
+                    label_y[*idx] += underflow;
+                }
+            }
+        }
+    }
+
     svg.push_str(&format!(
         "<g class=\"node-labels\" font-size=\"{}\" fill=\"{}\">",
         label_font_size, theme.primary_text_color
     ));
-    for node in &layout.nodes {
-        let is_last_rank = node.rank == max_rank;
-        let text_anchor = if is_last_rank { "end" } else { "start" };
-        let x = if is_last_rank {
+    for (idx, node) in layout.nodes.iter().enumerate() {
+        let align_left_of_node = node.rank > 0;
+        let text_anchor = if align_left_of_node { "end" } else { "start" };
+        let x = if align_left_of_node {
             node.x - 6.0
         } else {
             node.x + layout.node_width + 6.0
         };
-        let y = node.y + node.height / 2.0;
+        let y = label_y[idx];
         let label = escape_xml(&node.label);
         let value = format_sankey_value(node.total);
+        let first_y = y - label_font_size * 0.4;
         svg.push_str(&format!(
-            "<text x=\"{}\" y=\"{}\" dy=\"0em\" text-anchor=\"{}\">{}\n{}</text>",
-            x, y, text_anchor, label, value
+            "<text x=\"{x:.2}\" y=\"{first_y:.2}\" dy=\"0em\" text-anchor=\"{text_anchor}\"><tspan x=\"{x:.2}\" dy=\"0em\">{label}</tspan><tspan x=\"{x:.2}\" dy=\"1.15em\">{value}</tspan></text>"
         ));
     }
     svg.push_str("</g>");
@@ -1660,7 +1707,8 @@ fn render_requirement(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> 
             ));
         }
         if header_count >= 2 {
-            let id_y = header_y + req.header_line_gap;
+            let min_header_gap = theme.font_size * 1.25;
+            let id_y = header_y + req.header_line_gap.max(min_header_gap);
             svg.push_str(&render_line(header_x, id_y, &lines[1], label_color, true));
         }
 
@@ -1809,12 +1857,22 @@ fn render_radar(layout: &Layout, theme: &Theme, _config: &LayoutConfig) -> Strin
             x, y, AXIS_COLOR
         ));
         let label_r = MAX_RADIUS + AXIS_LABEL_OFFSET;
-        let lx = label_r * angle.cos();
+        let mut lx = label_r * angle.cos();
         let ly = label_r * angle.sin();
+        let anchor = if angle.cos() > 0.35 {
+            lx -= 6.0;
+            "end"
+        } else if angle.cos() < -0.35 {
+            lx += 6.0;
+            "start"
+        } else {
+            "middle"
+        };
         svg.push_str(&format!(
-            "<text x=\"{:.3}\" y=\"{:.3}\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-family=\"{}\" font-size=\"12\" fill=\"{}\">{}</text>",
+            "<text x=\"{:.3}\" y=\"{:.3}\" text-anchor=\"{}\" dominant-baseline=\"middle\" font-family=\"{}\" font-size=\"12\" fill=\"{}\">{}</text>",
             lx,
             ly,
+            anchor,
             escape_xml(&theme.font_family),
             AXIS_COLOR,
             escape_xml(axis)
@@ -1846,7 +1904,7 @@ fn render_radar(layout: &Layout, theme: &Theme, _config: &LayoutConfig) -> Strin
             escape_xml(&color)
         ));
 
-        let legend_offset = MAX_RADIUS * 0.875;
+        let legend_offset = MAX_RADIUS * 0.8;
         let legend_x = legend_offset;
         let legend_y = -legend_offset + series_idx as f32 * (theme.font_size + 6.0);
         svg.push_str(&format!(
@@ -2223,6 +2281,7 @@ fn render_pie(pie: &PieData, theme: &Theme, config: &LayoutConfig) -> String {
     }
 
     let mut labels: Vec<PieLabel> = Vec::new();
+    let suppress_outside_labels = pie.legend.len() >= 4;
     for slice in &pie.slices {
         let span = (slice.end_angle - slice.start_angle).abs();
         if span <= 0.0001 || total <= 0.0 {
@@ -2239,7 +2298,7 @@ fn render_pie(pie: &PieData, theme: &Theme, config: &LayoutConfig) -> String {
         let percent_width =
             text_metrics::measure_text_width(&percent_text, font_size, theme.font_family.as_str())
                 .unwrap_or(percent_text.chars().count() as f32 * font_size * 0.55);
-        let outside = arc_len < percent_width * 1.35 || span < 0.4;
+        let outside = !suppress_outside_labels && (arc_len < percent_width * 1.35 || span < 0.4);
         let label_text = if outside {
             slice.label.lines.join(" ")
         } else {
