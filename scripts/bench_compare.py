@@ -15,6 +15,10 @@ import statistics
 import subprocess
 import sys
 import time
+import datetime
+import getpass
+import platform
+import socket
 from pathlib import Path
 from typing import Optional
 
@@ -34,6 +38,12 @@ BIN = os.environ.get("MMDR_BIN", str(ROOT / "target" / "release" / "mmdr"))
 MMD_CLI = os.environ.get("MMD_CLI", "npx -y @mermaid-js/mermaid-cli")
 RUNS = int(os.environ.get("RUNS", "8"))
 WARMUP = int(os.environ.get("WARMUP", "2"))
+HISTORY_LOG = Path(
+    os.environ.get(
+        "HISTORY_LOG",
+        str(ROOT / "tmp" / "benchmark-history" / "bench-compare-runs.jsonl"),
+    )
+)
 
 CASE_NAMES = [
     "flowchart_small",
@@ -88,6 +98,13 @@ CASE_NAMES = [
 ]
 
 
+def env_bool(name: str) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return False
+    return value.strip().lower() not in {"", "0", "false", "no", "off"}
+
+
 def resolve_cases():
     cases_env = os.environ.get("CASES")
     if cases_env:
@@ -102,6 +119,85 @@ def resolve_cases():
 
 
 CASES = resolve_cases()
+
+
+def iso_utc_now() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def git_metadata() -> dict:
+    def git(args: list[str]) -> str:
+        result = subprocess.run(
+            ["git"] + args,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            return ""
+        return result.stdout.strip()
+
+    commit = git(["rev-parse", "HEAD"])
+    short = commit[:12] if commit else ""
+    branch = git(["rev-parse", "--abbrev-ref", "HEAD"])
+    describe = git(["describe", "--always", "--dirty", "--tags"])
+    status = git(["status", "--porcelain"])
+    return {
+        "commit": commit,
+        "commit_short": short,
+        "branch": branch,
+        "describe": describe,
+        "dirty": bool(status),
+    }
+
+
+def host_metadata() -> dict:
+    return {
+        "hostname": socket.gethostname(),
+        "user": getpass.getuser(),
+        "python": sys.version.split()[0],
+        "platform": platform.platform(),
+    }
+
+
+def append_benchmark_history(path: Path, record: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, sort_keys=True))
+        handle.write("\n")
+
+
+def summarize_history(results: dict) -> dict:
+    mmdr_entries = results.get("mmdr", {})
+    cli_entries = results.get("mermaid_cli", {})
+    compared = []
+    cli_errors = 0
+    for case, mmdr in mmdr_entries.items():
+        mmdr_ms = mmdr.get("mean_ms")
+        cli = cli_entries.get(case, {})
+        if cli.get("error"):
+            cli_errors += 1
+            continue
+        cli_ms = cli.get("mean_ms")
+        if mmdr_ms and cli_ms:
+            compared.append((case, float(mmdr_ms), float(cli_ms), float(cli_ms) / float(mmdr_ms)))
+
+    speedups = [item[3] for item in compared]
+    best = max(compared, key=lambda item: item[3], default=None)
+    worst = min(compared, key=lambda item: item[3], default=None)
+
+    return {
+        "case_count": len(mmdr_entries),
+        "compared_case_count": len(compared),
+        "cli_error_count": cli_errors,
+        "mmdr_mean_ms_avg": statistics.mean([entry["mean_ms"] for entry in mmdr_entries.values()]) if mmdr_entries else 0.0,
+        "cli_mean_ms_avg": statistics.mean([item[2] for item in compared]) if compared else 0.0,
+        "speedup_mean": statistics.mean(speedups) if speedups else 0.0,
+        "speedup_median": statistics.median(speedups) if speedups else 0.0,
+        "speedup_best_case": best[0] if best else "",
+        "speedup_best_value": best[3] if best else 0.0,
+        "speedup_worst_case": worst[0] if worst else "",
+        "speedup_worst_value": worst[3] if worst else 0.0,
+    }
 
 
 def run_cmd(cmd, capture_stderr=False):
@@ -565,6 +661,31 @@ def main():
         charts_dir.mkdir(parents=True, exist_ok=True)
         generate_svg_chart(results, charts_dir / "comparison_chart.svg")
         generate_breakdown_chart(results, charts_dir / "breakdown_chart.svg")
+
+    if not env_bool("NO_HISTORY_LOG"):
+        record = {
+            "timestamp_utc": iso_utc_now(),
+            "history_version": 1,
+            "tool": "bench_compare",
+            "cwd": str(ROOT),
+            "argv": sys.argv[1:],
+            "git": git_metadata(),
+            "host": host_metadata(),
+            "settings": {
+                "bin": BIN,
+                "mmd_cli": MMD_CLI,
+                "runs": RUNS,
+                "warmup": WARMUP,
+                "cases": [name for name, _ in CASES],
+                "skip_mermaid_cli": bool(os.environ.get("SKIP_MERMAID_CLI")),
+                "skip_charts": bool(os.environ.get("SKIP_CHARTS")),
+                "out_json": str(out_json),
+                "charts_dir": str(Path(os.environ.get("CHARTS_DIR", str(ROOT / "docs" / "benchmarks")))),
+            },
+            "summary": summarize_history(results),
+        }
+        append_benchmark_history(HISTORY_LOG, record)
+        print(f"Wrote history: {HISTORY_LOG}")
 
 
 if __name__ == "__main__":

@@ -4,12 +4,17 @@
 from __future__ import annotations
 
 import argparse
+import datetime
+import getpass
 import importlib.util
 import json
 import math
+import platform
 import re
+import socket
 import statistics
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -84,6 +89,47 @@ def load_quality_bench():
 
 def run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+
+def iso_utc_now() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def git_metadata() -> dict[str, Any]:
+    def git(args: list[str]) -> str:
+        res = run(["git"] + args)
+        if res.returncode != 0:
+            return ""
+        return res.stdout.strip()
+
+    commit = git(["rev-parse", "HEAD"])
+    short = commit[:12] if commit else ""
+    branch = git(["rev-parse", "--abbrev-ref", "HEAD"])
+    describe = git(["describe", "--always", "--dirty", "--tags"])
+    status = git(["status", "--porcelain"])
+    return {
+        "commit": commit,
+        "commit_short": short,
+        "branch": branch,
+        "describe": describe,
+        "dirty": bool(status),
+    }
+
+
+def host_metadata() -> dict[str, str]:
+    return {
+        "hostname": socket.gethostname(),
+        "user": getpass.getuser(),
+        "python": sys.version.split()[0],
+        "platform": platform.platform(),
+    }
+
+
+def append_benchmark_history(history_path: Path, record: dict[str, Any]) -> None:
+    history_path.parent.mkdir(parents=True, exist_ok=True)
+    with history_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, sort_keys=True))
+        handle.write("\n")
 
 
 def resolve_bin(path_str: str) -> Path:
@@ -450,6 +496,47 @@ def print_priorities(results: list[dict[str, Any]], top_n: int) -> None:
             print(f"- {item['fixture']}: {item['error']}")
 
 
+def summarize_priority_history(results: list[dict[str, Any]]) -> dict[str, Any]:
+    ok = [entry for entry in results if "error" not in entry]
+    failed = [entry for entry in results if "error" in entry]
+
+    pain_scores = [safe_num(entry.get("priority", {}).get("pain_score", 0.0)) for entry in ok]
+    roi_scores = [safe_num(entry.get("priority", {}).get("pain_per_layout_ms", 0.0)) for entry in ok]
+    layout_ms = [safe_num(entry.get("timing", {}).get("layout_ms", 0.0)) for entry in ok]
+
+    top_pain = max(
+        ok,
+        key=lambda entry: safe_num(entry.get("priority", {}).get("pain_score", 0.0)),
+        default=None,
+    )
+    top_roi = max(
+        ok,
+        key=lambda entry: safe_num(entry.get("priority", {}).get("pain_per_layout_ms", 0.0)),
+        default=None,
+    )
+
+    pain_p95 = 0.0
+    if pain_scores:
+        if len(pain_scores) == 1:
+            pain_p95 = pain_scores[0]
+        else:
+            pain_p95 = statistics.quantiles(pain_scores, n=20, method="inclusive")[18]
+
+    return {
+        "fixture_count": len(results),
+        "success_count": len(ok),
+        "failure_count": len(failed),
+        "pain_score_mean": statistics.mean(pain_scores) if pain_scores else 0.0,
+        "pain_score_p95": pain_p95,
+        "pain_per_layout_ms_mean": statistics.mean(roi_scores) if roi_scores else 0.0,
+        "layout_ms_mean": statistics.mean(layout_ms) if layout_ms else 0.0,
+        "top_pain_fixture": top_pain.get("fixture") if top_pain else "",
+        "top_pain_score": safe_num(top_pain.get("priority", {}).get("pain_score", 0.0)) if top_pain else 0.0,
+        "top_roi_fixture": top_roi.get("fixture") if top_roi else "",
+        "top_roi_score": safe_num(top_roi.get("priority", {}).get("pain_per_layout_ms", 0.0)) if top_roi else 0.0,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Rank layout improvement priorities from quality + timing benchmarks"
@@ -496,6 +583,16 @@ def main() -> None:
         "--output-json",
         default=str(ROOT / "target" / "priority-bench.json"),
         help="Path for machine-readable report JSON",
+    )
+    parser.add_argument(
+        "--history-log",
+        default=str(ROOT / "tmp" / "benchmark-history" / "priority-runs.jsonl"),
+        help="Path to append benchmark run history JSONL",
+    )
+    parser.add_argument(
+        "--no-history-log",
+        action="store_true",
+        help="disable benchmark history JSONL logging for this run",
     )
     args = parser.parse_args()
 
@@ -547,6 +644,33 @@ def main() -> None:
     print_priorities(results, top_n=max(args.top, 1))
     print()
     print(f"Wrote {output_path}")
+
+    if not args.no_history_log:
+        history_path = Path(args.history_log)
+        record = {
+            "timestamp_utc": iso_utc_now(),
+            "history_version": 1,
+            "tool": "priority_bench",
+            "cwd": str(ROOT),
+            "argv": sys.argv[1:],
+            "git": git_metadata(),
+            "host": host_metadata(),
+            "settings": {
+                "bin": str(bin_path),
+                "config": str(config_path),
+                "runs": args.runs,
+                "warmup": args.warmup,
+                "weight_mode": args.weight_mode,
+                "metrics_requested": metric_keys,
+                "patterns": args.pattern,
+                "fixture_roots": [str(path) for path in fixture_roots],
+                "fixture_limit": args.limit,
+                "output_json": str(output_path),
+            },
+            "summary": summarize_priority_history(results),
+        }
+        append_benchmark_history(history_path, record)
+        print(f"Wrote history: {history_path}")
 
 
 if __name__ == "__main__":

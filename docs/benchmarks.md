@@ -139,3 +139,11 @@ This benchmark reports `edge_label_path_gap_*` metrics where:
 
 Run history for this benchmark is also logged by default to:
 - `tmp/benchmark-history/label-runs.jsonl`
+
+`scripts/priority_bench.py` now appends run history by default to:
+- `tmp/benchmark-history/priority-runs.jsonl`
+
+`scripts/bench_compare.py` now appends run history by default to:
+- `tmp/benchmark-history/bench-compare-runs.jsonl`
+
+Each history record includes timestamp, git commit/branch/dirty state, host metadata, run settings, and summary metrics.
