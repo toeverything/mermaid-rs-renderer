@@ -70,9 +70,32 @@ pub(super) fn compute_timeline_layout(
         })
         .collect();
 
+    let mut nodes = BTreeMap::new();
+    nodes.insert(
+        "__timeline_metrics_content".to_string(),
+        NodeLayout {
+            id: "__timeline_metrics_content".to_string(),
+            x: padding,
+            y: padding,
+            width: (width - padding * 2.0).max(1.0),
+            height: (height - padding * 2.0).max(1.0),
+            label: TextBlock {
+                lines: vec![String::new()],
+                width: 0.0,
+                height: 0.0,
+            },
+            shape: crate::ir::NodeShape::Rectangle,
+            style: crate::ir::NodeStyle::default(),
+            link: None,
+            anchor_subgraph: None,
+            hidden: false,
+            icon: None,
+        },
+    );
+
     Layout {
         kind: graph.kind,
-        nodes: BTreeMap::new(),
+        nodes,
         edges: Vec::new(),
         subgraphs: Vec::new(),
         diagram: DiagramData::Timeline(TimelineLayout {

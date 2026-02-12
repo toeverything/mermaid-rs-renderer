@@ -244,6 +244,8 @@ fn compute_flowchart_layout(
     mut stage_metrics: Option<&mut LayoutStageMetrics>,
 ) -> Layout {
     let mut effective_config = config.clone();
+    let mut hub_compaction_scale: Option<f32> = None;
+    let mut hub_compaction_floor = 0.0f32;
     if graph.kind == crate::ir::DiagramKind::Requirement {
         effective_config.max_label_width_chars = effective_config.max_label_width_chars.max(32);
     }
@@ -279,6 +281,26 @@ fn compute_flowchart_layout(
                 (effective_config.node_spacing * scale).max(auto.min_spacing);
             effective_config.rank_spacing =
                 (effective_config.rank_spacing * scale).max(auto.min_spacing);
+        }
+
+        // Hub-and-spoke flowcharts (one high-degree node) tend to over-expand
+        // with generic spacing and produce long radial connectors. Compress
+        // spacing slightly when hub dominance is high.
+        let mut degree_by_node: HashMap<&str, usize> = HashMap::new();
+        for edge in &graph.edges {
+            *degree_by_node.entry(edge.from.as_str()).or_insert(0) += 1;
+            *degree_by_node.entry(edge.to.as_str()).or_insert(0) += 1;
+        }
+        let max_degree = degree_by_node.values().copied().max().unwrap_or(0) as f32;
+        let hub_ratio = if node_count > 0 {
+            max_degree / node_count as f32
+        } else {
+            0.0
+        };
+        if node_count >= 10 && hub_ratio >= 0.30 && density <= 3.0 {
+            let hub_scale = (0.95 - (hub_ratio - 0.30) * 0.40).clamp(0.78, 0.95);
+            hub_compaction_scale = Some(hub_scale);
+            hub_compaction_floor = auto.min_spacing * 0.7;
         }
     }
     let node_count = graph.nodes.len();
@@ -365,6 +387,11 @@ fn compute_flowchart_layout(
     }
     if adaptive_rank_spacing < effective_config.rank_spacing {
         effective_config.rank_spacing = adaptive_rank_spacing;
+    }
+    if let Some(scale) = hub_compaction_scale {
+        let floor = hub_compaction_floor.max(14.0);
+        effective_config.node_spacing = (effective_config.node_spacing * scale).max(floor);
+        effective_config.rank_spacing = (effective_config.rank_spacing * scale).max(floor);
     }
 
     let config = &effective_config;

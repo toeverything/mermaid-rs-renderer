@@ -270,9 +270,32 @@ pub(super) fn compute_journey_layout(
         .unwrap_or(content_y + theme.font_size * 4.0)
         .max(1.0);
 
+    let mut nodes = BTreeMap::new();
+    nodes.insert(
+        "__journey_metrics_content".to_string(),
+        NodeLayout {
+            id: "__journey_metrics_content".to_string(),
+            x: margin_x,
+            y: margin_y,
+            width: (width - margin_x * 2.0).max(1.0),
+            height: (height - margin_y * 2.0).max(1.0),
+            label: TextBlock {
+                lines: vec![String::new()],
+                width: 0.0,
+                height: 0.0,
+            },
+            shape: crate::ir::NodeShape::Rectangle,
+            style: crate::ir::NodeStyle::default(),
+            link: None,
+            anchor_subgraph: None,
+            hidden: false,
+            icon: None,
+        },
+    );
+
     Layout {
         kind: graph.kind,
-        nodes: BTreeMap::new(),
+        nodes,
         edges: Vec::new(),
         subgraphs: Vec::new(),
         diagram: DiagramData::Journey(JourneyLayout {

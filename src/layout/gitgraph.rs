@@ -468,9 +468,32 @@ pub(super) fn compute_gitgraph_layout(
     let width = (max_x - min_x).max(1.0);
     let height = (max_y - min_y).max(1.0);
 
+    let mut nodes = BTreeMap::new();
+    nodes.insert(
+        "__gitgraph_metrics_content".to_string(),
+        NodeLayout {
+            id: "__gitgraph_metrics_content".to_string(),
+            x: gg.diagram_padding,
+            y: gg.diagram_padding,
+            width: (width - gg.diagram_padding * 2.0).max(1.0),
+            height: (height - gg.diagram_padding * 2.0).max(1.0),
+            label: TextBlock {
+                lines: vec![String::new()],
+                width: 0.0,
+                height: 0.0,
+            },
+            shape: crate::ir::NodeShape::Rectangle,
+            style: crate::ir::NodeStyle::default(),
+            link: None,
+            anchor_subgraph: None,
+            hidden: false,
+            icon: None,
+        },
+    );
+
     Layout {
         kind: graph.kind,
-        nodes: BTreeMap::new(),
+        nodes,
         edges: Vec::new(),
         subgraphs: Vec::new(),
         diagram: DiagramData::GitGraph(GitGraphLayout {
