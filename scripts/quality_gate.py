@@ -21,6 +21,7 @@ STRICT_METRICS = {
     "label_edge_overlap_count",
     "label_out_of_bounds_count",
     "edge_label_alignment_bad_count",
+    "edge_label_path_gap_bad_count",
 }
 
 RELATIVE_METRICS = {
@@ -58,6 +59,9 @@ RELATIVE_METRICS = {
     "edge_label_alignment_mean",
     "edge_label_alignment_p95",
     "edge_label_alignment_bad_ratio",
+    "edge_label_path_gap_mean",
+    "edge_label_path_gap_p95",
+    "edge_label_path_gap_bad_ratio",
     "node_overlap_area",
     "score",
 }

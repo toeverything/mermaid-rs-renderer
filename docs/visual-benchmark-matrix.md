@@ -27,6 +27,7 @@ The benchmark pipeline now tracks:
 - Space/composition: `content_fill_ratio`, `wasted_space_ratio`, `space_efficiency_penalty`, `margin_imbalance_ratio`, `component_gap_ratio`, `component_balance_penalty`, `content_center_offset_ratio`, `content_aspect_elongation`, `content_overflow_ratio`
 - Path quality: `avg_edge_detour_ratio`, `edge_detour_penalty`, `edge_length_per_node`
 - Text readability: `label_overlap_count`, `label_overlap_area`, `label_edge_overlap_count`, `label_edge_overlap_pairs`, `label_out_of_bounds_count`, `label_out_of_bounds_area`, `label_out_of_bounds_ratio`
+- Edge-label attachment quality: `edge_label_alignment_mean`, `edge_label_alignment_p95`, `edge_label_alignment_bad_count`, `edge_label_path_gap_mean`, `edge_label_path_gap_p95`, `edge_label_path_touch_ratio`, `edge_label_path_gap_bad_count`
 - Throughput: parse/layout/render/total timing from `--timing`
 
 ## Recent Engine Fixes Verified By Benchmarks

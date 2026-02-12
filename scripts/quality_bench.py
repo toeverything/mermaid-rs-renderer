@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 import argparse
+import datetime
+import getpass
 import importlib.util
 import json
 import math
 import os
+import platform
 import re
 import shlex
+import socket
 import subprocess
+import sys
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -39,6 +45,41 @@ def run(cmd, env=None):
         text=True,
         env=env,
     )
+
+
+def iso_utc_now():
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def git_metadata():
+    def git(args):
+        res = run(["git"] + args)
+        if res.returncode != 0:
+            return ""
+        return res.stdout.strip()
+
+    commit = git(["rev-parse", "HEAD"])
+    short = commit[:12] if commit else ""
+    branch = git(["rev-parse", "--abbrev-ref", "HEAD"])
+    describe = git(["describe", "--always", "--dirty", "--tags"])
+    status = git(["status", "--porcelain"])
+    dirty = bool(status)
+    return {
+        "commit": commit,
+        "commit_short": short,
+        "branch": branch,
+        "describe": describe,
+        "dirty": dirty,
+    }
+
+
+def host_metadata():
+    return {
+        "hostname": socket.gethostname(),
+        "user": getpass.getuser(),
+        "python": sys.version.split()[0],
+        "platform": platform.platform(),
+    }
 
 
 def find_puppeteer_chrome():
@@ -716,6 +757,46 @@ def point_polyline_distance(point, points):
     return best
 
 
+def point_rect_distance(point, rect):
+    px, py = point
+    x1 = rect["x"]
+    y1 = rect["y"]
+    x2 = x1 + rect["width"]
+    y2 = y1 + rect["height"]
+    dx = max(x1 - px, 0.0, px - x2)
+    dy = max(y1 - py, 0.0, py - y2)
+    return math.hypot(dx, dy)
+
+
+def segment_rect_gap(a, b, rect):
+    if segment_intersects_rect(a, b, rect):
+        return 0.0
+    x = rect["x"]
+    y = rect["y"]
+    w = rect["width"]
+    h = rect["height"]
+    corners = [
+        (x, y),
+        (x + w, y),
+        (x + w, y + h),
+        (x, y + h),
+    ]
+    best = min(point_segment_distance(corner, a, b) for corner in corners)
+    best = min(best, point_rect_distance(a, rect), point_rect_distance(b, rect))
+    return best
+
+
+def polyline_rect_gap(points, rect):
+    if len(points) < 2:
+        return float("inf")
+    best = float("inf")
+    for a, b in zip(points, points[1:]):
+        best = min(best, segment_rect_gap(a, b, rect))
+        if best <= 1e-9:
+            return 0.0
+    return best
+
+
 def collinear_overlap_length(a, b, c, d, eps=1e-6):
     if abs(orient(a, b, c)) > eps or abs(orient(a, b, d)) > eps:
         return 0.0
@@ -850,6 +931,9 @@ def compute_label_metrics(svg_path: Path, nodes, edges, diagram_kind=""):
 
     edge_label_distances = []
     edge_label_bad_count = 0
+    edge_label_path_gaps = []
+    edge_label_path_bad_count = 0
+    edge_label_path_touch_count = 0
     for label in labels:
         if label.get("owner") is not None:
             continue
@@ -858,25 +942,34 @@ def compute_label_metrics(svg_path: Path, nodes, edges, diagram_kind=""):
             label["y"] + label["height"] * 0.5,
         )
         min_dist = float("inf")
+        min_gap = float("inf")
         for edge in edges:
             points = [tuple(p) for p in edge.get("points", [])]
             if len(points) < 2:
                 continue
             min_dist = min(min_dist, point_polyline_distance(center, points))
-        if not math.isfinite(min_dist):
+            min_gap = min(min_gap, polyline_rect_gap(points, label))
+        if not math.isfinite(min_dist) or not math.isfinite(min_gap):
             continue
         # Exclude obvious non-edge labels (titles, distant captions).
         if diagram_kind == "sequence":
             candidate_cutoff = max(48.0, label["height"] * 6.0)
             bad_limit = max(24.0, label["height"] * 3.6)
+            path_bad_limit = max(18.0, label["height"] * 2.2)
         else:
             candidate_cutoff = max(24.0, label["height"] * 4.0)
             bad_limit = max(10.0, label["height"] * 1.75)
-        if min_dist > candidate_cutoff:
+            path_bad_limit = max(8.0, label["height"] * 0.9)
+        if min_dist > candidate_cutoff and min_gap > candidate_cutoff:
             continue
         edge_label_distances.append(min_dist)
+        edge_label_path_gaps.append(min_gap)
         if min_dist > bad_limit:
             edge_label_bad_count += 1
+        if min_gap > path_bad_limit:
+            edge_label_path_bad_count += 1
+        if min_gap <= 0.5:
+            edge_label_path_touch_count += 1
 
     edge_label_alignment_mean = (
         sum(edge_label_distances) / len(edge_label_distances)
@@ -888,6 +981,16 @@ def compute_label_metrics(svg_path: Path, nodes, edges, diagram_kind=""):
         ordered = sorted(edge_label_distances)
         p95_idx = int(round((len(ordered) - 1) * 0.95))
         edge_label_alignment_p95 = ordered[p95_idx]
+    edge_label_path_gap_mean = (
+        sum(edge_label_path_gaps) / len(edge_label_path_gaps)
+        if edge_label_path_gaps
+        else 0.0
+    )
+    edge_label_path_gap_p95 = 0.0
+    if edge_label_path_gaps:
+        ordered = sorted(edge_label_path_gaps)
+        p95_idx = int(round((len(ordered) - 1) * 0.95))
+        edge_label_path_gap_p95 = ordered[p95_idx]
 
     return {
         "label_count": len(labels),
@@ -908,6 +1011,21 @@ def compute_label_metrics(svg_path: Path, nodes, edges, diagram_kind=""):
         "edge_label_alignment_bad_ratio": (
             edge_label_bad_count / len(edge_label_distances)
             if edge_label_distances
+            else 0.0
+        ),
+        "edge_label_path_gap_count": len(edge_label_path_gaps),
+        "edge_label_path_gap_mean": edge_label_path_gap_mean,
+        "edge_label_path_gap_p95": edge_label_path_gap_p95,
+        "edge_label_path_touch_count": edge_label_path_touch_count,
+        "edge_label_path_touch_ratio": (
+            edge_label_path_touch_count / len(edge_label_path_gaps)
+            if edge_label_path_gaps
+            else 0.0
+        ),
+        "edge_label_path_gap_bad_count": edge_label_path_bad_count,
+        "edge_label_path_gap_bad_ratio": (
+            edge_label_path_bad_count / len(edge_label_path_gaps)
+            if edge_label_path_gaps
             else 0.0
         ),
     }
@@ -1142,10 +1260,10 @@ def metric_compare_counts(left, right, keys, metric, eps=1e-9):
     return better, equal, worse, regressions
 
 
-def summarize_common_comparison(left, right):
+def common_comparison_stats(left, right):
     common = collect_common_scored(left, right)
     if not common:
-        return []
+        return {}
     core_metrics = [
         "score",
         "edge_crossings",
@@ -1154,18 +1272,24 @@ def summarize_common_comparison(left, right):
         "label_overlap_count",
         "label_out_of_bounds_count",
     ]
-    lines = [f"Common scored fixtures: {len(common)}"]
+    metrics = {}
     for metric in core_metrics:
         better, equal, worse, regressions = metric_compare_counts(left, right, common, metric)
-        lines.append(
-            f"mmdr vs mermaid-cli `{metric}`: better {better}, equal {equal}, worse {worse}"
-        )
+        metric_stats = {
+            "better": better,
+            "equal": equal,
+            "worse": worse,
+        }
         if regressions:
             top = regressions[0]
-            lines.append(
-                "  worst regression: "
-                f"{Path(top[1]).name} (mmdr={top[2]:.3f}, mermaid-cli={top[3]:.3f})"
-            )
+            metric_stats["worst_regression"] = {
+                "fixture": top[1],
+                "fixture_name": Path(top[1]).name,
+                "delta": float(top[0]),
+                "mmdr": float(top[2]),
+                "mermaid_cli": float(top[3]),
+            }
+        metrics[metric] = metric_stats
 
     dominance_metrics = [
         "score",
@@ -1193,23 +1317,63 @@ def summarize_common_comparison(left, right):
             non_worse += 1
         if is_strict:
             strict += 1
-    if comparable:
+    return {
+        "common_scored_fixtures": len(common),
+        "metrics": metrics,
+        "core_dominance": {
+            "metrics": dominance_metrics,
+            "comparable": comparable,
+            "non_worse": non_worse,
+            "strictly_better": strict,
+        },
+    }
+
+
+def summarize_common_comparison(left, right):
+    stats = common_comparison_stats(left, right)
+    if not stats:
+        return []
+    lines = [f"Common scored fixtures: {stats['common_scored_fixtures']}"]
+    for metric in [
+        "score",
+        "edge_crossings",
+        "svg_edge_crossings",
+        "arrow_path_intersections",
+        "label_overlap_count",
+        "label_out_of_bounds_count",
+    ]:
+        metric_stats = stats["metrics"].get(metric, {})
+        lines.append(
+            "mmdr vs mermaid-cli "
+            f"`{metric}`: better {metric_stats.get('better', 0)}, "
+            f"equal {metric_stats.get('equal', 0)}, "
+            f"worse {metric_stats.get('worse', 0)}"
+        )
+        top = metric_stats.get("worst_regression")
+        if top:
+            lines.append(
+                "  worst regression: "
+                f"{top['fixture_name']} (mmdr={top['mmdr']:.3f}, mermaid-cli={top['mermaid_cli']:.3f})"
+            )
+    core = stats.get("core_dominance", {})
+    if core.get("comparable", 0) > 0:
+        metrics = core.get("metrics", [])
         lines.append(
             "Core-dominance "
-            f"({', '.join(dominance_metrics)}): non-worse {non_worse}/{comparable}, "
-            f"strictly better {strict}/{comparable}"
+            f"({', '.join(metrics)}): non-worse {core['non_worse']}/{core['comparable']}, "
+            f"strictly better {core['strictly_better']}/{core['comparable']}"
         )
     return lines
 
 
-def summarize_weighted_dominance(left, right):
+def weighted_dominance_stats(left, right):
     common = collect_common_scored(left, right)
     if not common:
-        return []
+        return {}
     layout_score = load_layout_score()
     weights = getattr(layout_score, "WEIGHTS", {})
     if not weights:
-        return []
+        return {}
 
     by_metric_debt = {metric: 0.0 for metric in weights}
     comparable = 0
@@ -1247,32 +1411,67 @@ def summarize_weighted_dominance(left, right):
             worst_fixture = (key, fixture_debt)
 
     if comparable == 0:
-        return []
-
-    total_debt = sum(by_metric_debt.values())
-    lines = [
-        "Weighted-dominance "
-        f"({len(weights)} weighted metrics): non-worse {non_worse}/{comparable}, "
-        f"strictly better {strict}/{comparable}",
-        f"Weighted regression debt vs mermaid-cli: {total_debt:.2f}",
-    ]
+        return {}
 
     ranked = sorted(
         ((metric, debt) for metric, debt in by_metric_debt.items() if debt > 0.0),
         key=lambda item: item[1],
         reverse=True,
     )
-    if ranked:
-        lines.append("Top weighted regression contributors:")
-        for metric, debt in ranked[:6]:
-            better, equal, worse, _ = metric_compare_counts(left, right, common, metric)
-            lines.append(
-                f"  {metric}: debt={debt:.2f}, better={better}, equal={equal}, worse={worse}"
-            )
+    top_contributors = []
+    for metric, debt in ranked[:6]:
+        better, equal, worse, _ = metric_compare_counts(left, right, common, metric)
+        top_contributors.append(
+            {
+                "metric": metric,
+                "debt": debt,
+                "better": better,
+                "equal": equal,
+                "worse": worse,
+            }
+        )
+
+    worst_fixture_stats = {}
     if worst_fixture[1] > 0.0:
+        worst_fixture_stats = {
+            "fixture": worst_fixture[0],
+            "fixture_name": Path(worst_fixture[0]).name,
+            "debt": worst_fixture[1],
+        }
+
+    return {
+        "weighted_metrics": len(weights),
+        "comparable": comparable,
+        "non_worse": non_worse,
+        "strictly_better": strict,
+        "total_debt": sum(by_metric_debt.values()),
+        "debt_by_metric": by_metric_debt,
+        "top_contributors": top_contributors,
+        "worst_fixture": worst_fixture_stats,
+    }
+
+
+def summarize_weighted_dominance(left, right):
+    stats = weighted_dominance_stats(left, right)
+    if not stats:
+        return []
+    lines = [
+        "Weighted-dominance "
+        f"({stats['weighted_metrics']} weighted metrics): non-worse {stats['non_worse']}/{stats['comparable']}, "
+        f"strictly better {stats['strictly_better']}/{stats['comparable']}",
+        f"Weighted regression debt vs mermaid-cli: {stats['total_debt']:.2f}",
+    ]
+    if stats["top_contributors"]:
+        lines.append("Top weighted regression contributors:")
+        for entry in stats["top_contributors"]:
+            lines.append(
+                f"  {entry['metric']}: debt={entry['debt']:.2f}, "
+                f"better={entry['better']}, equal={entry['equal']}, worse={entry['worse']}"
+            )
+    if stats["worst_fixture"]:
         lines.append(
             "Worst weighted-regression fixture: "
-            f"{Path(worst_fixture[0]).name} (debt={worst_fixture[1]:.2f})"
+            f"{stats['worst_fixture']['fixture_name']} (debt={stats['worst_fixture']['debt']:.2f})"
         )
     return lines
 
@@ -1338,6 +1537,13 @@ def summarize_sequence_cli_conformance(results):
     return lines
 
 
+def append_benchmark_history(history_path: Path, record: dict):
+    history_path.parent.mkdir(parents=True, exist_ok=True)
+    with history_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, separators=(",", ":")))
+        handle.write("\n")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Compute layout quality metrics")
     parser.add_argument(
@@ -1389,7 +1595,21 @@ def main():
         default=[],
         help="regex pattern to filter fixture paths (repeatable)",
     )
+    parser.add_argument(
+        "--history-log",
+        default=str(ROOT / "tmp" / "benchmark-history" / "quality-runs.jsonl"),
+        help="append run summary metadata to this JSONL path",
+    )
+    parser.add_argument(
+        "--no-history-log",
+        action="store_true",
+        help="disable benchmark history JSONL logging for this run",
+    )
     args = parser.parse_args()
+    run_started_at = iso_utc_now()
+    run_started_epoch = time.time()
+    git_info = git_metadata()
+    host_info = host_metadata()
 
     fixtures = [Path(p) for p in args.fixtures if p]
     if not fixtures:
@@ -1438,9 +1658,21 @@ def main():
     output_json.write_text(json.dumps(payload, indent=2))
     print(f"Wrote {output_json}")
 
+    history_summary = {}
+    comparison_stats = {}
+    weighted_stats = {}
+
     if args.engine == "both":
         mmdr_avg, mmdr_count = summarize_scores(results.get("mmdr", {}))
         mmdc_avg, mmdc_count = summarize_scores(results.get("mermaid_cli", {}))
+        history_summary.update(
+            {
+                "mmdr_count": mmdr_count,
+                "mmdr_avg_score": mmdr_avg,
+                "mermaid_cli_count": mmdc_count,
+                "mermaid_cli_avg_score": mmdc_avg,
+            }
+        )
         if mmdr_count:
             print(f"mmdr: {mmdr_count} fixtures  Avg score: {mmdr_avg:.2f}")
         if mmdc_count:
@@ -1491,10 +1723,44 @@ def main():
         mmdc_label_align, mmdc_label_align_count = summarize_metric(
             results.get("mermaid_cli", {}), "edge_label_alignment_mean"
         )
+        mmdr_label_gap, mmdr_label_gap_count = summarize_metric(
+            results.get("mmdr", {}), "edge_label_path_gap_mean"
+        )
+        mmdc_label_gap, mmdc_label_gap_count = summarize_metric(
+            results.get("mermaid_cli", {}), "edge_label_path_gap_mean"
+        )
+        history_summary.update(
+            {
+                "mmdr_avg_wasted_space_ratio": mmdr_waste,
+                "mermaid_cli_avg_wasted_space_ratio": mmdc_waste,
+                "mmdr_avg_edge_detour_ratio": mmdr_detour,
+                "mermaid_cli_avg_edge_detour_ratio": mmdc_detour,
+                "mmdr_avg_component_gap_ratio": mmdr_comp_gap,
+                "mermaid_cli_avg_component_gap_ratio": mmdc_comp_gap,
+                "mmdr_avg_label_oob_count": mmdr_label_oob,
+                "mermaid_cli_avg_label_oob_count": mmdc_label_oob,
+                "mmdr_avg_arrow_path_intersections": mmdr_intersections,
+                "mermaid_cli_avg_arrow_path_intersections": mmdc_intersections,
+                "mmdr_avg_edge_label_distance": mmdr_label_align,
+                "mermaid_cli_avg_edge_label_distance": mmdc_label_align,
+                "mmdr_avg_edge_label_path_gap": mmdr_label_gap,
+                "mermaid_cli_avg_edge_label_path_gap": mmdc_label_gap,
+            }
+        )
         if mmdr_label_align_count:
             print(f"mmdr: avg edge-label distance to nearest edge: {mmdr_label_align:.3f}")
         if mmdc_label_align_count:
             print(f"mermaid-cli: avg edge-label distance to nearest edge: {mmdc_label_align:.3f}")
+        if mmdr_label_gap_count:
+            print(f"mmdr: avg edge-label path gap (0=touching): {mmdr_label_gap:.3f}")
+        if mmdc_label_gap_count:
+            print(f"mermaid-cli: avg edge-label path gap (0=touching): {mmdc_label_gap:.3f}")
+        comparison_stats = common_comparison_stats(
+            results.get("mmdr", {}), results.get("mermaid_cli", {})
+        )
+        weighted_stats = weighted_dominance_stats(
+            results.get("mmdr", {}), results.get("mermaid_cli", {})
+        )
         for line in summarize_common_comparison(
             results.get("mmdr", {}), results.get("mermaid_cli", {})
         ):
@@ -1511,6 +1777,14 @@ def main():
             scores = sorted(scored, key=lambda kv: kv[1]["score"], reverse=True)
             top = scores[:5]
             avg = sum(v["score"] for _, v in scored) / len(scored)
+            history_summary.update(
+                {
+                    "engine_count": len(scored),
+                    "engine_avg_score": avg,
+                    "engine_worst_fixture": top[0][0] if top else "",
+                    "engine_worst_score": top[0][1]["score"] if top else None,
+                }
+            )
             print(f"Fixtures: {len(scored)}  Avg score: {avg:.2f}")
             print("Worst 5 by score:")
             for name, metrics in top:
@@ -1572,6 +1846,47 @@ def main():
                     f"{name}: bad={metrics.get('edge_label_alignment_bad_count', 0)}, "
                     f"mean={metrics.get('edge_label_alignment_mean', 0.0):.2f}"
                 )
+            by_label_gap = sorted(
+                scored,
+                key=lambda kv: kv[1].get("edge_label_path_gap_mean", 0.0),
+                reverse=True,
+            )[:5]
+            print("Worst 5 by edge-label path gap (0 = touching):")
+            for name, metrics in by_label_gap:
+                print(
+                    "  "
+                    f"{name}: gap_mean={metrics.get('edge_label_path_gap_mean', 0.0):.2f}, "
+                    f"touch_ratio={metrics.get('edge_label_path_touch_ratio', 0.0):.3f}"
+                )
+
+    if not args.no_history_log:
+        history_path = Path(args.history_log)
+        record = {
+            "timestamp_utc": run_started_at,
+            "completed_utc": iso_utc_now(),
+            "duration_sec": max(0.0, time.time() - run_started_epoch),
+            "history_version": 1,
+            "command": {
+                "argv": sys.argv,
+                "engine": args.engine,
+                "fixtures": [str(path) for path in fixtures],
+                "pattern": args.pattern,
+                "limit": args.limit,
+                "out_dir": str(out_dir),
+                "output_json": str(output_json),
+                "config": str(config_path),
+                "bin": str(bin_path),
+            },
+            "host": host_info,
+            "git": git_info,
+            "fixture_input_count": len(files),
+            "summary": history_summary,
+        }
+        if comparison_stats:
+            record["comparison"] = comparison_stats
+        if weighted_stats:
+            record["weighted_dominance"] = weighted_stats
+        append_benchmark_history(history_path, record)
 
 
 if __name__ == "__main__":

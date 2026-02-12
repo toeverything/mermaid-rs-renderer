@@ -109,3 +109,33 @@ Recent layout/readability fixes validated by these runs:
   - class multiplicity edge-span relaxation (removed multiplicity label-label overlap in `tests/fixtures/class/multiplicity.mmd`)
   - tiny-cycle overlap resolution (removed node overlap and label overlap in `tests/fixtures/flowchart/cycles.mmd`)
   - chain-aware top-level subgraph wrapping for very large flowcharts (`benches/fixtures/flowchart_large.mmd` aspect elongation `153.63 -> 1.71`, wasted space `0.286 -> 0.071`).
+
+## Benchmark History Logging
+
+`scripts/quality_bench.py` now appends a JSONL run history record by default:
+- file: `tmp/benchmark-history/quality-runs.jsonl`
+- metadata: timestamp, CLI args, fixture/pattern selection, host info, git commit SHA, branch, dirty state
+- summaries: average scores and comparison/dominance stats (for `--engine both`)
+
+Disable per run if needed:
+
+```bash
+python3 scripts/quality_bench.py --engine both --no-history-log
+```
+
+## Label Path-Gap Benchmark
+
+To benchmark edge-label placement directly, use:
+
+```bash
+python3 scripts/label_bench.py --engine both --pattern flowchart
+```
+
+This benchmark reports `edge_label_path_gap_*` metrics where:
+- `edge_label_path_gap_mean`: average label-box to nearest edge-path gap
+- `edge_label_path_gap_p95`: 95th percentile gap
+- `edge_label_path_touch_ratio`: fraction of labels touching their nearest edge path (`0` gap)
+- `edge_label_path_gap_bad_ratio`: fraction of labels beyond diagram-specific gap thresholds
+
+Run history for this benchmark is also logged by default to:
+- `tmp/benchmark-history/label-runs.jsonl`
