@@ -12,11 +12,49 @@ const LABEL_OVERLAP_WIDE_THRESHOLD: f32 = 1e-4;
 const LABEL_ANCHOR_FRACTIONS: [f32; 5] = [0.5, 0.35, 0.65, 0.2, 0.8];
 const LABEL_ANCHOR_POS_EPS: f32 = 1.0;
 const LABEL_ANCHOR_DIR_EPS: f32 = 0.02;
-const LABEL_EDGE_DISTANCE_WEIGHT: f32 = 0.14;
 const LABEL_EXTRA_SEGMENT_ANCHORS: usize = 6;
 
 type Rect = (f32, f32, f32, f32);
 type EdgeObstacle = (usize, Rect);
+
+fn edge_distance_weight(kind: DiagramKind, overlap_pressure: f32) -> f32 {
+    let base = match kind {
+        DiagramKind::Flowchart => 0.55,
+        DiagramKind::Class | DiagramKind::State => 0.22,
+        _ => 0.18,
+    };
+    if overlap_pressure <= 0.025 {
+        base
+    } else if overlap_pressure <= 0.10 {
+        if kind == DiagramKind::Flowchart {
+            base * 0.82
+        } else {
+            base * 0.55
+        }
+    } else {
+        if kind == DiagramKind::Flowchart {
+            base * 0.58
+        } else {
+            base * 0.2
+        }
+    }
+}
+
+fn edge_target_distance(kind: DiagramKind, label_h: f32, label_pad_y: f32) -> f32 {
+    match kind {
+        // For flowcharts we want labels visually attached to the carrying edge.
+        DiagramKind::Flowchart => (label_h * 0.52 + label_pad_y * 0.65).max(4.5),
+        _ => (label_h * 0.65 + label_pad_y).max(6.0),
+    }
+}
+
+fn sweep_bias(kind: DiagramKind, tangent_step: f32, normal_step: f32) -> f32 {
+    let (normal_w, tangent_w) = match kind {
+        DiagramKind::Flowchart => (0.018, 0.004),
+        _ => (0.010, 0.003),
+    };
+    normal_step.abs() * normal_w + tangent_step.abs() * tangent_w
+}
 
 pub(crate) fn edge_label_padding(kind: DiagramKind, config: &LayoutConfig) -> (f32, f32) {
     match kind {
@@ -165,7 +203,7 @@ fn resolve_center_labels(
         let normal_steps = [
             0.0, 0.15, -0.15, 0.35, -0.35, 0.6, -0.6, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0,
         ];
-        let tangent_steps = [0.0, 0.2, -0.2, 0.6, -0.6, 1.2, -1.2];
+        let tangent_steps = [0.0, 0.2, -0.2, 0.6, -0.6, 1.2, -1.2, 2.0, -2.0, 3.0, -3.0];
         let mut best_pos = (anchors[0].0, anchors[0].1);
         let mut best_penalty = (f32::INFINITY, f32::INFINITY);
         let evaluate_candidates = |anchor: (f32, f32, f32, f32),
@@ -203,6 +241,7 @@ fn resolve_center_labels(
                         (anchor_x, anchor_y),
                         label.width,
                         label.height,
+                        kind,
                         &occupied,
                         &occupied_grid,
                         node_obstacle_count,
@@ -213,17 +252,12 @@ fn resolve_center_labels(
                     );
                     let overlap_pressure = penalty.0;
                     let edge_dist = point_polyline_distance((x, y), &edge.points);
-                    let edge_target = (label.height * 0.65 + label_pad_y).max(6.0);
-                    let edge_dist_weight = if overlap_pressure <= 0.02 {
-                        LABEL_EDGE_DISTANCE_WEIGHT
-                    } else if overlap_pressure <= 0.08 {
-                        LABEL_EDGE_DISTANCE_WEIGHT * 0.45
-                    } else {
-                        LABEL_EDGE_DISTANCE_WEIGHT * 0.15
-                    };
+                    let edge_target = edge_target_distance(kind, label.height, label_pad_y);
+                    let edge_dist_weight = edge_distance_weight(kind, overlap_pressure);
                     let edge_dist_penalty =
                         ((edge_dist - edge_target).max(0.0) / edge_target) * edge_dist_weight;
-                    let penalty = (penalty.0 + edge_dist_penalty, penalty.1);
+                    let sweep_penalty = sweep_bias(kind, *t, *n);
+                    let penalty = (penalty.0 + edge_dist_penalty + sweep_penalty, penalty.1);
                     if candidate_better(penalty, *best_penalty) {
                         *best_penalty = penalty;
                         *best_pos = (x, y);
@@ -242,7 +276,9 @@ fn resolve_center_labels(
         }
         if best_penalty.0 > LABEL_OVERLAP_WIDE_THRESHOLD {
             let normal_steps_wide = [0.0, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0, 4.0, -4.0, 5.0, -5.0];
-            let tangent_steps_wide = [0.0, 0.6, -0.6, 1.2, -1.2, 1.8, -1.8, 2.4, -2.4];
+            let tangent_steps_wide = [
+                0.0, 0.8, -0.8, 1.6, -1.6, 2.4, -2.4, 3.2, -3.2, 4.2, -4.2, 5.4, -5.4,
+            ];
             for anchor in &anchors {
                 evaluate_candidates(
                     *anchor,
@@ -351,6 +387,7 @@ fn resolve_endpoint_labels(
                 &edges[idx],
                 idx,
                 true,
+                kind,
                 end_label_offset,
                 label_w,
                 label_h,
@@ -383,6 +420,7 @@ fn resolve_endpoint_labels(
                 &edges[idx],
                 idx,
                 false,
+                kind,
                 end_label_offset,
                 label_w,
                 label_h,
@@ -833,7 +871,9 @@ impl ObstacleGrid {
 // moderate, edge overlap is mild (labels on edges is common and often acceptable).
 const WEIGHT_NODE_OVERLAP: f32 = 1.0;
 const WEIGHT_LABEL_OVERLAP: f32 = 0.9;
+const WEIGHT_FLOWCHART_LABEL_OVERLAP: f32 = 0.45;
 const WEIGHT_EDGE_OVERLAP: f32 = 0.5;
+const WEIGHT_FLOWCHART_EDGE_OVERLAP: f32 = 0.25;
 const WEIGHT_OUTSIDE: f32 = 1.2;
 
 fn label_penalties(
@@ -841,6 +881,7 @@ fn label_penalties(
     anchor: (f32, f32),
     label_w: f32,
     label_h: f32,
+    kind: DiagramKind,
     occupied: &[Rect],
     occupied_grid: &ObstacleGrid,
     node_obstacle_count: usize,
@@ -851,13 +892,23 @@ fn label_penalties(
 ) -> (f32, f32) {
     let area = (label_w * label_h).max(1.0);
     let mut overlap = 0.0;
+    let label_weight = if kind == DiagramKind::Flowchart {
+        WEIGHT_FLOWCHART_LABEL_OVERLAP
+    } else {
+        WEIGHT_LABEL_OVERLAP
+    };
+    let edge_weight = if kind == DiagramKind::Flowchart {
+        WEIGHT_FLOWCHART_EDGE_OVERLAP
+    } else {
+        WEIGHT_EDGE_OVERLAP
+    };
     for i in occupied_grid.query(&rect) {
         let ov = overlap_area(&rect, &occupied[i]);
         if ov > 0.0 {
             let weight = if i < node_obstacle_count {
                 WEIGHT_NODE_OVERLAP
             } else {
-                WEIGHT_LABEL_OVERLAP
+                label_weight
             };
             overlap += ov * weight;
         }
@@ -867,7 +918,7 @@ fn label_penalties(
         if idx == edge_idx {
             continue;
         }
-        overlap += overlap_area(&rect, obs) * WEIGHT_EDGE_OVERLAP;
+        overlap += overlap_area(&rect, obs) * edge_weight;
     }
     if let Some(bound) = bounds {
         overlap += outside_area(&rect, bound) * WEIGHT_OUTSIDE;
@@ -920,6 +971,7 @@ fn edge_endpoint_label_position_with_avoid(
     edge: &EdgeLayout,
     edge_idx: usize,
     start: bool,
+    kind: DiagramKind,
     offset: f32,
     label_w: f32,
     label_h: f32,
@@ -978,6 +1030,7 @@ fn edge_endpoint_label_position_with_avoid(
                 (anchor_x, anchor_y),
                 label_w,
                 label_h,
+                kind,
                 occupied,
                 occupied_grid,
                 node_obstacle_count,
