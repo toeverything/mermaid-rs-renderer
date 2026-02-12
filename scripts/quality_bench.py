@@ -134,8 +134,22 @@ def detect_diagram_kind(path: Path):
             return "state"
         if line.startswith("erDiagram"):
             return "er"
+        if line.startswith("treemap"):
+            return "treemap"
         break
     return ""
+
+
+def layout_kind_name(diagram_kind: str):
+    kind_map = {
+        "sequence": "Sequence",
+        "flowchart": "Flowchart",
+        "class": "Class",
+        "state": "State",
+        "er": "Er",
+        "treemap": "Treemap",
+    }
+    return kind_map.get(diagram_kind, "")
 
 
 def parse_style_map(style: str):
@@ -1065,6 +1079,9 @@ def compute_mmdc_metrics(files, cli_cmd, config_path, out_dir):
             results[str(file)] = {"error": res.stderr.strip()[:200]}
             continue
         data, nodes, edges = load_mermaid_svg_graph(svg_path)
+        kind_name = layout_kind_name(diagram_kind)
+        if kind_name:
+            data["kind"] = kind_name
         metrics = layout_score.compute_metrics(data, nodes, edges)
         metrics["score"] = layout_score.weighted_score(metrics)
         metrics.update(compute_label_metrics(svg_path, nodes, edges, diagram_kind))

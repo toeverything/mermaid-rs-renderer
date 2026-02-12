@@ -155,7 +155,27 @@ def infer_side(node, point, tol=1.0):
     return "unknown"
 
 
-def node_overlap_metrics(nodes):
+def rect_contains(a, b, eps=1e-6, min_margin=1.0):
+    ax1, ay1 = a["x"], a["y"]
+    ax2, ay2 = ax1 + a["width"], ay1 + a["height"]
+    bx1, by1 = b["x"], b["y"]
+    bx2, by2 = bx1 + b["width"], by1 + b["height"]
+    if bx1 < ax1 - eps or by1 < ay1 - eps or bx2 > ax2 + eps or by2 > ay2 + eps:
+        return False
+    left_margin = bx1 - ax1
+    right_margin = ax2 - bx2
+    top_margin = by1 - ay1
+    bottom_margin = ay2 - by2
+    # Require a visible margin so exact duplicates are still treated as overlaps.
+    return (
+        left_margin >= min_margin
+        and right_margin >= min_margin
+        and top_margin >= min_margin
+        and bottom_margin >= min_margin
+    )
+
+
+def node_overlap_metrics(nodes, allow_containment=False):
     ids = list(nodes.keys())
     overlap_count = 0
     overlap_area = 0.0
@@ -172,6 +192,8 @@ def node_overlap_metrics(nodes):
             ix2 = min(ax2, bx2)
             iy2 = min(ay2, by2)
             if ix2 > ix1 and iy2 > iy1:
+                if allow_containment and (rect_contains(a, b) or rect_contains(b, a)):
+                    continue
                 overlap_count += 1
                 overlap_area += (ix2 - ix1) * (iy2 - iy1)
     return overlap_count, overlap_area
@@ -455,7 +477,9 @@ def compute_metrics(data, nodes, edges):
         if penalty > 0.0:
             low_angular_resolution_nodes += 1
 
-    overlap_count, overlap_area = node_overlap_metrics(nodes)
+    kind = str(data.get("kind", "")).strip().lower()
+    allow_containment = kind == "treemap"
+    overlap_count, overlap_area = node_overlap_metrics(nodes, allow_containment=allow_containment)
     node_area_total = sum(
         max(0.0, node["width"]) * max(0.0, node["height"]) for node in nodes.values()
     )
