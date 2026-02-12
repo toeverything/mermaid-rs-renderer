@@ -1384,6 +1384,16 @@ fn render_sankey(layout: &SankeyLayout, theme: &Theme, _config: &LayoutConfig) -
             (text_lines + 1.0) * label_line_height * 0.5
         })
         .collect();
+    let mut rank_min_x = vec![f32::INFINITY; max_rank + 1];
+    for node in &layout.nodes {
+        let slot = &mut rank_min_x[node.rank];
+        *slot = (*slot).min(node.x);
+    }
+    for x in &mut rank_min_x {
+        if !x.is_finite() {
+            *x = 0.0;
+        }
+    }
     let edge_margin = label_font_size * 0.3;
     let preferred_gap = label_font_size * 0.25;
     for rank in 0..=max_rank {
@@ -1438,7 +1448,13 @@ fn render_sankey(layout: &SankeyLayout, theme: &Theme, _config: &LayoutConfig) -
         let align_left_of_node = node.rank > 0;
         let text_anchor = if align_left_of_node { "end" } else { "start" };
         let x = if align_left_of_node {
-            node.x - 6.0
+            let mut inward_offset = 6.0;
+            if node.rank < max_rank {
+                let prev_x = rank_min_x[node.rank.saturating_sub(1)];
+                let rank_gap = (node.x - prev_x).max(0.0);
+                inward_offset = (rank_gap * 0.2).clamp(6.0, label_font_size * 3.0);
+            }
+            node.x - inward_offset
         } else {
             node.x + layout.node_width + 6.0
         };

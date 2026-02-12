@@ -11,7 +11,8 @@ use super::{
 };
 
 pub(super) fn compute_sankey_layout(graph: &Graph, theme: &Theme, config: &LayoutConfig) -> Layout {
-    const SANKEY_WIDTH: f32 = 640.0;
+    const SANKEY_MIN_WIDTH: f32 = 560.0;
+    const SANKEY_MAX_WIDTH: f32 = 640.0;
     const SANKEY_HEIGHT: f32 = 360.0;
     const SANKEY_NODE_WIDTH: f32 = 10.0;
     const SANKEY_PALETTE: [&str; 10] = [
@@ -108,8 +109,10 @@ pub(super) fn compute_sankey_layout(graph: &Graph, theme: &Theme, config: &Layou
 
     let max_rank = ranks.iter().copied().max().unwrap_or(0);
     let num_ranks = max_rank + 1;
+    let sankey_width = (SANKEY_MIN_WIDTH + num_ranks.saturating_sub(2) as f32 * 25.0)
+        .clamp(SANKEY_MIN_WIDTH, SANKEY_MAX_WIDTH);
     let gap_x = if num_ranks > 1 {
-        ((SANKEY_WIDTH - SANKEY_NODE_WIDTH * num_ranks as f32) / (num_ranks - 1) as f32).max(0.0)
+        ((sankey_width - SANKEY_NODE_WIDTH * num_ranks as f32) / (num_ranks - 1) as f32).max(0.0)
     } else {
         0.0
     };
@@ -334,10 +337,10 @@ pub(super) fn compute_sankey_layout(graph: &Graph, theme: &Theme, config: &Layou
         nodes,
         edges,
         subgraphs: Vec::new(),
-        width: SANKEY_WIDTH,
+        width: sankey_width,
         height: SANKEY_HEIGHT,
         diagram: DiagramData::Sankey(SankeyLayout {
-            width: SANKEY_WIDTH,
+            width: sankey_width,
             height: SANKEY_HEIGHT,
             node_width: SANKEY_NODE_WIDTH,
             nodes: sankey_nodes,
