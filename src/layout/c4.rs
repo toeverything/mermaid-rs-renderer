@@ -115,6 +115,7 @@ pub(super) fn compute_c4_layout(graph: &Graph, config: &LayoutConfig) -> Layout 
             text_color: rel.text_color.clone(),
         });
     }
+    resolve_c4_rel_label_offsets(&mut rels_out, &shapes_out, conf);
 
     let mut nodes: BTreeMap<String, NodeLayout> = BTreeMap::new();
     for shape in &shapes_out {
@@ -817,4 +818,162 @@ fn c4_intersect_point(node: &C4ShapeLayout, end: (f32, f32)) -> (f32, f32) {
     } else {
         (from_center_x, from_center_y)
     }
+}
+
+#[derive(Clone, Copy)]
+struct C4Rect {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+}
+
+fn resolve_c4_rel_label_offsets(
+    rels: &mut [C4RelLayout],
+    shapes: &[C4ShapeLayout],
+    conf: &crate::config::C4Config,
+) {
+    if rels.is_empty() {
+        return;
+    }
+    let shape_obstacles: Vec<C4Rect> = shapes
+        .iter()
+        .map(|shape| C4Rect {
+            x: shape.x,
+            y: shape.y,
+            width: shape.width,
+            height: shape.height,
+        })
+        .collect();
+    let mut placed_labels: Vec<C4Rect> = Vec::with_capacity(rels.len());
+    let step = (conf.message_font_size * 1.2).max(10.0);
+
+    for rel in rels.iter_mut() {
+        let dx = rel.end.0 - rel.start.0;
+        let dy = rel.end.1 - rel.start.1;
+        let len = (dx * dx + dy * dy).sqrt();
+        let (tangent_x, tangent_y, normal_x, normal_y) = if len > 1e-3 {
+            let tx = dx / len;
+            let ty = dy / len;
+            (tx, ty, -ty, tx)
+        } else {
+            (1.0, 0.0, 0.0, -1.0)
+        };
+
+        let mut candidates = Vec::with_capacity(64);
+        candidates.push((0.0, 0.0));
+        for ring in 1..=6 {
+            let dist = step * ring as f32;
+            for normal_sign in [-1.0f32, 1.0f32] {
+                candidates.push((normal_x * dist * normal_sign, normal_y * dist * normal_sign));
+                if ring <= 3 {
+                    for tangent_sign in [-1.0f32, 1.0f32] {
+                        let tangent_dist = dist * 0.75 * tangent_sign;
+                        candidates.push((
+                            normal_x * dist * normal_sign + tangent_x * tangent_dist,
+                            normal_y * dist * normal_sign + tangent_y * tangent_dist,
+                        ));
+                    }
+                }
+            }
+        }
+
+        let mut best_delta = (0.0f32, 0.0f32);
+        let mut best_rect = c4_rel_label_rect(rel, conf, (0.0, 0.0));
+        let mut best_score = c4_rel_label_score(&best_rect, &shape_obstacles, &placed_labels, 0.0);
+
+        for delta in candidates.into_iter().skip(1) {
+            let rect = c4_rel_label_rect(rel, conf, delta);
+            let displacement = (delta.0 * delta.0 + delta.1 * delta.1).sqrt();
+            let score = c4_rel_label_score(&rect, &shape_obstacles, &placed_labels, displacement);
+            if score < best_score {
+                best_score = score;
+                best_delta = delta;
+                best_rect = rect;
+                if best_score < 1e-3 {
+                    break;
+                }
+            }
+        }
+
+        rel.offset_x += best_delta.0;
+        rel.offset_y += best_delta.1;
+        placed_labels.push(best_rect);
+    }
+}
+
+fn c4_rel_label_rect(
+    rel: &C4RelLayout,
+    conf: &crate::config::C4Config,
+    delta: (f32, f32),
+) -> C4Rect {
+    let center_x = rel.start.0.min(rel.end.0)
+        + (rel.start.0 - rel.end.0).abs() / 2.0
+        + rel.offset_x
+        + delta.0;
+    let center_y = rel.start.1.min(rel.end.1)
+        + (rel.start.1 - rel.end.1).abs() / 2.0
+        + rel.offset_y
+        + delta.1;
+    let primary_height = rel.label.height.max(conf.message_font_size);
+    let secondary_height = rel
+        .techn
+        .as_ref()
+        .map(|layout| layout.height.max(conf.message_font_size))
+        .unwrap_or(0.0);
+    let secondary_center_y = center_y + conf.message_font_size + 5.0;
+    let top = if secondary_height > 0.0 {
+        (center_y - primary_height / 2.0).min(secondary_center_y - secondary_height / 2.0)
+    } else {
+        center_y - primary_height / 2.0
+    };
+    let bottom = if secondary_height > 0.0 {
+        (center_y + primary_height / 2.0).max(secondary_center_y + secondary_height / 2.0)
+    } else {
+        center_y + primary_height / 2.0
+    };
+    let width = rel
+        .techn
+        .as_ref()
+        .map(|layout| layout.width)
+        .unwrap_or(0.0)
+        .max(rel.label.width)
+        .max(conf.message_font_size * 1.2);
+
+    C4Rect {
+        x: center_x - width / 2.0,
+        y: top,
+        width,
+        height: (bottom - top).max(primary_height),
+    }
+}
+
+fn c4_rel_label_score(
+    rect: &C4Rect,
+    shape_obstacles: &[C4Rect],
+    placed_labels: &[C4Rect],
+    displacement: f32,
+) -> f32 {
+    let shape_overlap: f32 = shape_obstacles
+        .iter()
+        .map(|obstacle| c4_rect_overlap_area(*rect, *obstacle))
+        .sum();
+    let label_overlap: f32 = placed_labels
+        .iter()
+        .map(|placed| c4_rect_overlap_area(*rect, *placed))
+        .sum();
+    shape_overlap * 6.0 + label_overlap * 9.0 + displacement * 0.015
+}
+
+fn c4_rect_overlap_area(a: C4Rect, b: C4Rect) -> f32 {
+    let ax2 = a.x + a.width;
+    let ay2 = a.y + a.height;
+    let bx2 = b.x + b.width;
+    let by2 = b.y + b.height;
+    let ix = ax2.min(bx2) - a.x.max(b.x);
+    let iy = ay2.min(by2) - a.y.max(b.y);
+    if ix <= 0.0 || iy <= 0.0 {
+        return 0.0;
+    }
+    ix * iy
 }

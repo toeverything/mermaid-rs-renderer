@@ -2803,11 +2803,15 @@ fn apply_state_subgraph_layouts(
         // For nodes in this subgraph that are also inner subgraph anchors,
         // temporarily set their size to the inner subgraph's box size
         let mut saved_sizes: Vec<(String, f32, f32)> = Vec::new();
+        let mut inner_anchor_ids: Vec<String> = Vec::new();
         for node_id in &sub.nodes {
             for (j, inner_sub) in graph.subgraphs.iter().enumerate() {
                 if let Some((_, _, w, h)) = inner_boxes.get(&j) {
                     let inner_id = inner_sub.id.as_deref().unwrap_or("");
                     if node_id == inner_id || node_id == &inner_sub.label {
+                        if !inner_anchor_ids.iter().any(|id| id == node_id) {
+                            inner_anchor_ids.push(node_id.clone());
+                        }
                         if let Some(node) = nodes.get(node_id) {
                             saved_sizes.push((node_id.clone(), node.width, node.height));
                         }
@@ -2830,6 +2834,16 @@ fn apply_state_subgraph_layouts(
             min_x,
             min_y,
         );
+
+        // Keep nested composite-state headers clear of parent headers.
+        let nested_anchor_min_y = min_y + (config.node_spacing * 0.4).max(20.0);
+        for anchor_id in &inner_anchor_ids {
+            if let Some(anchor) = nodes.get_mut(anchor_id)
+                && anchor.y < nested_anchor_min_y
+            {
+                anchor.y = nested_anchor_min_y;
+            }
+        }
 
         // Restore original sizes for anchor nodes
         for (id, w, h) in saved_sizes {
@@ -5017,7 +5031,11 @@ fn build_subgraph_layouts(
                 if is_region_subgraph(&graph.subgraphs[j]) {
                     continue;
                 }
-                let pad = 12.0;
+                let pad = if graph.kind == crate::ir::DiagramKind::State {
+                    (theme.font_size * 1.8).max(24.0)
+                } else {
+                    12.0
+                };
                 let (child_x, child_y, child_w, child_h) = {
                     let child = &subgraphs[j];
                     (child.x, child.y, child.width, child.height)

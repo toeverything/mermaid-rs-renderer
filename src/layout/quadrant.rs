@@ -71,10 +71,16 @@ pub(super) fn compute_quadrant_layout(
             .map(|t| measure_label(t, theme, config)),
     ];
 
-    let y_axis_width = y_bottom
+    let y_axis_label_width = y_bottom
         .as_ref()
-        .map(|t| t.height + padding)
-        .unwrap_or(padding);
+        .map(|t| t.width)
+        .unwrap_or(0.0)
+        .max(y_top.as_ref().map(|t| t.width).unwrap_or(0.0));
+    let y_axis_width = if y_axis_label_width > 0.0 {
+        y_axis_label_width + padding
+    } else {
+        padding
+    };
     let x_axis_height = x_left
         .as_ref()
         .map(|t| t.height + padding)

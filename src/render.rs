@@ -1369,9 +1369,23 @@ fn render_sankey(layout: &SankeyLayout, theme: &Theme, _config: &LayoutConfig) -
         .iter()
         .map(|node| node.y + node.height / 2.0)
         .collect();
-    let min_label_y = label_font_size * 0.9;
-    let max_label_y = (layout.height - label_font_size * 0.7).max(min_label_y + 1.0);
-    let min_label_gap = label_font_size * 1.35;
+    let label_line_height = label_font_size * 1.2;
+    let label_half_heights: Vec<f32> = layout
+        .nodes
+        .iter()
+        .map(|node| {
+            let text_lines = node
+                .label
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .count()
+                .max(1) as f32;
+            // Node labels always render one additional value line below the title.
+            (text_lines + 1.0) * label_line_height * 0.5
+        })
+        .collect();
+    let edge_margin = label_font_size * 0.3;
+    let preferred_gap = label_font_size * 0.25;
     for rank in 0..=max_rank {
         let mut indices: Vec<usize> = layout
             .nodes
@@ -1387,27 +1401,32 @@ fn render_sankey(layout: &SankeyLayout, theme: &Theme, _config: &LayoutConfig) -
                 .partial_cmp(&label_y[*b])
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-        let mut prev = min_label_y - min_label_gap;
-        for idx in &indices {
-            let y = label_y[*idx].max(prev + min_label_gap);
-            label_y[*idx] = y;
-            prev = y;
+        let first_idx = indices[0];
+        let last_idx = *indices.last().unwrap_or(&first_idx);
+        let top = edge_margin + label_half_heights[first_idx];
+        let bottom = (layout.height - edge_margin - label_half_heights[last_idx]).max(top);
+
+        if indices.len() == 1 {
+            label_y[first_idx] = label_y[first_idx].clamp(top, bottom);
+            continue;
         }
-        if let Some(last_idx) = indices.last().copied() {
-            let overflow = label_y[last_idx] - max_label_y;
-            if overflow > 0.0 {
-                for idx in &indices {
-                    label_y[*idx] -= overflow;
-                }
-            }
+
+        let mut half_pair_span = 0.0;
+        for pair in indices.windows(2) {
+            half_pair_span += label_half_heights[pair[0]] + label_half_heights[pair[1]];
         }
-        if let Some(first_idx) = indices.first().copied() {
-            let underflow = min_label_y - label_y[first_idx];
-            if underflow > 0.0 {
-                for idx in &indices {
-                    label_y[*idx] += underflow;
-                }
-            }
+        let available_span = (bottom - top).max(0.0);
+        let max_gap = (available_span - half_pair_span) / (indices.len() - 1) as f32;
+        let gap = preferred_gap.min(max_gap.max(0.0));
+        let required_span = half_pair_span + gap * (indices.len() - 1) as f32;
+        let first_max = (bottom - required_span).max(top);
+
+        label_y[first_idx] = label_y[first_idx].clamp(top, first_max);
+        for pair in indices.windows(2) {
+            let prev_idx = pair[0];
+            let cur_idx = pair[1];
+            let min_gap = label_half_heights[prev_idx] + label_half_heights[cur_idx] + gap;
+            label_y[cur_idx] = label_y[prev_idx] + min_gap;
         }
     }
 
@@ -1428,7 +1447,7 @@ fn render_sankey(layout: &SankeyLayout, theme: &Theme, _config: &LayoutConfig) -
         let value = format_sankey_value(node.total);
         let first_y = y - label_font_size * 0.4;
         svg.push_str(&format!(
-            "<text x=\"{x:.2}\" y=\"{first_y:.2}\" dy=\"0em\" text-anchor=\"{text_anchor}\"><tspan x=\"{x:.2}\" dy=\"0em\">{label}</tspan><tspan x=\"{x:.2}\" dy=\"1.15em\">{value}</tspan></text>"
+            "<text x=\"{x:.2}\" y=\"{first_y:.2}\" dy=\"0em\" text-anchor=\"{text_anchor}\" font-size=\"{label_font_size:.1}\"><tspan x=\"{x:.2}\" dy=\"0em\">{label}</tspan><tspan x=\"{x:.2}\" dy=\"1.15em\">{value}</tspan></text>"
         ));
     }
     svg.push_str("</g>");
@@ -2628,24 +2647,24 @@ fn render_quadrant(
         ));
     }
     if let Some(ref y_bottom) = layout.y_axis_bottom {
+        let axis_x = grid_x - theme.font_size * 2.2;
+        let axis_y = grid_y + half_h + half_h / 2.0;
         svg.push_str(&format!(
-            "<text x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"middle\" transform=\"rotate(-90 {:.2} {:.2})\" font-family=\"{}\" font-size=\"{}\" fill=\"#131300\"><tspan>{}</tspan></text>",
-            grid_x - 15.0,
-            grid_y + half_h + half_h / 2.0,
-            grid_x - 15.0,
-            grid_y + half_h + half_h / 2.0,
+            "<text x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"end\" dominant-baseline=\"middle\" font-family=\"{}\" font-size=\"{}\" fill=\"#131300\"><tspan>{}</tspan></text>",
+            axis_x,
+            axis_y,
             theme.font_family,
             theme.font_size,
             y_bottom.lines.first().map(|s| s.as_str()).unwrap_or("")
         ));
     }
     if let Some(ref y_top) = layout.y_axis_top {
+        let axis_x = grid_x - theme.font_size * 2.2;
+        let axis_y = grid_y + half_h / 2.0;
         svg.push_str(&format!(
-            "<text x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"middle\" transform=\"rotate(-90 {:.2} {:.2})\" font-family=\"{}\" font-size=\"{}\" fill=\"#131300\"><tspan>{}</tspan></text>",
-            grid_x - 15.0,
-            grid_y + half_h / 2.0,
-            grid_x - 15.0,
-            grid_y + half_h / 2.0,
+            "<text x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"end\" dominant-baseline=\"middle\" font-family=\"{}\" font-size=\"{}\" fill=\"#131300\"><tspan>{}</tspan></text>",
+            axis_x,
+            axis_y,
             theme.font_family,
             theme.font_size,
             y_top.lines.first().map(|s| s.as_str()).unwrap_or("")
