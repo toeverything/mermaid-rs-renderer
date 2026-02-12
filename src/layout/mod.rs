@@ -246,6 +246,7 @@ fn compute_flowchart_layout(
     let mut effective_config = config.clone();
     let mut hub_compaction_scale: Option<f32> = None;
     let mut hub_compaction_floor = 0.0f32;
+    let mut prefer_direct_hub_routing = false;
     if graph.kind == crate::ir::DiagramKind::Requirement {
         effective_config.max_label_width_chars = effective_config.max_label_width_chars.max(32);
     }
@@ -302,12 +303,19 @@ fn compute_flowchart_layout(
             hub_compaction_scale = Some(hub_scale);
             hub_compaction_floor = auto.min_spacing * 0.5;
         }
+        if node_count >= 12 && hub_ratio >= 0.40 && density <= 2.5 {
+            prefer_direct_hub_routing = true;
+        }
     }
     let node_count = graph.nodes.len();
     let edge_count = graph.edges.len();
     let tiny_graph = graph.subgraphs.is_empty() && node_count <= 4 && edge_count <= 4;
     if tiny_graph {
         effective_config.flowchart.order_passes = 1;
+        effective_config.flowchart.routing.enable_grid_router = false;
+        effective_config.flowchart.routing.snap_ports_to_grid = false;
+    }
+    if prefer_direct_hub_routing {
         effective_config.flowchart.routing.enable_grid_router = false;
         effective_config.flowchart.routing.snap_ports_to_grid = false;
     }
