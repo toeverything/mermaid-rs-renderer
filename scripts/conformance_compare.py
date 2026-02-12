@@ -23,6 +23,8 @@ def run(cmd):
 
 
 def relative_path(file: Path, base_dir: Path) -> Path:
+    file = file.resolve()
+    base_dir = base_dir.resolve()
     try:
         return file.relative_to(base_dir)
     except ValueError:

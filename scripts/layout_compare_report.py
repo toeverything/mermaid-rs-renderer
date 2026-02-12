@@ -30,6 +30,8 @@ def ensure_bin(bin_path: Path):
 
 
 def layout_key(path: Path, base: Path) -> str:
+    path = Path(path).resolve()
+    base = Path(base).resolve()
     try:
         rel = path.relative_to(base)
     except ValueError:
