@@ -182,6 +182,8 @@ to avoid rerunning slow CLI loops on unchanged inputs:
   `MMDC_CONFIG`
 - default mermaid-cli sampling is lightweight for speed:
   `MMD_CLI_RUNS=1`, `MMD_CLI_WARMUP=0` (override as needed)
+- mermaid-cli execution is parallelized by default with
+  `MMD_CLI_JOBS=min(4, cpu_count)`; set `MMD_CLI_JOBS=1` for serial runs
 - when `MMD_CLI_WARMUP=0`, bench runs do not perform an extra preflight CLI
   invocation, so cold runtime scales with measured run count only
 - mermaid-cli memory probing is opt-in (`MMD_CLI_MEASURE_MEMORY=1`) because it
@@ -198,6 +200,8 @@ MMDC_CACHE_DIR=tmp/benchmark-cache/bench-compare/mmdc python3 scripts/bench_comp
 NO_MMDC_CACHE=1 python3 scripts/bench_compare.py
 MMDC_CONFIG=tests/fixtures/modern-config.json python3 scripts/bench_compare.py
 MMD_CLI_RUNS=5 MMD_CLI_WARMUP=1 python3 scripts/bench_compare.py
+MMD_CLI_JOBS=1 python3 scripts/bench_compare.py
+MMD_CLI_JOBS=4 python3 scripts/bench_compare.py
 MMD_CLI_MEASURE_MEMORY=1 python3 scripts/bench_compare.py
 MMDR_MEASURE_MEMORY=1 python3 scripts/bench_compare.py
 ```

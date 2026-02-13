@@ -16,6 +16,7 @@ import subprocess
 import sys
 import time
 import datetime
+import concurrent.futures
 import getpass
 import hashlib
 import platform
@@ -43,6 +44,9 @@ WARMUP = int(os.environ.get("WARMUP", "2"))
 MMDR_MEASURE_MEMORY = False
 MMD_CLI_RUNS = int(os.environ.get("MMD_CLI_RUNS", "1"))
 MMD_CLI_WARMUP = int(os.environ.get("MMD_CLI_WARMUP", "0"))
+MMD_CLI_JOBS = int(
+    os.environ.get("MMD_CLI_JOBS", str(max(1, min(4, os.cpu_count() or 1))))
+)
 MMD_CLI_MEASURE_MEMORY = False
 MMDC_CONFIG = os.environ.get("MMDC_CONFIG", "")
 HISTORY_LOG = Path(
@@ -422,13 +426,13 @@ def bench_mermaid_cli(path: Path, cache_state: dict):
         cache_svg_path = Path(cache_state["dir"]) / f"{digest}.svg"
         cached = load_json_if_exists(cache_json_path)
         if cached is not None:
-            cache_state["hits"] += 1
             if cache_svg_path.exists():
                 shutil.copy2(cache_svg_path, out)
             cached_result = dict(cached)
             cached_result["cached"] = True
+            cached_result["cache_hit"] = 1
+            cached_result["cache_miss"] = 0
             return cached_result
-        cache_state["misses"] += 1
 
     times = []
 
@@ -441,6 +445,8 @@ def bench_mermaid_cli(path: Path, cache_state: dict):
                 "times": [],
                 "memory_kb": None,
                 "error": short_error(stderr) or "mmdc failed",
+                "cache_hit": 0,
+                "cache_miss": 1 if cache_json_path else 0,
             }
             if cache_json_path:
                 save_json(cache_json_path, result)
@@ -457,6 +463,8 @@ def bench_mermaid_cli(path: Path, cache_state: dict):
                 "times": [],
                 "memory_kb": None,
                 "error": short_error(stderr) or "mmdc failed",
+                "cache_hit": 0,
+                "cache_miss": 1 if cache_json_path else 0,
             }
             if cache_json_path:
                 save_json(cache_json_path, result)
@@ -469,6 +477,8 @@ def bench_mermaid_cli(path: Path, cache_state: dict):
     result = {
         "times": times,
         "memory_kb": memory_kb,
+        "cache_hit": 0,
+        "cache_miss": 1 if cache_json_path else 0,
     }
     if cache_json_path:
         save_json(cache_json_path, result)
@@ -719,25 +729,62 @@ def main():
         print(
             "  sampling config: "
             f"runs={MMD_CLI_RUNS}, warmup={MMD_CLI_WARMUP}, "
-            f"measure_memory={str(MMD_CLI_MEASURE_MEMORY).lower()}"
+            f"jobs={MMD_CLI_JOBS}, measure_memory={str(MMD_CLI_MEASURE_MEMORY).lower()}"
         )
         phase_start = time.perf_counter()
-        for name, path in CASES:
-            print(f"  {name}...", end=" ", flush=True)
-            data = bench_mermaid_cli(path, mmdc_cache_state)
+        cli_data_by_case = {}
+        if MMD_CLI_JOBS <= 1:
+            for name, path in CASES:
+                print(f"  {name}...", end=" ", flush=True)
+                data = bench_mermaid_cli(path, mmdc_cache_state)
+                cli_data_by_case[name] = data
+                if data.get("error"):
+                    print(f"error={data['error']}")
+                else:
+                    cached_suffix = " (cached)" if data.get("cached") else ""
+                    print(
+                        f"total={summarize(data['times'])['mean_ms']:.2f}ms{cached_suffix}"
+                    )
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=MMD_CLI_JOBS) as pool:
+                future_to_name = {
+                    pool.submit(bench_mermaid_cli, path, mmdc_cache_state): name
+                    for name, path in CASES
+                }
+                completed = 0
+                total = len(CASES)
+                for future in concurrent.futures.as_completed(future_to_name):
+                    name = future_to_name[future]
+                    data = future.result()
+                    cli_data_by_case[name] = data
+                    completed += 1
+                    if data.get("error"):
+                        print(f"  [{completed:>2}/{total}] {name}... error={data['error']}")
+                    else:
+                        cached_suffix = " (cached)" if data.get("cached") else ""
+                        print(
+                            f"  [{completed:>2}/{total}] {name}... "
+                            f"total={summarize(data['times'])['mean_ms']:.2f}ms{cached_suffix}"
+                        )
+
+        cache_hits = 0
+        cache_misses = 0
+        for name, _ in CASES:
+            data = cli_data_by_case.get(name, {})
+            cache_hits += int(data.get("cache_hit", 0))
+            cache_misses += int(data.get("cache_miss", 0))
             if data.get("error"):
                 results["mermaid_cli"][name] = {
                     "error": data["error"],
-                    "memory_kb": data["memory_kb"],
+                    "memory_kb": data.get("memory_kb"),
                 }
-                print(f"error={data['error']}")
             else:
                 results["mermaid_cli"][name] = {
                     **summarize(data["times"]),
-                    "memory_kb": data["memory_kb"],
+                    "memory_kb": data.get("memory_kb"),
                 }
-                cached_suffix = " (cached)" if data.get("cached") else ""
-                print(f"total={results['mermaid_cli'][name]['mean_ms']:.2f}ms{cached_suffix}")
+        mmdc_cache_state["hits"] = cache_hits
+        mmdc_cache_state["misses"] = cache_misses
         runtime["mermaid_cli_s"] = time.perf_counter() - phase_start
 
     # Print summary
@@ -827,6 +874,7 @@ def main():
                 "mmdr_measure_memory": MMDR_MEASURE_MEMORY,
                 "mmd_cli_runs": MMD_CLI_RUNS,
                 "mmd_cli_warmup": MMD_CLI_WARMUP,
+                "mmd_cli_jobs": MMD_CLI_JOBS,
                 "mmd_cli_measure_memory": MMD_CLI_MEASURE_MEMORY,
                 "mmdc_config": MMDC_CONFIG,
                 "cases": [name for name, _ in CASES],
