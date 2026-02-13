@@ -345,6 +345,25 @@ mod tests {
         svg[start..end].parse::<f32>().ok()
     }
 
+    fn parse_viewbox_ratio(svg: &str) -> Option<f32> {
+        let marker = "viewBox=\"";
+        let start = svg.find(marker)? + marker.len();
+        let end = svg[start..].find('"')? + start;
+        let parts: Vec<&str> = svg[start..end]
+            .split(|ch: char| ch.is_ascii_whitespace() || ch == ',')
+            .filter(|part| !part.is_empty())
+            .collect();
+        if parts.len() < 4 {
+            return None;
+        }
+        let width = parts[2].parse::<f32>().ok()?;
+        let height = parts[3].parse::<f32>().ok()?;
+        if width <= 0.0 || height <= 0.0 {
+            return None;
+        }
+        Some(width / height)
+    }
+
     #[test]
     fn test_render_simple() {
         let svg = render("flowchart LR; A-->B").unwrap();
@@ -423,5 +442,22 @@ mod tests {
         let height = parse_svg_attr(&svg, "height").expect("height");
         let ratio = width / height;
         assert!((ratio - (16.0 / 9.0)).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_preferred_aspect_ratio_rebalances_viewbox_layout() {
+        let input = "flowchart LR; A-->B-->C-->D-->E";
+        let base_svg = render(input).unwrap();
+        let base_ratio = parse_viewbox_ratio(&base_svg).expect("base viewBox ratio");
+
+        let target_ratio = 1.0;
+        let opts = RenderOptions::default().with_preferred_aspect_ratio(target_ratio);
+        let tuned_svg = render_with_options(input, opts).unwrap();
+        let tuned_ratio = parse_viewbox_ratio(&tuned_svg).expect("tuned viewBox ratio");
+
+        assert!(
+            (tuned_ratio - target_ratio).abs() + 0.01 < (base_ratio - target_ratio).abs(),
+            "expected preferred ratio to move viewBox ratio toward target (base={base_ratio:.3}, tuned={tuned_ratio:.3})"
+        );
     }
 }

@@ -302,6 +302,8 @@ mmdr -i diagram.mmd -o out.svg --nodeSpacing 60 --rankSpacing 120
 mmdr -i diagram.mmd -o out.svg --preferredAspectRatio 16:9
 ```
 
+`preferredAspectRatio` is layout-aware for graph diagrams: the renderer first rebalances geometry toward the target ratio, then fits final SVG dimensions to that ratio.
+
 <details>
 <summary><strong>config.json example</strong></summary>
 

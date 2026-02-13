@@ -56,6 +56,8 @@ const LABEL_RANK_MIN_GAP: f32 = 8.0;
 
 // Minimum padding around the entire layout bounding box.
 const LAYOUT_BOUNDARY_PAD: f32 = 8.0;
+const PREFERRED_ASPECT_TOLERANCE: f32 = 0.02;
+const PREFERRED_ASPECT_MAX_EXPANSION: f32 = 6.0;
 
 // ── State diagram constants ───────────────────────────────────────────
 const STATE_MARKER_FONT_SCALE: f32 = 0.75;
@@ -204,6 +206,8 @@ pub fn compute_layout_with_metrics(
             compute_flowchart_layout(graph, theme, config, Some(&mut stage_metrics))
         }
     };
+
+    apply_preferred_aspect_ratio_layout(&mut layout, config);
 
     // Final pass: resolve all edge label positions using collision avoidance.
     let label_start = Instant::now();
@@ -3168,6 +3172,81 @@ fn bounds_with_edges(
         }
     }
     (max_x, max_y)
+}
+
+fn apply_preferred_aspect_ratio_layout(layout: &mut Layout, config: &LayoutConfig) {
+    let Some(target_ratio) = config
+        .preferred_aspect_ratio
+        .filter(|ratio| ratio.is_finite() && *ratio > 0.0)
+    else {
+        return;
+    };
+    if !matches!(layout.diagram, DiagramData::Graph { .. }) {
+        return;
+    }
+
+    let width = layout.width.max(1.0);
+    let height = layout.height.max(1.0);
+    let current_ratio = width / height;
+    if (current_ratio - target_ratio).abs() <= PREFERRED_ASPECT_TOLERANCE {
+        return;
+    }
+
+    let mut scale_x = 1.0f32;
+    let mut scale_y = 1.0f32;
+    if current_ratio < target_ratio {
+        scale_x = (target_ratio / current_ratio).clamp(1.0, PREFERRED_ASPECT_MAX_EXPANSION);
+    } else {
+        scale_y = (current_ratio / target_ratio).clamp(1.0, PREFERRED_ASPECT_MAX_EXPANSION);
+    }
+    if (scale_x - 1.0).abs() <= 1e-3 && (scale_y - 1.0).abs() <= 1e-3 {
+        return;
+    }
+
+    for node in layout.nodes.values_mut() {
+        node.x *= scale_x;
+        node.y *= scale_y;
+    }
+    for edge in &mut layout.edges {
+        for point in &mut edge.points {
+            point.0 *= scale_x;
+            point.1 *= scale_y;
+        }
+        if let Some(anchor) = edge.label_anchor.as_mut() {
+            anchor.0 *= scale_x;
+            anchor.1 *= scale_y;
+        }
+        if let Some(anchor) = edge.start_label_anchor.as_mut() {
+            anchor.0 *= scale_x;
+            anchor.1 *= scale_y;
+        }
+        if let Some(anchor) = edge.end_label_anchor.as_mut() {
+            anchor.0 *= scale_x;
+            anchor.1 *= scale_y;
+        }
+    }
+    for sub in &mut layout.subgraphs {
+        sub.x *= scale_x;
+        sub.y *= scale_y;
+        sub.width *= scale_x;
+        sub.height *= scale_y;
+    }
+    if let DiagramData::Graph { state_notes } = &mut layout.diagram {
+        for note in state_notes {
+            note.x *= scale_x;
+            note.y *= scale_y;
+        }
+    }
+
+    let (mut max_x, mut max_y) = bounds_with_edges(&layout.nodes, &layout.subgraphs, &layout.edges);
+    if let DiagramData::Graph { state_notes } = &layout.diagram {
+        for note in state_notes {
+            max_x = max_x.max(note.x + note.width);
+            max_y = max_y.max(note.y + note.height);
+        }
+    }
+    layout.width = (max_x + LAYOUT_BOUNDARY_PAD).max(1.0);
+    layout.height = (max_y + LAYOUT_BOUNDARY_PAD).max(1.0);
 }
 
 fn flowchart_path_overlap_with_prior(path: &[(f32, f32)], prior: &[Vec<(f32, f32)>]) -> f32 {
