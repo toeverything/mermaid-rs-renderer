@@ -259,7 +259,8 @@ pub(super) fn compute_sequence_layout(
             if frame.start_idx >= frame.end_idx || frame.start_idx >= message_ys.len() {
                 continue;
             }
-            let mut xs = Vec::new();
+            let mut min_x = f32::INFINITY;
+            let mut max_x = f32::NEG_INFINITY;
             for edge in graph
                 .edges
                 .iter()
@@ -267,22 +268,20 @@ pub(super) fn compute_sequence_layout(
                 .take(frame.end_idx.saturating_sub(frame.start_idx))
             {
                 if let Some(node) = nodes.get(&edge.from) {
-                    xs.push(node.x + node.width / 2.0);
+                    min_x = min_x.min(node.x);
+                    max_x = max_x.max(node.x + node.width);
                 }
                 if let Some(node) = nodes.get(&edge.to) {
-                    xs.push(node.x + node.width / 2.0);
+                    min_x = min_x.min(node.x);
+                    max_x = max_x.max(node.x + node.width);
                 }
             }
-            if xs.is_empty() {
+            if !min_x.is_finite() || !max_x.is_finite() {
                 for node in nodes.values() {
-                    xs.push(node.x + node.width / 2.0);
+                    min_x = min_x.min(node.x);
+                    max_x = max_x.max(node.x + node.width);
                 }
             }
-            let (min_x, max_x) = xs
-                .iter()
-                .fold((f32::INFINITY, f32::NEG_INFINITY), |acc, x| {
-                    (acc.0.min(*x), acc.1.max(*x))
-                });
             if !min_x.is_finite() || !max_x.is_finite() {
                 continue;
             }
@@ -351,24 +350,31 @@ pub(super) fn compute_sequence_layout(
                     let display = format!("[{}]", label);
                     let block = measure_label(&display, theme, config);
                     let label_y = if section_idx == 0 {
-                        frame_y + label_offset + theme.font_size * 1.3
+                        // Keep the first section label close to the frame header
+                        // so it does not collide with the first message row.
+                        frame_y + label_box_h + theme.font_size * 0.45
                     } else {
+                        // Keep else/and section labels on the divider's upper side
+                        // to reduce collisions with the following message row text.
                         dividers
                             .get(section_idx - 1)
                             .copied()
                             .unwrap_or(frame_y + label_offset)
-                            + label_offset
+                            - (theme.font_size * 0.35)
                     };
-                    let default_x = frame_x + frame_width / 2.0;
+                    let side_pad = theme.font_size * 0.45;
                     let label_x = if section_idx == 0 {
                         let preferred =
-                            frame_x + label_box_w + theme.font_size * 0.4 + block.width / 2.0;
+                            frame_x + label_box_w + theme.font_size * 1.6 + block.width / 2.0;
                         let min_x = frame_x + block.width / 2.0 + theme.font_size * 0.4;
                         let max_x =
                             frame_x + frame_width - block.width / 2.0 - theme.font_size * 0.4;
                         preferred.clamp(min_x, max_x)
                     } else {
-                        default_x
+                        let preferred = frame_x + side_pad + block.width / 2.0;
+                        let min_x = frame_x + block.width / 2.0 + side_pad;
+                        let max_x = frame_x + frame_width - block.width / 2.0 - side_pad;
+                        preferred.clamp(min_x, max_x)
                     };
                     section_labels.push(SequenceLabel {
                         x: label_x,
@@ -557,9 +563,10 @@ pub(super) fn compute_sequence_layout(
                     .map(|node| node.x + node.width / 2.0)
                     .unwrap_or(from_x);
                 let offset = if to_x >= from_x { 16.0 } else { -16.0 };
+                let number_y = y - (theme.font_size * 0.85).max(10.0);
                 sequence_numbers.push(SequenceNumberLayout {
                     x: from_x + offset,
-                    y,
+                    y: number_y,
                     value,
                 });
                 value += 1;
@@ -821,12 +828,14 @@ fn place_sequence_label_anchors(
     }
     for frame in frames {
         occupied.push(frame.label_box);
+        let section_pad_x = (theme.font_size * 0.18).max(1.5);
+        let section_pad_y = (theme.font_size * 0.15).max(1.2);
         for label in &frame.section_labels {
             occupied.push((
-                label.x - label.text.width / 2.0,
-                label.y - label.text.height / 2.0,
-                label.text.width,
-                label.text.height,
+                label.x - label.text.width / 2.0 - section_pad_x,
+                label.y - label.text.height / 2.0 - section_pad_y,
+                label.text.width + section_pad_x * 2.0,
+                label.text.height + section_pad_y * 2.0,
             ));
         }
     }
