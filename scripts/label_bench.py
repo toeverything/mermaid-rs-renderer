@@ -132,6 +132,16 @@ def main():
         default=os.environ.get("MMD_CLI", "npx -y @mermaid-js/mermaid-cli"),
         help="mermaid-cli command (default: env MMD_CLI or npx -y @mermaid-js/mermaid-cli)",
     )
+    parser.add_argument(
+        "--mmdc-cache-dir",
+        default=str(ROOT / "tmp" / "benchmark-cache" / "mmdc"),
+        help="cache dir for mermaid-cli SVG/metrics reuse across runs",
+    )
+    parser.add_argument(
+        "--no-mmdc-cache",
+        action="store_true",
+        help="disable mermaid-cli cache reuse",
+    )
     parser.add_argument("--limit", type=int, default=0, help="limit number of fixtures")
     parser.add_argument(
         "--pattern",
@@ -172,7 +182,14 @@ def main():
         qb.build_release(bin_path)
         results["mmdr"] = qb.compute_mmdr_metrics(files, bin_path, config_path, out_dir)
     if args.engine in {"mmdc", "both"}:
-        results["mermaid_cli"] = qb.compute_mmdc_metrics(files, args.mmdc, config_path, out_dir)
+        results["mermaid_cli"] = qb.compute_mmdc_metrics(
+            files,
+            args.mmdc,
+            config_path,
+            out_dir,
+            cache_dir=Path(args.mmdc_cache_dir),
+            use_cache=not args.no_mmdc_cache,
+        )
 
     if args.engine == "mmdr":
         payload = results["mmdr"]
@@ -284,6 +301,8 @@ def main():
                 "output_json": str(output_json),
                 "config": str(config_path),
                 "bin": args.bin,
+                "mmdc_cache_dir": str(Path(args.mmdc_cache_dir)),
+                "mmdc_cache_enabled": (not args.no_mmdc_cache),
             },
             "host": qb.host_metadata(),
             "git": qb.git_metadata(),

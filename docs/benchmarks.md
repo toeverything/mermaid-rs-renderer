@@ -123,6 +123,20 @@ Disable per run if needed:
 python3 scripts/quality_bench.py --engine both --no-history-log
 ```
 
+Mermaid-cli caching is enabled by default for `quality_bench.py` and
+`label_bench.py`:
+- cache dir: `tmp/benchmark-cache/mmdc`
+- cache key inputs: fixture contents, config contents, mermaid-cli command,
+  mermaid-cli version, and benchmark script revision
+
+Useful flags:
+
+```bash
+python3 scripts/quality_bench.py --engine both --mmdc-cache-dir tmp/benchmark-cache/mmdc
+python3 scripts/quality_bench.py --engine both --no-mmdc-cache
+python3 scripts/label_bench.py --engine both --no-mmdc-cache
+```
+
 ## Label Path-Gap Benchmark
 
 To benchmark edge-label placement directly, use:

@@ -2,6 +2,7 @@
 import argparse
 import datetime
 import getpass
+import hashlib
 import importlib.util
 import json
 import math
@@ -9,6 +10,7 @@ import os
 import platform
 import re
 import shlex
+import shutil
 import socket
 import subprocess
 import sys
@@ -22,6 +24,7 @@ TOKEN_RE = re.compile(r"[AaCcHhLlMmQqSsTtVvZz]|[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?
 PIPE_EDGE_LABEL_RE = re.compile(r"\|[^|\n]+\|")
 QUOTED_EDGE_LABEL_RE = re.compile(r"--\s*\"[^\"]+\"")
 SEQUENCE_MESSAGE_LABEL_RE = re.compile(r"-{1,2}[x+o]?>{1,2}.*:\s*\S")
+MMDC_CACHE_SCHEMA_VERSION = 1
 
 
 def load_layout_score():
@@ -1297,6 +1300,77 @@ def run_mmdc(input_path: Path, svg_path: Path, cli_cmd: str, config_path: Path):
     return run(cmd, env=env)
 
 
+def mmdc_cli_identity(cli_cmd: str) -> str:
+    res = run(shlex.split(cli_cmd) + ["--version"])
+    out = (res.stdout or "").strip()
+    err = (res.stderr or "").strip()
+    identity = out or err or f"rc={res.returncode}"
+    return identity.splitlines()[-1][:240]
+
+
+def mmdc_cache_digest(
+    fixture_path: Path,
+    config_path: Path,
+    cli_cmd: str,
+    cli_identity: str,
+    script_digest: str,
+) -> str:
+    hasher = hashlib.sha256()
+    hasher.update(f"schema:{MMDC_CACHE_SCHEMA_VERSION}\n".encode("utf-8"))
+    hasher.update(f"cli:{cli_cmd}\n".encode("utf-8"))
+    hasher.update(f"cli_identity:{cli_identity}\n".encode("utf-8"))
+    hasher.update(f"script:{script_digest}\n".encode("utf-8"))
+    hasher.update(fixture_path.read_bytes())
+    if config_path.exists():
+        hasher.update(config_path.read_bytes())
+    return hasher.hexdigest()
+
+
+def load_json_if_exists(path: Path):
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def save_json(path: Path, payload: dict):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, separators=(",", ":"), sort_keys=True), encoding="utf-8")
+
+
+def compute_mmdc_svg_metrics(
+    svg_path: Path,
+    layout_score,
+    diagram_kind: str,
+    allow_fallback_labels: bool,
+    expected_sequence_labels,
+):
+    data, nodes, edges = load_mermaid_svg_graph(svg_path)
+    kind_name = layout_kind_name(diagram_kind)
+    if kind_name:
+        data["kind"] = kind_name
+    metrics = layout_score.compute_metrics(data, nodes, edges)
+    metrics["score"] = layout_score.weighted_score(metrics)
+    metrics.update(
+        compute_label_metrics(
+            svg_path,
+            nodes,
+            edges,
+            diagram_kind,
+            allow_fallback_candidates=allow_fallback_labels,
+            expected_edge_label_count=expected_sequence_labels,
+        )
+    )
+    svg_metrics = compute_svg_edge_path_metrics(edges)
+    metrics.update(svg_metrics)
+    metrics["arrow_path_intersections"] = svg_metrics.get("svg_edge_crossings", 0)
+    metrics["arrow_path_overlap_length"] = svg_metrics.get("svg_edge_overlap_length", 0.0)
+    return metrics
+
+
 def compute_mmdr_metrics(files, bin_path, config_path, out_dir):
     layout_score = load_layout_score()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1353,9 +1427,16 @@ def compute_mmdr_metrics(files, bin_path, config_path, out_dir):
     return results
 
 
-def compute_mmdc_metrics(files, cli_cmd, config_path, out_dir):
+def compute_mmdc_metrics(files, cli_cmd, config_path, out_dir, cache_dir=None, use_cache=True):
     layout_score = load_layout_score()
     out_dir.mkdir(parents=True, exist_ok=True)
+    cache_dir = Path(cache_dir) if cache_dir else ROOT / "tmp" / "benchmark-cache" / "mmdc"
+    if use_cache:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    cli_identity = mmdc_cli_identity(cli_cmd) if use_cache else ""
+    script_digest = (
+        hashlib.sha256(Path(__file__).read_bytes()).hexdigest() if use_cache else ""
+    )
     results = {}
     for file in files:
         diagram_kind = detect_diagram_kind(file)
@@ -1365,32 +1446,43 @@ def compute_mmdc_metrics(files, cli_cmd, config_path, out_dir):
         )
         key = layout_key(file, ROOT)
         svg_path = out_dir / f"{key}-mmdc.svg"
-        if svg_path.exists():
-            svg_path.unlink()
-        res = run_mmdc(file, svg_path, cli_cmd, config_path)
-        if res.returncode != 0:
-            results[str(file)] = {"error": res.stderr.strip()[:200]}
-            continue
-        data, nodes, edges = load_mermaid_svg_graph(svg_path)
-        kind_name = layout_kind_name(diagram_kind)
-        if kind_name:
-            data["kind"] = kind_name
-        metrics = layout_score.compute_metrics(data, nodes, edges)
-        metrics["score"] = layout_score.weighted_score(metrics)
-        metrics.update(
-            compute_label_metrics(
-                svg_path,
-                nodes,
-                edges,
-                diagram_kind,
-                allow_fallback_candidates=allow_fallback_labels,
-                expected_edge_label_count=expected_sequence_labels,
+        cache_svg_path = None
+        cache_metrics_path = None
+        if use_cache:
+            digest = mmdc_cache_digest(
+                file, config_path, cli_cmd, cli_identity, script_digest
             )
+            cache_svg_path = cache_dir / f"{digest}.svg"
+            cache_metrics_path = cache_dir / f"{digest}.metrics.json"
+
+        cached_metrics = load_json_if_exists(cache_metrics_path) if use_cache else None
+        if cached_metrics is not None and cache_svg_path and cache_svg_path.exists():
+            shutil.copy2(cache_svg_path, svg_path)
+            results[str(file)] = cached_metrics
+            continue
+
+        source_svg_path = cache_svg_path if (use_cache and cache_svg_path) else svg_path
+        if source_svg_path.exists():
+            source_svg_path.unlink()
+        res = run_mmdc(file, source_svg_path, cli_cmd, config_path)
+        if res.returncode != 0:
+            metrics = {"error": res.stderr.strip()[:200]}
+            results[str(file)] = metrics
+            if use_cache and cache_metrics_path:
+                save_json(cache_metrics_path, metrics)
+            continue
+
+        metrics = compute_mmdc_svg_metrics(
+            source_svg_path,
+            layout_score,
+            diagram_kind,
+            allow_fallback_labels,
+            expected_sequence_labels,
         )
-        svg_metrics = compute_svg_edge_path_metrics(edges)
-        metrics.update(svg_metrics)
-        metrics["arrow_path_intersections"] = svg_metrics.get("svg_edge_crossings", 0)
-        metrics["arrow_path_overlap_length"] = svg_metrics.get("svg_edge_overlap_length", 0.0)
+        if use_cache and cache_metrics_path:
+            save_json(cache_metrics_path, metrics)
+        if source_svg_path != svg_path:
+            shutil.copy2(source_svg_path, svg_path)
         results[str(file)] = metrics
     return results
 
@@ -1772,6 +1864,16 @@ def main():
         help="mermaid-cli command (default: env MMD_CLI or npx -y @mermaid-js/mermaid-cli)",
     )
     parser.add_argument(
+        "--mmdc-cache-dir",
+        default=str(ROOT / "tmp" / "benchmark-cache" / "mmdc"),
+        help="cache dir for mermaid-cli SVG/metrics reuse across runs",
+    )
+    parser.add_argument(
+        "--no-mmdc-cache",
+        action="store_true",
+        help="disable mermaid-cli cache reuse",
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=0,
@@ -1829,7 +1931,14 @@ def main():
     if args.engine in {"mmdr", "both"}:
         results["mmdr"] = compute_mmdr_metrics(files, bin_path, config_path, out_dir)
     if args.engine in {"mmdc", "both"}:
-        results["mermaid_cli"] = compute_mmdc_metrics(files, args.mmdc, config_path, out_dir)
+        results["mermaid_cli"] = compute_mmdc_metrics(
+            files,
+            args.mmdc,
+            config_path,
+            out_dir,
+            cache_dir=Path(args.mmdc_cache_dir),
+            use_cache=not args.no_mmdc_cache,
+        )
     if args.engine == "both":
         augment_sequence_cli_conformance(files, results.get("mmdr", {}), out_dir)
 
@@ -2105,6 +2214,8 @@ def main():
                 "output_json": str(output_json),
                 "config": str(config_path),
                 "bin": str(bin_path),
+                "mmdc_cache_dir": str(Path(args.mmdc_cache_dir)),
+                "mmdc_cache_enabled": (not args.no_mmdc_cache),
             },
             "host": host_info,
             "git": git_info,
