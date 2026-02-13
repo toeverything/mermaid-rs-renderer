@@ -25,7 +25,8 @@ TOKEN_RE = re.compile(r"[AaCcHhLlMmQqSsTtVvZz]|[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?
 PIPE_EDGE_LABEL_RE = re.compile(r"\|[^|\n]+\|")
 QUOTED_EDGE_LABEL_RE = re.compile(r"--\s*\"[^\"]+\"")
 SEQUENCE_MESSAGE_LABEL_RE = re.compile(r"-{1,2}[x+o]?>{1,2}.*:\s*\S")
-MMDC_CACHE_SCHEMA_VERSION = 1
+MMDC_RENDER_CACHE_SCHEMA_VERSION = 2
+MMDC_METRICS_CACHE_SCHEMA_VERSION = 1
 
 
 def load_layout_score():
@@ -1525,21 +1526,42 @@ def mmdc_cli_identity(cli_cmd: str) -> str:
     return identity.splitlines()[-1][:240]
 
 
-def mmdc_cache_digest(
+def file_digest(path: Path) -> str:
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return ""
+    return hashlib.sha256(data).hexdigest()
+
+
+def mmdc_metrics_script_digest() -> str:
+    hasher = hashlib.sha256()
+    hasher.update(file_digest(Path(__file__)).encode("utf-8"))
+    hasher.update(file_digest(ROOT / "scripts" / "layout_score.py").encode("utf-8"))
+    return hasher.hexdigest()
+
+
+def mmdc_render_cache_digest(
     fixture_path: Path,
     config_path: Path,
     cli_cmd: str,
     cli_identity: str,
-    script_digest: str,
 ) -> str:
     hasher = hashlib.sha256()
-    hasher.update(f"schema:{MMDC_CACHE_SCHEMA_VERSION}\n".encode("utf-8"))
+    hasher.update(f"render_schema:{MMDC_RENDER_CACHE_SCHEMA_VERSION}\n".encode("utf-8"))
     hasher.update(f"cli:{cli_cmd}\n".encode("utf-8"))
     hasher.update(f"cli_identity:{cli_identity}\n".encode("utf-8"))
-    hasher.update(f"script:{script_digest}\n".encode("utf-8"))
     hasher.update(fixture_path.read_bytes())
     if config_path.exists():
         hasher.update(config_path.read_bytes())
+    return hasher.hexdigest()
+
+
+def mmdc_metrics_cache_digest(render_digest: str, script_digest: str) -> str:
+    hasher = hashlib.sha256()
+    hasher.update(f"metrics_schema:{MMDC_METRICS_CACHE_SCHEMA_VERSION}\n".encode("utf-8"))
+    hasher.update(f"render:{render_digest}\n".encode("utf-8"))
+    hasher.update(f"script:{script_digest}\n".encode("utf-8"))
     return hasher.hexdigest()
 
 
@@ -1659,12 +1681,13 @@ def compute_mmdc_metrics(files, cli_cmd, config_path, out_dir, cache_dir=None, u
     layout_score = load_layout_score()
     out_dir.mkdir(parents=True, exist_ok=True)
     cache_dir = Path(cache_dir) if cache_dir else ROOT / "tmp" / "benchmark-cache" / "mmdc"
+    render_cache_dir = cache_dir / "render-svg"
+    metrics_cache_dir = cache_dir / "metrics"
     if use_cache:
-        cache_dir.mkdir(parents=True, exist_ok=True)
+        render_cache_dir.mkdir(parents=True, exist_ok=True)
+        metrics_cache_dir.mkdir(parents=True, exist_ok=True)
     cli_identity = mmdc_cli_identity(cli_cmd) if use_cache else ""
-    script_digest = (
-        hashlib.sha256(Path(__file__).read_bytes()).hexdigest() if use_cache else ""
-    )
+    script_digest = mmdc_metrics_script_digest() if use_cache else ""
     results = {}
     for file in files:
         diagram_kind = detect_diagram_kind(file)
@@ -1677,11 +1700,10 @@ def compute_mmdc_metrics(files, cli_cmd, config_path, out_dir, cache_dir=None, u
         cache_svg_path = None
         cache_metrics_path = None
         if use_cache:
-            digest = mmdc_cache_digest(
-                file, config_path, cli_cmd, cli_identity, script_digest
-            )
-            cache_svg_path = cache_dir / f"{digest}.svg"
-            cache_metrics_path = cache_dir / f"{digest}.metrics.json"
+            render_digest = mmdc_render_cache_digest(file, config_path, cli_cmd, cli_identity)
+            metrics_digest = mmdc_metrics_cache_digest(render_digest, script_digest)
+            cache_svg_path = render_cache_dir / f"{render_digest}.svg"
+            cache_metrics_path = metrics_cache_dir / f"{metrics_digest}.json"
 
         cached_metrics = load_json_if_exists(cache_metrics_path) if use_cache else None
         if cached_metrics is not None and cache_svg_path and cache_svg_path.exists():
@@ -1690,15 +1712,15 @@ def compute_mmdc_metrics(files, cli_cmd, config_path, out_dir, cache_dir=None, u
             continue
 
         source_svg_path = cache_svg_path if (use_cache and cache_svg_path) else svg_path
-        if source_svg_path.exists():
-            source_svg_path.unlink()
-        res = run_mmdc(file, source_svg_path, cli_cmd, config_path)
-        if res.returncode != 0:
-            metrics = {"error": res.stderr.strip()[:200]}
-            results[str(file)] = metrics
-            if use_cache and cache_metrics_path:
-                save_json(cache_metrics_path, metrics)
-            continue
+        must_render_svg = not source_svg_path.exists()
+        if must_render_svg:
+            res = run_mmdc(file, source_svg_path, cli_cmd, config_path)
+            if res.returncode != 0:
+                metrics = {"error": res.stderr.strip()[:200]}
+                results[str(file)] = metrics
+                if use_cache and cache_metrics_path:
+                    save_json(cache_metrics_path, metrics)
+                continue
 
         metrics = compute_mmdc_svg_metrics(
             source_svg_path,
