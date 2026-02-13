@@ -201,10 +201,24 @@ fn resolve_center_labels(
         } else {
             push_anchor_unique(&mut anchors, edge_label_anchor(edge));
         }
-        let normal_steps = [
-            0.0, 0.15, -0.15, 0.35, -0.35, 0.6, -0.6, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0,
-        ];
-        let tangent_steps = [0.0, 0.2, -0.2, 0.6, -0.6, 1.2, -1.2, 2.0, -2.0, 3.0, -3.0];
+        let (normal_steps, tangent_steps): (&[f32], &[f32]) = if kind == DiagramKind::Flowchart {
+            // For flowcharts, prioritize candidate bands that keep labels clear of
+            // their own edge while spreading along the edge before collapsing to
+            // touching placements.
+            (
+                &[
+                    0.6, -0.6, 1.0, -1.0, 1.4, -1.4, 0.35, -0.35, 2.0, -2.0, 2.8, -2.8, 0.0,
+                ],
+                &[0.0, 0.3, -0.3, 0.8, -0.8, 1.4, -1.4, 2.2, -2.2, 3.2, -3.2],
+            )
+        } else {
+            (
+                &[
+                    0.0, 0.15, -0.15, 0.35, -0.35, 0.6, -0.6, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0,
+                ],
+                &[0.0, 0.2, -0.2, 0.6, -0.6, 1.2, -1.2, 2.0, -2.0, 3.0, -3.0],
+            )
+        };
         let mut best_pos = (anchors[0].0, anchors[0].1);
         let mut best_penalty = (f32::INFINITY, f32::INFINITY);
         let evaluate_candidates = |anchor: (f32, f32, f32, f32),
@@ -277,10 +291,22 @@ fn resolve_center_labels(
             );
         }
         if best_penalty.0 > LABEL_OVERLAP_WIDE_THRESHOLD {
-            let normal_steps_wide = [0.0, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0, 4.0, -4.0, 5.0, -5.0];
-            let tangent_steps_wide = [
-                0.0, 0.8, -0.8, 1.6, -1.6, 2.4, -2.4, 3.2, -3.2, 4.2, -4.2, 5.4, -5.4,
-            ];
+            let (normal_steps_wide, tangent_steps_wide): (&[f32], &[f32]) =
+                if kind == DiagramKind::Flowchart {
+                    (
+                        &[0.6, -0.6, 1.2, -1.2, 2.0, -2.0, 3.0, -3.0, 4.0, -4.0, 0.0],
+                        &[
+                            0.0, 0.8, -0.8, 1.6, -1.6, 2.6, -2.6, 3.8, -3.8, 5.2, -5.2, 6.6, -6.6,
+                        ],
+                    )
+                } else {
+                    (
+                        &[0.0, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0, 4.0, -4.0, 5.0, -5.0],
+                        &[
+                            0.0, 0.8, -0.8, 1.6, -1.6, 2.4, -2.4, 3.2, -3.2, 4.2, -4.2, 5.4, -5.4,
+                        ],
+                    )
+                };
             for anchor in &anchors {
                 evaluate_candidates(
                     *anchor,
@@ -987,18 +1013,18 @@ impl ObstacleGrid {
 // moderate, edge overlap is mild (labels on edges is common and often acceptable).
 const WEIGHT_NODE_OVERLAP: f32 = 1.0;
 const WEIGHT_LABEL_OVERLAP: f32 = 0.9;
-const WEIGHT_FLOWCHART_LABEL_OVERLAP: f32 = 0.45;
+const WEIGHT_FLOWCHART_LABEL_OVERLAP: f32 = 0.75;
 const WEIGHT_EDGE_OVERLAP: f32 = 0.5;
-const WEIGHT_FLOWCHART_EDGE_OVERLAP: f32 = 0.25;
+const WEIGHT_FLOWCHART_EDGE_OVERLAP: f32 = 0.3;
 const WEIGHT_OUTSIDE: f32 = 1.2;
 const OWN_EDGE_GAP_TARGET: f32 = 1.2;
 const OWN_EDGE_GAP_TARGET_FLOWCHART: f32 = 1.8;
 const OWN_EDGE_GAP_UNDER_WEIGHT: f32 = 0.7;
-const OWN_EDGE_GAP_UNDER_WEIGHT_FLOWCHART: f32 = 1.1;
+const OWN_EDGE_GAP_UNDER_WEIGHT_FLOWCHART: f32 = 1.6;
 const OWN_EDGE_GAP_OVER_WEIGHT: f32 = 0.10;
 const OWN_EDGE_GAP_OVER_WEIGHT_FLOWCHART: f32 = 0.16;
 const OWN_EDGE_TOUCH_HARD_PENALTY: f32 = 0.25;
-const OWN_EDGE_TOUCH_HARD_PENALTY_FLOWCHART: f32 = 0.55;
+const OWN_EDGE_TOUCH_HARD_PENALTY_FLOWCHART: f32 = 1.25;
 
 fn label_penalties(
     rect: Rect,
