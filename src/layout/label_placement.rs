@@ -263,6 +263,17 @@ fn resolve_center_labels(
                 ],
                 &[0.0, 0.3, -0.3, 0.8, -0.8, 1.4, -1.4, 2.2, -2.2, 3.2, -3.2],
             )
+        } else if kind == DiagramKind::State {
+            (
+                &[
+                    0.0, 0.12, -0.12, 0.22, -0.22, 0.35, -0.35, 0.45, -0.45, 0.5, -0.5, 0.55,
+                    -0.55, 0.6, -0.6, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0,
+                ],
+                &[
+                    0.0, 0.12, -0.12, 0.2, -0.2, 0.35, -0.35, 0.6, -0.6, 1.2, -1.2, 2.0, -2.0, 3.0,
+                    -3.0,
+                ],
+            )
         } else {
             (
                 &[
@@ -397,6 +408,17 @@ fn resolve_center_labels(
                         &[
                             0.0, 0.8, -0.8, 1.6, -1.6, 2.6, -2.6, 3.8, -3.8, 5.2, -5.2, 6.6, -6.6,
                             8.0, -8.0, 10.0, -10.0,
+                        ],
+                    )
+                } else if kind == DiagramKind::State {
+                    (
+                        &[
+                            0.0, 0.45, -0.45, 0.5, -0.5, 0.55, -0.55, 1.0, -1.0, 2.0, -2.0, 3.0,
+                            -3.0, 4.0, -4.0, 5.0, -5.0,
+                        ],
+                        &[
+                            0.0, 0.12, -0.12, 0.35, -0.35, 0.8, -0.8, 1.6, -1.6, 2.4, -2.4, 3.2,
+                            -3.2, 4.2, -4.2, 5.4, -5.4,
                         ],
                     )
                 } else {
@@ -1830,7 +1852,14 @@ fn label_penalties(
     if let Some(bound) = bounds {
         overlap += outside_area(&rect, bound) * WEIGHT_OUTSIDE;
     }
-    let own_edge_dist = polyline_rect_distance(own_edge_points, &rect);
+    let own_edge_rect = if kind == DiagramKind::State {
+        let pad_x = ((rect.2 - label_w).max(0.0)) * 0.5;
+        let pad_y = ((rect.3 - label_h).max(0.0)) * 0.5;
+        (rect.0 + pad_x, rect.1 + pad_y, label_w, label_h)
+    } else {
+        rect
+    };
+    let own_edge_dist = polyline_rect_distance(own_edge_points, &own_edge_rect);
     if own_edge_dist.is_finite() {
         let (target_gap, under_weight, over_weight, hard_penalty) =
             if kind == DiagramKind::Flowchart {
