@@ -42,6 +42,7 @@ RUNS = int(os.environ.get("RUNS", "8"))
 WARMUP = int(os.environ.get("WARMUP", "2"))
 MMD_CLI_RUNS = int(os.environ.get("MMD_CLI_RUNS", "1"))
 MMD_CLI_WARMUP = int(os.environ.get("MMD_CLI_WARMUP", "0"))
+MMD_CLI_MEASURE_MEMORY = False
 MMDC_CONFIG = os.environ.get("MMDC_CONFIG", "")
 HISTORY_LOG = Path(
     os.environ.get(
@@ -109,6 +110,9 @@ def env_bool(name: str) -> bool:
     if value is None:
         return False
     return value.strip().lower() not in {"", "0", "false", "no", "off"}
+
+
+MMD_CLI_MEASURE_MEMORY = env_bool("MMD_CLI_MEASURE_MEMORY")
 
 
 def mmdc_cli_identity(cli_cmd: str) -> str:
@@ -475,8 +479,9 @@ def bench_mermaid_cli(path: Path, cache_state: dict):
             return result
         times.append(elapsed)
 
-    # Get memory usage
-    memory_kb = get_memory_usage(cmd)
+    # Optional: mermaid-cli memory probing is expensive because it executes
+    # the command again under `/usr/bin/time`.
+    memory_kb = get_memory_usage(cmd) if MMD_CLI_MEASURE_MEMORY else None
     result = {
         "times": times,
         "memory_kb": memory_kb,
@@ -723,7 +728,9 @@ def main():
     else:
         print("\nBenchmarking mermaid-cli...")
         print(
-            f"  sampling config: runs={MMD_CLI_RUNS}, warmup={MMD_CLI_WARMUP}"
+            "  sampling config: "
+            f"runs={MMD_CLI_RUNS}, warmup={MMD_CLI_WARMUP}, "
+            f"measure_memory={str(MMD_CLI_MEASURE_MEMORY).lower()}"
         )
         for name, path in CASES:
             print(f"  {name}...", end=" ", flush=True)
@@ -823,6 +830,7 @@ def main():
                 "warmup": WARMUP,
                 "mmd_cli_runs": MMD_CLI_RUNS,
                 "mmd_cli_warmup": MMD_CLI_WARMUP,
+                "mmd_cli_measure_memory": MMD_CLI_MEASURE_MEMORY,
                 "mmdc_config": MMDC_CONFIG,
                 "cases": [name for name, _ in CASES],
                 "skip_mermaid_cli": bool(os.environ.get("SKIP_MERMAID_CLI")),

@@ -182,6 +182,8 @@ to avoid rerunning slow CLI loops on unchanged inputs:
   `MMD_CLI_WARMUP`), and optional `MMDC_CONFIG`
 - default mermaid-cli sampling is lightweight for speed:
   `MMD_CLI_RUNS=1`, `MMD_CLI_WARMUP=0` (override as needed)
+- mermaid-cli memory probing is opt-in (`MMD_CLI_MEASURE_MEMORY=1`) because it
+  adds an extra CLI execution per case
 
 Useful environment knobs:
 
@@ -190,6 +192,7 @@ MMDC_CACHE_DIR=tmp/benchmark-cache/bench-compare/mmdc python3 scripts/bench_comp
 NO_MMDC_CACHE=1 python3 scripts/bench_compare.py
 MMDC_CONFIG=tests/fixtures/modern-config.json python3 scripts/bench_compare.py
 MMD_CLI_RUNS=5 MMD_CLI_WARMUP=1 python3 scripts/bench_compare.py
+MMD_CLI_MEASURE_MEMORY=1 python3 scripts/bench_compare.py
 ```
 
 Each history record includes timestamp, git commit/branch/dirty state, host metadata, run settings, and summary metrics.
