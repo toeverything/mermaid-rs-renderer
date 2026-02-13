@@ -977,6 +977,10 @@ def compute_label_metrics(
     allow_fallback_candidates=True,
     expected_edge_label_count=None,
 ):
+    # Ignore tiny estimated text-box slivers that arise from font/rendering
+    # differences across hosts; they are visually negligible but can create
+    # unstable count deltas in cross-machine benchmark runs.
+    min_overlap_area = 10.0
     labels = parse_text_boxes(svg_path)
     explicit_edge_label_boxes = parse_edge_label_boxes(svg_path)
     root = ET.fromstring(svg_path.read_text())
@@ -995,7 +999,7 @@ def compute_label_metrics(
     for i in range(len(labels)):
         for j in range(i + 1, len(labels)):
             area = rect_overlap_area(labels[i], labels[j])
-            if area > 0.0:
+            if area > min_overlap_area:
                 overlap_count += 1
                 overlap_area += area
 

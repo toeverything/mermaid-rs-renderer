@@ -109,6 +109,8 @@ Recent layout/readability fixes validated by these runs:
   - class multiplicity edge-span relaxation (removed multiplicity label-label overlap in `tests/fixtures/class/multiplicity.mmd`)
   - tiny-cycle overlap resolution (removed node overlap and label overlap in `tests/fixtures/flowchart/cycles.mmd`)
   - chain-aware top-level subgraph wrapping for very large flowcharts (`benches/fixtures/flowchart_large.mmd` aspect elongation `153.63 -> 1.71`, wasted space `0.286 -> 0.071`).
+- `label_overlap_count` now ignores tiny text-box slivers (`<= 10px²`) to
+  reduce host/font jitter noise in cross-machine comparisons.
 
 ## Benchmark History Logging
 
