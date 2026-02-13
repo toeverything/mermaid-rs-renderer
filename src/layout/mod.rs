@@ -1230,6 +1230,23 @@ fn compute_flowchart_layout(
         }
     }
 
+    // Global post-routing passes (crossing reduction/deoverlap) can move paths
+    // after we seeded label anchors. Re-apply the reserved label via-points so
+    // center labels stay attached to their owning edge paths.
+    if !has_label_dummies {
+        for idx in 0..routed_points.len() {
+            let Some(plan) = route_label_plans.get(idx).and_then(|plan| plan.as_ref()) else {
+                continue;
+            };
+            let points = &mut routed_points[idx];
+            if points.len() < 2 {
+                continue;
+            }
+            insert_label_via_point(points, plan.center, graph.direction);
+            label_anchors[idx] = Some(plan.center);
+        }
+    }
+
     // Insert label dummy via-points so edges pass through label positions.
     // For each edge with a label dummy, insert the dummy center into the
     // routed path at the correct main-axis position.
@@ -5465,6 +5482,7 @@ fn requirement_edge_label_text(label: &str, config: &LayoutConfig) -> String {
 mod tests {
     use super::*;
     use crate::ir::{Direction, Graph, NodeShape};
+    use crate::parser::parse_mermaid;
 
     #[test]
     fn wraps_long_labels() {
@@ -5544,6 +5562,33 @@ mod tests {
         assert_eq!(edge.override_style.stroke.as_deref(), Some("#111111"));
         assert_eq!(edge.override_style.stroke_width, Some(4.0));
         assert_eq!(edge.override_style.label_color.as_deref(), Some("#222222"));
+    }
+
+    #[test]
+    fn er_labels_stay_attached_after_path_postprocess() {
+        let source = include_str!("../../docs/comparison_sources/er_blog.mmd");
+        let parsed = parse_mermaid(source).expect("failed to parse ER fixture");
+        let layout = compute_layout(&parsed.graph, &Theme::modern(), &LayoutConfig::default());
+
+        let mut labeled_edges = 0usize;
+        for edge in &layout.edges {
+            let (Some(_label), Some(anchor)) = (&edge.label, edge.label_anchor) else {
+                continue;
+            };
+            labeled_edges += 1;
+            let dist = polyline_point_distance(&edge.points, anchor);
+            assert!(
+                dist <= 12.0,
+                "edge {}->{} label anchor drifted {:.2}px from own path",
+                edge.from,
+                edge.to,
+                dist
+            );
+        }
+        assert!(
+            labeled_edges > 0,
+            "fixture must contain at least one labeled edge"
+        );
     }
 
     fn make_node(id: &str, x: f32, y: f32, width: f32, height: f32) -> NodeLayout {

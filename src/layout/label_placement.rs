@@ -611,6 +611,7 @@ fn resolve_center_labels(
             theme,
             label_pad_x,
             label_pad_y,
+            &fixed_center_indices,
         );
     }
 
@@ -635,11 +636,15 @@ fn deoverlap_flowchart_center_labels(
     theme: &Theme,
     label_pad_x: f32,
     label_pad_y: f32,
+    locked_indices: &HashSet<usize>,
 ) {
     let step_normal_pad = (theme.font_size * 0.25).max(label_pad_y);
     let step_tangent_pad = (theme.font_size * 0.35).max(label_pad_x);
     let mut entries: Vec<FlowchartCenterLabelEntry> = Vec::new();
     for (idx, edge) in edges.iter().enumerate() {
+        if locked_indices.contains(&idx) {
+            continue;
+        }
         let (Some(label), Some(anchor)) = (&edge.label, edge.label_anchor) else {
             continue;
         };
@@ -701,6 +706,21 @@ fn deoverlap_flowchart_center_labels(
         nodes,
         (theme.font_size * 0.2).max(2.0),
     ));
+    for (idx, edge) in edges.iter().enumerate() {
+        if !locked_indices.contains(&idx) {
+            continue;
+        }
+        let (Some(label), Some(center)) = (&edge.label, edge.label_anchor) else {
+            continue;
+        };
+        let rect = (
+            center.0 - label.width / 2.0 - label_pad_x,
+            center.1 - label.height / 2.0 - label_pad_y,
+            label.width + 2.0 * label_pad_x,
+            label.height + 2.0 * label_pad_y,
+        );
+        fixed_obstacles.push(inflate_rect(rect, FLOWCHART_LABEL_CLEARANCE_PAD));
+    }
     let edge_obstacle_pad = (theme.font_size * 0.35).max(label_pad_y);
     let edge_obstacles = build_edge_obstacles(edges, edge_obstacle_pad);
     let edge_obs_rects: Vec<Rect> = edge_obstacles.iter().map(|(_, r)| *r).collect();
@@ -2265,7 +2285,10 @@ fn resolve_endpoint_labels(
     }
 
     let (center_pad_x, center_pad_y) = edge_label_padding(kind, config);
-    let node_obstacle_pad = (theme.font_size * 0.45).max(center_pad_x.max(center_pad_y));
+    let node_obstacle_pad = match kind {
+        DiagramKind::Class => (theme.font_size * 0.12).max(1.5),
+        _ => (theme.font_size * 0.45).max(center_pad_x.max(center_pad_y)),
+    };
     let edge_obstacle_pad = (theme.font_size * 0.35).max(center_pad_y);
     let subgraph_label_pad = (theme.font_size * 0.35).max(3.0);
     let (endpoint_pad_x, endpoint_pad_y) = endpoint_label_padding(kind);
@@ -2302,7 +2325,7 @@ fn resolve_endpoint_labels(
     }
 
     let end_label_offset = match kind {
-        DiagramKind::Class => (theme.font_size * 1.05).max(12.0),
+        DiagramKind::Class => (theme.font_size * 0.30).max(4.0),
         DiagramKind::Flowchart => (theme.font_size * 0.75).max(9.0),
         _ => (theme.font_size * 0.6).max(8.0),
     };
@@ -3085,12 +3108,16 @@ const WEIGHT_FLOWCHART_EDGE_OVERLAP: f32 = 1.15;
 const WEIGHT_OUTSIDE: f32 = 1.2;
 const OWN_EDGE_GAP_TARGET: f32 = 1.2;
 const OWN_EDGE_GAP_TARGET_FLOWCHART: f32 = 1.8;
+const OWN_EDGE_GAP_TARGET_CLASS: f32 = 0.35;
 const OWN_EDGE_GAP_UNDER_WEIGHT: f32 = 0.7;
 const OWN_EDGE_GAP_UNDER_WEIGHT_FLOWCHART: f32 = 1.6;
+const OWN_EDGE_GAP_UNDER_WEIGHT_CLASS: f32 = 0.08;
 const OWN_EDGE_GAP_OVER_WEIGHT: f32 = 0.06;
 const OWN_EDGE_GAP_OVER_WEIGHT_FLOWCHART: f32 = 0.65;
+const OWN_EDGE_GAP_OVER_WEIGHT_CLASS: f32 = 0.18;
 const OWN_EDGE_TOUCH_HARD_PENALTY: f32 = 0.25;
 const OWN_EDGE_TOUCH_HARD_PENALTY_FLOWCHART: f32 = 1.25;
+const OWN_EDGE_TOUCH_HARD_PENALTY_CLASS: f32 = 0.02;
 const FLOWCHART_OWN_EDGE_SOFT_MAX_GAP: f32 = 6.0;
 const FLOWCHART_OWN_EDGE_HARD_MAX_GAP: f32 = 10.0;
 const FLOWCHART_OWN_EDGE_SOFT_MAX_GAP_WEIGHT: f32 = 0.85;
@@ -3192,6 +3219,13 @@ fn label_penalties(
                     OWN_EDGE_GAP_UNDER_WEIGHT_FLOWCHART,
                     OWN_EDGE_GAP_OVER_WEIGHT_FLOWCHART,
                     OWN_EDGE_TOUCH_HARD_PENALTY_FLOWCHART,
+                )
+            } else if kind == DiagramKind::Class {
+                (
+                    OWN_EDGE_GAP_TARGET_CLASS,
+                    OWN_EDGE_GAP_UNDER_WEIGHT_CLASS,
+                    OWN_EDGE_GAP_OVER_WEIGHT_CLASS,
+                    OWN_EDGE_TOUCH_HARD_PENALTY_CLASS,
                 )
             } else {
                 (
@@ -3305,16 +3339,22 @@ fn edge_endpoint_label_position_with_avoid(
     let perp_y = dir_x;
     let anchor_x = p0.0 + dir_x * offset * 1.4;
     let anchor_y = p0.1 + dir_y * offset * 1.4;
-    let along_steps = [0.0, 0.8, -0.8, 1.6, -1.6];
-    let perp_steps = [
-        1.0, -1.0, 1.7, -1.7, 2.4, -2.4, 3.2, -3.2, 3.9, -3.9, 4.6, -4.6,
-    ];
+    let along_steps: &[f32] = match kind {
+        DiagramKind::Class => &[0.0, 0.35, -0.35, 0.8, -0.8, 1.4, -1.4],
+        _ => &[0.0, 0.8, -0.8, 1.6, -1.6],
+    };
+    let perp_steps: &[f32] = match kind {
+        DiagramKind::Class => &[0.0, 0.55, -0.55, 1.1, -1.1, 1.8, -1.8, 2.6, -2.6],
+        _ => &[
+            1.0, -1.0, 1.7, -1.7, 2.4, -2.4, 3.2, -3.2, 3.9, -3.9, 4.6, -4.6,
+        ],
+    };
     let mut best_pos = (anchor_x, anchor_y);
     let mut best_penalty = (f32::INFINITY, f32::INFINITY);
-    for along in along_steps {
+    for &along in along_steps {
         let base_x = p0.0 + dir_x * offset * (1.4 + along);
         let base_y = p0.1 + dir_y * offset * (1.4 + along);
-        for step in perp_steps {
+        for &step in perp_steps {
             let x = base_x + perp_x * offset * step;
             let y = base_y + perp_y * offset * step;
             let rect = (
