@@ -13,6 +13,7 @@ const LABEL_ANCHOR_FRACTIONS: [f32; 5] = [0.5, 0.35, 0.65, 0.2, 0.8];
 const LABEL_ANCHOR_POS_EPS: f32 = 1.0;
 const LABEL_ANCHOR_DIR_EPS: f32 = 0.02;
 const LABEL_EXTRA_SEGMENT_ANCHORS: usize = 6;
+const FLOWCHART_LABEL_CLEARANCE_PAD: f32 = 1.5;
 
 type Rect = (f32, f32, f32, f32);
 type EdgeObstacle = (usize, Rect);
@@ -164,6 +165,22 @@ fn resolve_center_labels(
             (false, true) => return std::cmp::Ordering::Greater,
             _ => {}
         }
+        // Larger labels are harder to place; give them first pick.
+        let area_a = edges[a]
+            .label
+            .as_ref()
+            .map(|label| label.width * label.height)
+            .unwrap_or(0.0);
+        let area_b = edges[b]
+            .label
+            .as_ref()
+            .map(|label| label.width * label.height)
+            .unwrap_or(0.0);
+        if (area_a - area_b).abs() > 1e-3 {
+            return area_b
+                .partial_cmp(&area_a)
+                .unwrap_or(std::cmp::Ordering::Equal);
+        }
         // Then by edge path length ascending (shorter = more constrained).
         let len_a = edge_path_length(&edges[a]);
         let len_b = edge_path_length(&edges[b]);
@@ -245,9 +262,21 @@ fn resolve_center_labels(
                 for n in normals {
                     let x = base_x + normal_x * step_n * *n;
                     let y = base_y + normal_y * step_n * *n;
+                    let center = if let Some(bound) = bounds {
+                        clamp_label_center_to_bounds(
+                            (x, y),
+                            label.width,
+                            label.height,
+                            label_pad_x,
+                            label_pad_y,
+                            bound,
+                        )
+                    } else {
+                        (x, y)
+                    };
                     let rect = (
-                        x - label.width / 2.0 - label_pad_x,
-                        y - label.height / 2.0 - label_pad_y,
+                        center.0 - label.width / 2.0 - label_pad_x,
+                        center.1 - label.height / 2.0 - label_pad_y,
                         pad_w,
                         pad_h,
                     );
@@ -267,7 +296,7 @@ fn resolve_center_labels(
                         bounds,
                     );
                     let overlap_pressure = penalty.0;
-                    let edge_dist = point_polyline_distance((x, y), &edge.points);
+                    let edge_dist = point_polyline_distance(center, &edge.points);
                     let edge_target = edge_target_distance(kind, label.height, label_pad_y);
                     let edge_dist_weight = edge_distance_weight(kind, overlap_pressure);
                     let edge_dist_penalty =
@@ -276,7 +305,7 @@ fn resolve_center_labels(
                     let penalty = (penalty.0 + edge_dist_penalty + sweep_penalty, penalty.1);
                     if candidate_better(penalty, *best_penalty) {
                         *best_penalty = penalty;
-                        *best_pos = (x, y);
+                        *best_pos = center;
                     }
                 }
             }
@@ -294,9 +323,13 @@ fn resolve_center_labels(
             let (normal_steps_wide, tangent_steps_wide): (&[f32], &[f32]) =
                 if kind == DiagramKind::Flowchart {
                     (
-                        &[0.6, -0.6, 1.2, -1.2, 2.0, -2.0, 3.0, -3.0, 4.0, -4.0, 0.0],
+                        &[
+                            0.6, -0.6, 1.2, -1.2, 2.0, -2.0, 3.0, -3.0, 4.0, -4.0, 5.2, -5.2, 6.5,
+                            -6.5, 0.0,
+                        ],
                         &[
                             0.0, 0.8, -0.8, 1.6, -1.6, 2.6, -2.6, 3.8, -3.8, 5.2, -5.2, 6.6, -6.6,
+                            8.0, -8.0, 10.0, -10.0,
                         ],
                     )
                 } else {
@@ -335,9 +368,183 @@ fn resolve_center_labels(
             pad_w,
             pad_h,
         );
-        occupied_grid.insert(occupied.len(), &rect);
-        occupied.push(rect);
+        let occupied_rect = if kind == DiagramKind::Flowchart {
+            inflate_rect(rect, FLOWCHART_LABEL_CLEARANCE_PAD)
+        } else {
+            rect
+        };
+        occupied_grid.insert(occupied.len(), &occupied_rect);
+        occupied.push(occupied_rect);
         edges[idx].label_anchor = Some(clamped_pos);
+    }
+
+    if kind == DiagramKind::Flowchart {
+        deoverlap_flowchart_center_labels(
+            edges,
+            nodes,
+            subgraphs,
+            bounds,
+            theme,
+            label_pad_x,
+            label_pad_y,
+        );
+    }
+}
+
+fn deoverlap_flowchart_center_labels(
+    edges: &mut [EdgeLayout],
+    nodes: &BTreeMap<String, NodeLayout>,
+    subgraphs: &[SubgraphLayout],
+    bounds: Option<(f32, f32)>,
+    theme: &Theme,
+    label_pad_x: f32,
+    label_pad_y: f32,
+) {
+    let mut indices: Vec<usize> = Vec::new();
+    let mut dims: HashMap<usize, (f32, f32)> = HashMap::new();
+    let mut centers: HashMap<usize, (f32, f32)> = HashMap::new();
+    let mut rects: HashMap<usize, Rect> = HashMap::new();
+
+    for (idx, edge) in edges.iter().enumerate() {
+        let (Some(label), Some(anchor)) = (edge.label.as_ref(), edge.label_anchor) else {
+            continue;
+        };
+        let rect = (
+            anchor.0 - label.width / 2.0 - label_pad_x,
+            anchor.1 - label.height / 2.0 - label_pad_y,
+            label.width + 2.0 * label_pad_x,
+            label.height + 2.0 * label_pad_y,
+        );
+        indices.push(idx);
+        dims.insert(idx, (label.width, label.height));
+        centers.insert(idx, anchor);
+        rects.insert(idx, rect);
+    }
+    if indices.len() < 2 {
+        return;
+    }
+
+    let node_obstacle_pad = (theme.font_size * 0.45).max(label_pad_x.max(label_pad_y));
+    let subgraph_label_pad = (theme.font_size * 0.35).max(3.0);
+    let fixed_obstacles = build_label_obstacles(
+        nodes,
+        subgraphs,
+        DiagramKind::Flowchart,
+        theme,
+        node_obstacle_pad,
+        subgraph_label_pad,
+    );
+
+    for _ in 0..6 {
+        let mut moved = false;
+        for i in 0..indices.len() {
+            for j in (i + 1)..indices.len() {
+                let ia = indices[i];
+                let ib = indices[j];
+                let Some(rect_a) = rects.get(&ia).copied() else {
+                    continue;
+                };
+                let Some(rect_b) = rects.get(&ib).copied() else {
+                    continue;
+                };
+                let overlap_x =
+                    (rect_a.0 + rect_a.2).min(rect_b.0 + rect_b.2) - rect_a.0.max(rect_b.0);
+                let overlap_y =
+                    (rect_a.1 + rect_a.3).min(rect_b.1 + rect_b.3) - rect_a.1.max(rect_b.1);
+                if overlap_x <= 0.0 || overlap_y <= 0.0 {
+                    continue;
+                }
+
+                let area_a = dims.get(&ia).map(|(w, h)| w * h).unwrap_or(0.0);
+                let area_b = dims.get(&ib).map(|(w, h)| w * h).unwrap_or(0.0);
+                let move_idx = if area_a <= area_b { ia } else { ib };
+                let stay_idx = if move_idx == ia { ib } else { ia };
+                let Some(move_center) = centers.get(&move_idx).copied() else {
+                    continue;
+                };
+                let Some(stay_center) = centers.get(&stay_idx).copied() else {
+                    continue;
+                };
+                let Some((label_w, label_h)) = dims.get(&move_idx).copied() else {
+                    continue;
+                };
+
+                let mut shift_x = 0.0f32;
+                let mut shift_y = 0.0f32;
+                let pad_shift = FLOWCHART_LABEL_CLEARANCE_PAD * 2.0;
+                if overlap_x < overlap_y {
+                    let dir = if move_center.0 >= stay_center.0 {
+                        1.0
+                    } else {
+                        -1.0
+                    };
+                    shift_x = dir * (overlap_x + pad_shift);
+                } else {
+                    let dir = if move_center.1 >= stay_center.1 {
+                        1.0
+                    } else {
+                        -1.0
+                    };
+                    shift_y = dir * (overlap_y + pad_shift);
+                }
+
+                let candidates = [
+                    (move_center.0 + shift_x, move_center.1 + shift_y),
+                    (move_center.0 - shift_x, move_center.1 - shift_y),
+                    (move_center.0 + shift_x * 0.5, move_center.1 + shift_y * 0.5),
+                ];
+                let mut accepted: Option<((f32, f32), Rect)> = None;
+                for mut candidate in candidates {
+                    if let Some(bound) = bounds {
+                        candidate = clamp_label_center_to_bounds(
+                            candidate,
+                            label_w,
+                            label_h,
+                            label_pad_x,
+                            label_pad_y,
+                            bound,
+                        );
+                    }
+                    let candidate_rect = (
+                        candidate.0 - label_w / 2.0 - label_pad_x,
+                        candidate.1 - label_h / 2.0 - label_pad_y,
+                        label_w + 2.0 * label_pad_x,
+                        label_h + 2.0 * label_pad_y,
+                    );
+                    if rects.iter().any(|(idx, rect)| {
+                        *idx != move_idx && overlap_area(rect, &candidate_rect) > 0.0
+                    }) {
+                        continue;
+                    }
+                    if fixed_obstacles
+                        .iter()
+                        .any(|rect| overlap_area(rect, &candidate_rect) > 0.0)
+                    {
+                        continue;
+                    }
+                    if polyline_rect_distance(&edges[move_idx].points, &candidate_rect) <= 0.15 {
+                        continue;
+                    }
+                    accepted = Some((candidate, candidate_rect));
+                    break;
+                }
+
+                if let Some((candidate, candidate_rect)) = accepted {
+                    centers.insert(move_idx, candidate);
+                    rects.insert(move_idx, candidate_rect);
+                    moved = true;
+                }
+            }
+        }
+        if !moved {
+            break;
+        }
+    }
+
+    for idx in indices {
+        if let Some(center) = centers.get(&idx).copied() {
+            edges[idx].label_anchor = Some(center);
+        }
     }
 }
 
@@ -380,12 +587,18 @@ fn resolve_endpoint_labels(
     let endpoint_node_obstacle_count = endpoint_occupied.len();
     for edge in edges.iter() {
         if let (Some(label), Some((ax, ay))) = (&edge.label, edge.label_anchor) {
-            endpoint_occupied.push((
+            let rect = (
                 ax - label.width / 2.0 - center_pad_x,
                 ay - label.height / 2.0 - center_pad_y,
                 label.width + 2.0 * center_pad_x,
                 label.height + 2.0 * center_pad_y,
-            ));
+            );
+            let occupied_rect = if kind == DiagramKind::Flowchart {
+                inflate_rect(rect, FLOWCHART_LABEL_CLEARANCE_PAD)
+            } else {
+                rect
+            };
+            endpoint_occupied.push(occupied_rect);
         }
     }
 
@@ -435,8 +648,13 @@ fn resolve_endpoint_labels(
                     label_w + endpoint_pad_x * 2.0,
                     label_h + endpoint_pad_y * 2.0,
                 );
-                endpoint_grid.insert(endpoint_occupied.len(), &rect);
-                endpoint_occupied.push(rect);
+                let occupied_rect = if kind == DiagramKind::Flowchart {
+                    inflate_rect(rect, FLOWCHART_LABEL_CLEARANCE_PAD)
+                } else {
+                    rect
+                };
+                endpoint_grid.insert(endpoint_occupied.len(), &occupied_rect);
+                endpoint_occupied.push(occupied_rect);
             }
         }
 
@@ -468,8 +686,13 @@ fn resolve_endpoint_labels(
                     label_w + endpoint_pad_x * 2.0,
                     label_h + endpoint_pad_y * 2.0,
                 );
-                endpoint_grid.insert(endpoint_occupied.len(), &rect);
-                endpoint_occupied.push(rect);
+                let occupied_rect = if kind == DiagramKind::Flowchart {
+                    inflate_rect(rect, FLOWCHART_LABEL_CLEARANCE_PAD)
+                } else {
+                    rect
+                };
+                endpoint_grid.insert(endpoint_occupied.len(), &occupied_rect);
+                endpoint_occupied.push(occupied_rect);
             }
         }
     }
@@ -905,6 +1128,18 @@ fn overlap_area(a: &Rect, b: &Rect) -> f32 {
     w * h
 }
 
+fn inflate_rect(rect: Rect, pad: f32) -> Rect {
+    if pad <= 0.0 {
+        return rect;
+    }
+    (
+        rect.0 - pad,
+        rect.1 - pad,
+        rect.2 + pad * 2.0,
+        rect.3 + pad * 2.0,
+    )
+}
+
 fn outside_area(rect: &Rect, bounds: (f32, f32)) -> f32 {
     let (w, h) = bounds;
     let rect_area = rect.2.max(0.0) * rect.3.max(0.0);
@@ -1013,7 +1248,7 @@ impl ObstacleGrid {
 // moderate, edge overlap is mild (labels on edges is common and often acceptable).
 const WEIGHT_NODE_OVERLAP: f32 = 1.0;
 const WEIGHT_LABEL_OVERLAP: f32 = 0.9;
-const WEIGHT_FLOWCHART_LABEL_OVERLAP: f32 = 0.75;
+const WEIGHT_FLOWCHART_LABEL_OVERLAP: f32 = 1.1;
 const WEIGHT_EDGE_OVERLAP: f32 = 0.5;
 const WEIGHT_FLOWCHART_EDGE_OVERLAP: f32 = 0.3;
 const WEIGHT_OUTSIDE: f32 = 1.2;
