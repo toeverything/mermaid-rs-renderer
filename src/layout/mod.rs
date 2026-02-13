@@ -114,6 +114,8 @@ const DUAL_ENDPOINT_EXTRA_PAD_SCALE: f32 = 0.45;
 const EDGE_RELAX_STEP_MIN: f32 = 24.0;
 const EDGE_RELAX_GAP_TOLERANCE: f32 = 0.5;
 const MAX_MAIN_GAP_FACTOR: f32 = 6.0;
+const FLOWCHART_EDGE_LABEL_WRAP_TRIGGER_CHARS: usize = 34;
+const FLOWCHART_EDGE_LABEL_WRAP_MAX_CHARS: usize = 18;
 
 // ── Overlap resolution ───────────────────────────────────────────────
 const OVERLAP_RESOLVE_PASSES: u32 = 6;
@@ -476,7 +478,27 @@ fn compute_flowchart_layout(
             } else {
                 label.clone()
             };
-            measure_label(&label_text, theme, config)
+            if graph.kind == crate::ir::DiagramKind::Flowchart
+                && !label_text.contains('\n')
+                && !label_text.contains("<br")
+                && label_text.chars().count() >= FLOWCHART_EDGE_LABEL_WRAP_TRIGGER_CHARS
+            {
+                // Keep very long flowchart edge labels in a narrower block so
+                // routing + placement can avoid large cross-label collisions.
+                let mut wrap_cfg = config.clone();
+                wrap_cfg.max_label_width_chars = wrap_cfg
+                    .max_label_width_chars
+                    .min(FLOWCHART_EDGE_LABEL_WRAP_MAX_CHARS);
+                measure_label_with_font_size(
+                    &label_text,
+                    theme.font_size.max(16.0),
+                    &wrap_cfg,
+                    true,
+                    theme.font_family.as_str(),
+                )
+            } else {
+                measure_label(&label_text, theme, config)
+            }
         })
     };
     let edge_route_labels: Vec<Option<TextBlock>> = graph
