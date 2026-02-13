@@ -116,6 +116,12 @@ def main():
         help="mmdr binary path",
     )
     parser.add_argument(
+        "--mmdr-jobs",
+        type=int,
+        default=max(1, min(4, os.cpu_count() or 1)),
+        help="parallel jobs for mmdr fixture runs (default: min(4, cpu_count))",
+    )
+    parser.add_argument(
         "--out-dir",
         default=str(ROOT / "target" / "label-bench"),
         help="output directory",
@@ -184,7 +190,13 @@ def main():
     if args.engine in {"mmdr", "both"}:
         bin_path = qb.resolve_bin(args.bin)
         qb.build_release(bin_path)
-        results["mmdr"] = qb.compute_mmdr_metrics(files, bin_path, config_path, out_dir)
+        results["mmdr"] = qb.compute_mmdr_metrics(
+            files,
+            bin_path,
+            config_path,
+            out_dir,
+            jobs=max(1, args.mmdr_jobs),
+        )
     if args.engine in {"mmdc", "both"}:
         results["mermaid_cli"] = qb.compute_mmdc_metrics(
             files,
@@ -319,6 +331,7 @@ def main():
                 "output_json": str(output_json),
                 "config": str(config_path),
                 "bin": args.bin,
+                "mmdr_jobs": max(1, args.mmdr_jobs),
                 "mmdc_cache_dir": str(Path(args.mmdc_cache_dir)),
                 "mmdc_cache_enabled": (not args.no_mmdc_cache),
             },

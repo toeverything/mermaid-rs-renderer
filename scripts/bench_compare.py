@@ -44,6 +44,9 @@ WARMUP = int(os.environ.get("WARMUP", "2"))
 MMDR_MEASURE_MEMORY = False
 MMD_CLI_RUNS = int(os.environ.get("MMD_CLI_RUNS", "1"))
 MMD_CLI_WARMUP = int(os.environ.get("MMD_CLI_WARMUP", "0"))
+MMDR_JOBS = int(
+    os.environ.get("MMDR_JOBS", str(max(1, min(4, os.cpu_count() or 1))))
+)
 MMD_CLI_JOBS = int(
     os.environ.get("MMD_CLI_JOBS", str(max(1, min(4, os.cpu_count() or 1))))
 )
@@ -705,20 +708,64 @@ def main():
     run_start = time.perf_counter()
 
     print("Benchmarking mmdr...")
+    print(
+        "  sampling config: "
+        f"runs={RUNS}, warmup={WARMUP}, jobs={MMDR_JOBS}, "
+        f"measure_memory={str(MMDR_MEASURE_MEMORY).lower()}"
+    )
     phase_start = time.perf_counter()
-    for name, path in CASES:
-        print(f"  {name}...", end=" ", flush=True)
-        data = bench_mmdr(path)
+    mmdr_data_by_case = {}
+    if MMDR_JOBS <= 1:
+        for name, path in CASES:
+            print(f"  {name}...", end=" ", flush=True)
+            data = bench_mmdr(path)
+            mmdr_data_by_case[name] = data
+            summary = summarize(data["times"])
+            breakdown = summarize_breakdowns(data["breakdowns"])
+            if breakdown:
+                print(
+                    f"total={summary['mean_ms']:.2f}ms "
+                    f"(parse={breakdown['parse_ms']:.2f} "
+                    f"layout={breakdown['layout_ms']:.2f} "
+                    f"render={breakdown['render_ms']:.2f})"
+                )
+            else:
+                print(f"total={summary['mean_ms']:.2f}ms")
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=MMDR_JOBS) as pool:
+            future_to_name = {
+                pool.submit(bench_mmdr, path): name
+                for name, path in CASES
+            }
+            completed = 0
+            total = len(CASES)
+            for future in concurrent.futures.as_completed(future_to_name):
+                name = future_to_name[future]
+                data = future.result()
+                mmdr_data_by_case[name] = data
+                completed += 1
+                summary = summarize(data["times"])
+                breakdown = summarize_breakdowns(data["breakdowns"])
+                if breakdown:
+                    print(
+                        f"  [{completed:>2}/{total}] {name}... "
+                        f"total={summary['mean_ms']:.2f}ms "
+                        f"(parse={breakdown['parse_ms']:.2f} "
+                        f"layout={breakdown['layout_ms']:.2f} "
+                        f"render={breakdown['render_ms']:.2f})"
+                    )
+                else:
+                    print(
+                        f"  [{completed:>2}/{total}] {name}... "
+                        f"total={summary['mean_ms']:.2f}ms"
+                    )
+    for name, _ in CASES:
+        data = mmdr_data_by_case[name]
         results["mmdr"][name] = {
             **summarize(data["times"]),
             "breakdown": summarize_breakdowns(data["breakdowns"]),
             "memory_kb": data["memory_kb"],
         }
-        bd = results["mmdr"][name]["breakdown"]
-        if bd:
-            print(f"total={results['mmdr'][name]['mean_ms']:.2f}ms (parse={bd['parse_ms']:.2f} layout={bd['layout_ms']:.2f} render={bd['render_ms']:.2f})")
-        else:
-            print(f"total={results['mmdr'][name]['mean_ms']:.2f}ms")
     runtime["mmdr_s"] = time.perf_counter() - phase_start
 
     if os.environ.get("SKIP_MERMAID_CLI"):
@@ -871,6 +918,7 @@ def main():
                 "mmd_cli": MMD_CLI,
                 "runs": RUNS,
                 "warmup": WARMUP,
+                "mmdr_jobs": MMDR_JOBS,
                 "mmdr_measure_memory": MMDR_MEASURE_MEMORY,
                 "mmd_cli_runs": MMD_CLI_RUNS,
                 "mmd_cli_warmup": MMD_CLI_WARMUP,

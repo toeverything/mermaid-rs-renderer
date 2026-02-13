@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import concurrent.futures
 import datetime
 import getpass
 import hashlib
@@ -1587,12 +1588,13 @@ def compute_mmdc_svg_metrics(
     return metrics
 
 
-def compute_mmdr_metrics(files, bin_path, config_path, out_dir):
+def compute_mmdr_metrics(files, bin_path, config_path, out_dir, jobs=1):
     layout_score = load_layout_score()
     out_dir.mkdir(parents=True, exist_ok=True)
     config_args = ["-c", str(config_path)] if config_path.exists() else []
     results = {}
-    for file in files:
+
+    def run_one(file):
         diagram_kind = detect_diagram_kind(file)
         allow_fallback_labels = fixture_has_edge_label(file, diagram_kind)
         expected_sequence_labels = (
@@ -1617,8 +1619,7 @@ def compute_mmdr_metrics(files, bin_path, config_path, out_dir):
         ] + config_args
         res = run(cmd)
         if res.returncode != 0:
-            results[str(file)] = {"error": res.stderr.strip()[:200]}
-            continue
+            return str(file), {"error": res.stderr.strip()[:200]}
         data, nodes, edges = layout_score.load_layout(layout_path)
         metrics = layout_score.compute_metrics(data, nodes, edges)
         metrics["score"] = layout_score.weighted_score(metrics)
@@ -1639,7 +1640,18 @@ def compute_mmdr_metrics(files, bin_path, config_path, out_dir):
         metrics["arrow_path_overlap_length"] = svg_metrics.get("svg_edge_overlap_length", 0.0)
         layout_data = json.loads(layout_path.read_text())
         metrics.update(compute_layout_anchor_metrics(layout_data.get("edges", [])))
-        results[str(file)] = metrics
+        return str(file), metrics
+
+    if jobs <= 1:
+        for file in files:
+            file_key, metrics = run_one(file)
+            results[file_key] = metrics
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+            future_to_file = {pool.submit(run_one, file): file for file in files}
+            for future in concurrent.futures.as_completed(future_to_file):
+                file_key, metrics = future.result()
+                results[file_key] = metrics
     return results
 
 
@@ -2068,6 +2080,12 @@ def main():
         help="mmdr binary path",
     )
     parser.add_argument(
+        "--mmdr-jobs",
+        type=int,
+        default=max(1, min(4, os.cpu_count() or 1)),
+        help="parallel jobs for mmdr fixture runs (default: min(4, cpu_count))",
+    )
+    parser.add_argument(
         "--out-dir",
         default=str(ROOT / "target" / "quality"),
         help="output directory",
@@ -2154,7 +2172,13 @@ def main():
 
     results = {}
     if args.engine in {"mmdr", "both"}:
-        results["mmdr"] = compute_mmdr_metrics(files, bin_path, config_path, out_dir)
+        results["mmdr"] = compute_mmdr_metrics(
+            files,
+            bin_path,
+            config_path,
+            out_dir,
+            jobs=max(1, args.mmdr_jobs),
+        )
     if args.engine in {"mmdc", "both"}:
         results["mermaid_cli"] = compute_mmdc_metrics(
             files,
@@ -2507,6 +2531,7 @@ def main():
                 "output_json": str(output_json),
                 "config": str(config_path),
                 "bin": str(bin_path),
+                "mmdr_jobs": max(1, args.mmdr_jobs),
                 "mmdc_cache_dir": str(Path(args.mmdc_cache_dir)),
                 "mmdc_cache_enabled": (not args.no_mmdc_cache),
             },
