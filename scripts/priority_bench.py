@@ -64,6 +64,10 @@ DEFAULT_PRIORITY_METRICS = [
     "label_out_of_bounds_count",
     "label_out_of_bounds_area",
     "label_out_of_bounds_ratio",
+    "edge_label_owned_path_touch_ratio",
+    "edge_label_owned_path_gap_bad_ratio",
+    "edge_label_owned_path_gap_mean",
+    "edge_label_owned_mapping_ratio",
 ]
 
 
@@ -444,6 +448,8 @@ def print_priorities(results: list[dict[str, Any]], top_n: int) -> None:
             f"lbl-overlap={metrics.get('label_overlap_count', 0)}  "
             f"lbl-edge={metrics.get('label_edge_overlap_count', 0)}  "
             f"lbl-oob={metrics.get('label_out_of_bounds_count', 0)}  "
+            f"lbl-owned-touch={metrics.get('edge_label_owned_path_touch_ratio', 0.0):.2f}  "
+            f"lbl-owned-map={metrics.get('edge_label_owned_mapping_ratio', 0.0):.2f}  "
             f"waste={metrics.get('wasted_space_ratio', 0.0):.2f}  "
             f"comp-gap={metrics.get('component_gap_ratio', 0.0):.2f}  "
             f"fill={metrics.get('content_fill_ratio', 0.0):.2f}  "

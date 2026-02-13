@@ -40,6 +40,10 @@ fn fit_dimensions_to_preferred_ratio(
     (width.max(1.0), height.max(1.0))
 }
 
+fn edge_dom_id(edge_idx: usize) -> String {
+    format!("edge-{edge_idx}")
+}
+
 pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> String {
     let mut svg = String::new();
     let state_font_size = if layout.kind == crate::ir::DiagramKind::State {
@@ -674,9 +678,10 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
     }
 
     if is_sequence {
-        for edge in &layout.edges {
+        for (edge_idx, edge) in layout.edges.iter().enumerate() {
             let d = points_to_path(&edge.points);
             let mut stroke = theme.line_color.clone();
+            let edge_id = edge_dom_id(edge_idx);
             if let Some(color) = &edge.override_style.stroke {
                 stroke = color.clone();
             }
@@ -705,7 +710,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             }
             let stroke_width = edge.override_style.stroke_width.unwrap_or(1.5);
             svg.push_str(&format!(
-                "<path class=\"edgePath\" d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" {} {} {} stroke-linecap=\"round\" stroke-linejoin=\"round\" />",
+                "<path id=\"{edge_id}\" class=\"edgePath\" data-edge-id=\"{edge_id}\" d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" {} {} {} stroke-linecap=\"round\" stroke-linejoin=\"round\" />",
                 d, stroke, stroke_width, marker_end, marker_start, dash
             ));
 
@@ -756,10 +761,13 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     let rect_w = label.width + center_pad_x * 2.0;
                     let rect_h = label.height + center_pad_y * 2.0;
                     svg.push_str(&format!(
-                        "<rect class=\"edgeLabel sequenceEdgeLabel\" x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"0.90\" stroke=\"{}\" stroke-opacity=\"0.30\" stroke-width=\"0.8\"/>",
+                        "<rect class=\"edgeLabel sequenceEdgeLabel\" data-edge-id=\"{edge_id}\" data-label-kind=\"center\" x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"0.90\" stroke=\"{}\" stroke-opacity=\"0.30\" stroke-width=\"0.8\"/>",
                         edge_label_fill, edge_label_stroke
                     ));
                 }
+                svg.push_str(&format!(
+                    "<g class=\"edgeLabel\" data-edge-id=\"{edge_id}\" data-label-kind=\"center\">"
+                ));
                 svg.push_str(&text_block_svg(
                     mid_x,
                     label_y,
@@ -769,6 +777,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     false,
                     Some(label_color),
                 ));
+                svg.push_str("</g>");
             }
 
             let end_label_offset = (theme.font_size * 0.6).max(8.0);
@@ -788,10 +797,13 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     let rect_w = label.width + endpoint_pad_x * 2.0;
                     let rect_h = label.height + endpoint_pad_y * 2.0;
                     svg.push_str(&format!(
-                        "<rect class=\"edgeLabel sequenceEndpointLabel\" x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"0.88\" stroke=\"{}\" stroke-opacity=\"0.28\" stroke-width=\"0.75\"/>",
+                        "<rect class=\"edgeLabel sequenceEndpointLabel\" data-edge-id=\"{edge_id}\" data-label-kind=\"start\" x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"0.88\" stroke=\"{}\" stroke-opacity=\"0.28\" stroke-width=\"0.75\"/>",
                         edge_label_fill, edge_label_stroke
                     ));
                 }
+                svg.push_str(&format!(
+                    "<g class=\"edgeLabel\" data-edge-id=\"{edge_id}\" data-label-kind=\"start\">"
+                ));
                 svg.push_str(&text_block_svg(
                     x,
                     y,
@@ -801,6 +813,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     false,
                     Some(label_color),
                 ));
+                svg.push_str("</g>");
             }
             if let Some(label) = edge.end_label.as_ref()
                 && let Some((x, y)) = edge
@@ -813,10 +826,13 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     let rect_w = label.width + endpoint_pad_x * 2.0;
                     let rect_h = label.height + endpoint_pad_y * 2.0;
                     svg.push_str(&format!(
-                        "<rect class=\"edgeLabel sequenceEndpointLabel\" x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"0.88\" stroke=\"{}\" stroke-opacity=\"0.28\" stroke-width=\"0.75\"/>",
+                        "<rect class=\"edgeLabel sequenceEndpointLabel\" data-edge-id=\"{edge_id}\" data-label-kind=\"end\" x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"0.88\" stroke=\"{}\" stroke-opacity=\"0.28\" stroke-width=\"0.75\"/>",
                         edge_label_fill, edge_label_stroke
                     ));
                 }
+                svg.push_str(&format!(
+                    "<g class=\"edgeLabel\" data-edge-id=\"{edge_id}\" data-label-kind=\"end\">"
+                ));
                 svg.push_str(&text_block_svg(
                     x,
                     y,
@@ -826,6 +842,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     false,
                     Some(label_color),
                 ));
+                svg.push_str("</g>");
             }
         }
 
@@ -856,9 +873,10 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             | crate::ir::DiagramKind::Er => 1.0,
             _ => 2.0,
         };
-        for edge in layout.edges.iter() {
+        for (edge_idx, edge) in layout.edges.iter().enumerate() {
             let d = points_to_path(&edge.points);
             let mut stroke = theme.line_color.clone();
+            let edge_id = edge_dom_id(edge_idx);
             let (mut dash, mut stroke_width) = match edge.style {
                 crate::ir::EdgeStyle::Solid => (String::new(), base_edge_width),
                 crate::ir::EdgeStyle::Dotted => {
@@ -916,7 +934,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 dash = format!("stroke-dasharray=\"{}\"", dash_override);
             }
             svg.push_str(&format!(
-                "<path class=\"edgePath\" d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" {} {} {} stroke-linecap=\"round\" stroke-linejoin=\"round\" />",
+                "<path id=\"{edge_id}\" class=\"edgePath\" data-edge-id=\"{edge_id}\" d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" {} {} {} stroke-linecap=\"round\" stroke-linejoin=\"round\" />",
                 d, stroke, stroke_width, marker_end, marker_start, dash
             ));
 
@@ -985,7 +1003,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 let label_fill = theme.edge_label_background.as_str();
                 if label_fill != "none" {
                     svg.push_str(&format!(
-                        "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"{:.2}\" stroke=\"{}\" stroke-opacity=\"{:.2}\" stroke-width=\"0.8\"/>",
+                        "<rect data-edge-id=\"{edge_id}\" data-label-kind=\"center\" x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"{:.2}\" stroke=\"{}\" stroke-opacity=\"{:.2}\" stroke-width=\"0.8\"/>",
                         label_fill,
                         fill_opacity,
                         theme.primary_border_color,
@@ -993,6 +1011,9 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     ));
                 }
                 if layout.kind == crate::ir::DiagramKind::State {
+                    svg.push_str(&format!(
+                        "<g class=\"edgeLabel\" data-edge-id=\"{edge_id}\" data-label-kind=\"center\">"
+                    ));
                     svg.push_str(&text_block_svg_with_font_size(
                         x,
                         y,
@@ -1004,7 +1025,11 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                         edge.override_style.label_color.as_deref(),
                         false,
                     ));
+                    svg.push_str("</g>");
                 } else {
+                    svg.push_str(&format!(
+                        "<g class=\"edgeLabel\" data-edge-id=\"{edge_id}\" data-label-kind=\"center\">"
+                    ));
                     svg.push_str(&text_block_svg(
                         x,
                         y,
@@ -1014,6 +1039,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                         true,
                         edge.override_style.label_color.as_deref(),
                     ));
+                    svg.push_str("</g>");
                 }
             }
 
@@ -1046,7 +1072,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     let rect_w = label_w + endpoint_pad_x * 2.0;
                     let rect_h = label_h + endpoint_pad_y * 2.0;
                     svg.push_str(&format!(
-                        "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"{:.2}\" stroke=\"{}\" stroke-opacity=\"{:.2}\" stroke-width=\"0.8\"/>",
+                        "<rect data-edge-id=\"{edge_id}\" data-label-kind=\"start\" x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"{:.2}\" stroke=\"{}\" stroke-opacity=\"{:.2}\" stroke-width=\"0.8\"/>",
                         endpoint_label_fill,
                         endpoint_fill_opacity,
                         theme.primary_border_color,
@@ -1054,6 +1080,9 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     ));
                 }
                 if layout.kind == crate::ir::DiagramKind::State {
+                    svg.push_str(&format!(
+                        "<g class=\"edgeLabel\" data-edge-id=\"{edge_id}\" data-label-kind=\"start\">"
+                    ));
                     svg.push_str(&text_block_svg_with_font_size(
                         x,
                         y,
@@ -1065,7 +1094,11 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                         Some(label_color),
                         false,
                     ));
+                    svg.push_str("</g>");
                 } else {
+                    svg.push_str(&format!(
+                        "<g class=\"edgeLabel\" data-edge-id=\"{edge_id}\" data-label-kind=\"start\">"
+                    ));
                     svg.push_str(&text_block_svg(
                         x,
                         y,
@@ -1075,6 +1108,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                         false,
                         Some(label_color),
                     ));
+                    svg.push_str("</g>");
                 }
             }
             if let Some(label) = edge.end_label.as_ref()
@@ -1088,7 +1122,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     let rect_w = label_w + endpoint_pad_x * 2.0;
                     let rect_h = label_h + endpoint_pad_y * 2.0;
                     svg.push_str(&format!(
-                        "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"{:.2}\" stroke=\"{}\" stroke-opacity=\"{:.2}\" stroke-width=\"0.8\"/>",
+                        "<rect data-edge-id=\"{edge_id}\" data-label-kind=\"end\" x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"{:.2}\" stroke=\"{}\" stroke-opacity=\"{:.2}\" stroke-width=\"0.8\"/>",
                         endpoint_label_fill,
                         endpoint_fill_opacity,
                         theme.primary_border_color,
@@ -1096,6 +1130,9 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     ));
                 }
                 if layout.kind == crate::ir::DiagramKind::State {
+                    svg.push_str(&format!(
+                        "<g class=\"edgeLabel\" data-edge-id=\"{edge_id}\" data-label-kind=\"end\">"
+                    ));
                     svg.push_str(&text_block_svg_with_font_size(
                         x,
                         y,
@@ -1107,7 +1144,11 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                         Some(label_color),
                         false,
                     ));
+                    svg.push_str("</g>");
                 } else {
+                    svg.push_str(&format!(
+                        "<g class=\"edgeLabel\" data-edge-id=\"{edge_id}\" data-label-kind=\"end\">"
+                    ));
                     svg.push_str(&text_block_svg(
                         x,
                         y,
@@ -1117,6 +1158,7 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                         false,
                         Some(label_color),
                     ));
+                    svg.push_str("</g>");
                 }
             }
         }
@@ -1713,7 +1755,8 @@ fn render_requirement(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> 
         ));
     }
 
-    for edge in layout.edges.iter() {
+    for (edge_idx, edge) in layout.edges.iter().enumerate() {
+        let edge_id = edge_dom_id(edge_idx);
         let stroke = edge
             .override_style
             .stroke
@@ -1741,7 +1784,7 @@ fn render_requirement(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> 
         };
         let d = points_to_path(&edge.points);
         svg.push_str(&format!(
-            "<path d=\"{d}\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"{stroke_width}\"{dash}{marker_start}{marker_end} stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
+            "<path id=\"{edge_id}\" data-edge-id=\"{edge_id}\" d=\"{d}\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"{stroke_width}\"{dash}{marker_start}{marker_end} stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
         ));
 
         if let Some(label) = edge.label.as_ref()
@@ -1754,7 +1797,7 @@ fn render_requirement(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> 
             let rect_h = label.height + pad_y * 2.0;
             if req.edge_label_background != "none" {
                 svg.push_str(&format!(
-                    "<rect x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"0.5\" stroke=\"none\"/>",
+                    "<rect data-edge-id=\"{edge_id}\" data-label-kind=\"center\" x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"0.5\" stroke=\"none\"/>",
                     req.edge_label_background
                 ));
             }
@@ -1763,6 +1806,9 @@ fn render_requirement(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> 
                 .label_color
                 .as_deref()
                 .unwrap_or(req.edge_label_color.as_str());
+            svg.push_str(&format!(
+                "<g class=\"edgeLabel\" data-edge-id=\"{edge_id}\" data-label-kind=\"center\">"
+            ));
             svg.push_str(&text_block_svg(
                 x,
                 y,
@@ -1772,6 +1818,7 @@ fn render_requirement(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> 
                 true,
                 Some(label_color),
             ));
+            svg.push_str("</g>");
         }
     }
 
@@ -5640,5 +5687,8 @@ mod tests {
         let svg = render_svg(&layout, &Theme::modern(), &LayoutConfig::default());
         assert!(svg.contains("<svg"));
         assert!(svg.contains("Alpha"));
+        assert!(svg.contains("id=\"edge-0\""));
+        assert!(svg.contains("data-edge-id=\"edge-0\""));
+        assert!(svg.contains("data-label-kind=\"center\""));
     }
 }

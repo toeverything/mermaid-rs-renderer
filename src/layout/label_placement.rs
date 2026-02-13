@@ -31,7 +31,7 @@ struct FlowchartCenterLabelEntry {
 
 fn edge_distance_weight(kind: DiagramKind, overlap_pressure: f32) -> f32 {
     let base = match kind {
-        DiagramKind::Flowchart => 0.42,
+        DiagramKind::Flowchart => 0.72,
         DiagramKind::Class | DiagramKind::State => 0.20,
         _ => 0.16,
     };
@@ -39,13 +39,13 @@ fn edge_distance_weight(kind: DiagramKind, overlap_pressure: f32) -> f32 {
         base
     } else if overlap_pressure <= 0.10 {
         if kind == DiagramKind::Flowchart {
-            base * 0.82
+            base * 0.92
         } else {
             base * 0.55
         }
     } else {
         if kind == DiagramKind::Flowchart {
-            base * 0.58
+            base * 0.68
         } else {
             base * 0.2
         }
@@ -813,7 +813,10 @@ fn flowchart_center_label_refine_cost(
             own_edge_penalty += shortage * shortage * 3.5;
         } else {
             let excess = (own_edge_dist - target_gap) / target_gap;
-            own_edge_penalty += excess * excess * 0.12;
+            own_edge_penalty += excess * excess * 0.40;
+            if excess > 3.0 {
+                own_edge_penalty += (excess - 3.0) * 1.2;
+            }
         }
         if own_edge_dist <= 0.35 {
             own_edge_penalty += 12.0;
@@ -822,11 +825,11 @@ fn flowchart_center_label_refine_cost(
     let edge_center_dist = point_polyline_distance(center, &entry.edge_points);
     let edge_target = edge_target_distance(DiagramKind::Flowchart, entry.label_h, label_pad_y);
     let edge_center_penalty =
-        ((edge_center_dist - edge_target).max(0.0) / edge_target.max(1e-3)) * 0.45;
-    let primary = fixed_overlap_count as f32 * 110.0
-        + (fixed_overlap_area / area) * 40.0
-        + overlap_count as f32 * 80.0
-        + (overlap_area_sum / area) * 30.0
+        ((edge_center_dist - edge_target).max(0.0) / edge_target.max(1e-3)) * 0.95;
+    let primary = fixed_overlap_count as f32 * 130.0
+        + (fixed_overlap_area / area) * 48.0
+        + overlap_count as f32 * 115.0
+        + (overlap_area_sum / area) * 42.0
         + own_edge_penalty
         + edge_center_penalty;
     let dx = center.0 - entry.initial_center.0;
@@ -1567,7 +1570,7 @@ const OWN_EDGE_GAP_TARGET_FLOWCHART: f32 = 1.8;
 const OWN_EDGE_GAP_UNDER_WEIGHT: f32 = 0.7;
 const OWN_EDGE_GAP_UNDER_WEIGHT_FLOWCHART: f32 = 1.6;
 const OWN_EDGE_GAP_OVER_WEIGHT: f32 = 0.06;
-const OWN_EDGE_GAP_OVER_WEIGHT_FLOWCHART: f32 = 0.05;
+const OWN_EDGE_GAP_OVER_WEIGHT_FLOWCHART: f32 = 0.20;
 const OWN_EDGE_TOUCH_HARD_PENALTY: f32 = 0.25;
 const OWN_EDGE_TOUCH_HARD_PENALTY_FLOWCHART: f32 = 1.25;
 

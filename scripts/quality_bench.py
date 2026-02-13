@@ -472,11 +472,22 @@ def parse_path_points(d: str, steps: int = 8):
     return points
 
 
+def canonical_edge_id(raw) -> str:
+    if raw is None:
+        return ""
+    text = str(raw).strip()
+    if not text:
+        return ""
+    if text.startswith("#"):
+        text = text[1:]
+    return re.sub(r"\s+", "", text).lower()
+
+
 def parse_mermaid_edges(svg_path: Path):
     root = ET.fromstring(svg_path.read_text())
     edges = []
 
-    def visit(elem, acc_tx, acc_ty, in_edge_group):
+    def visit(elem, acc_tx, acc_ty, in_edge_group, inherited_edge_id):
         tx, ty = parse_transform(elem.attrib.get("transform", ""))
         cur_tx = acc_tx + tx
         cur_ty = acc_ty + ty
@@ -503,6 +514,10 @@ def parse_mermaid_edges(svg_path: Path):
         if "actor-line" in cls_lower or "actorline" in cls_lower or "lifeline" in cls_lower:
             is_edge_class = False
         has_marker = "marker-end" in elem.attrib or "marker-start" in elem.attrib
+        local_edge_id = elem.attrib.get("data-edge-id") or elem.attrib.get("data-id")
+        if tag in {"path", "polyline", "line"}:
+            local_edge_id = local_edge_id or elem.attrib.get("id")
+        edge_id = local_edge_id or inherited_edge_id
 
         if tag == "path":
             if is_edge_group or is_edge_class or has_marker:
@@ -510,25 +525,46 @@ def parse_mermaid_edges(svg_path: Path):
                 points = parse_path_points(d)
                 if points:
                     points = [(x + cur_tx, y + cur_ty) for x, y in points]
-                    edges.append(points)
+                    resolved_id = edge_id or f"edge-{len(edges)}"
+                    edges.append(
+                        {
+                            "id": resolved_id,
+                            "id_norm": canonical_edge_id(resolved_id),
+                            "points": points,
+                        }
+                    )
         elif tag == "polyline":
             if is_edge_group or is_edge_class or has_marker:
                 pts = parse_points(elem.attrib.get("points", ""))
                 if pts:
                     points = [(x + cur_tx, y + cur_ty) for x, y in pts]
-                    edges.append(points)
+                    resolved_id = edge_id or f"edge-{len(edges)}"
+                    edges.append(
+                        {
+                            "id": resolved_id,
+                            "id_norm": canonical_edge_id(resolved_id),
+                            "points": points,
+                        }
+                    )
         elif tag == "line":
             if is_edge_group or is_edge_class or has_marker:
                 x1 = parse_svg_number(elem.attrib.get("x1", "0")) + cur_tx
                 y1 = parse_svg_number(elem.attrib.get("y1", "0")) + cur_ty
                 x2 = parse_svg_number(elem.attrib.get("x2", "0")) + cur_tx
                 y2 = parse_svg_number(elem.attrib.get("y2", "0")) + cur_ty
-                edges.append([(x1, y1), (x2, y2)])
+                resolved_id = edge_id or f"edge-{len(edges)}"
+                edges.append(
+                    {
+                        "id": resolved_id,
+                        "id_norm": canonical_edge_id(resolved_id),
+                        "points": [(x1, y1), (x2, y2)],
+                    }
+                )
 
         for child in list(elem):
-            visit(child, cur_tx, cur_ty, is_edge_group)
+            visit(child, cur_tx, cur_ty, is_edge_group, edge_id)
 
-    visit(root, 0.0, 0.0, False)
+    visit(root, 0.0, 0.0, False, "")
     return edges
 
 
@@ -604,13 +640,15 @@ def parse_text_boxes(svg_path: Path):
     root = ET.fromstring(svg_path.read_text())
     boxes = []
 
-    def visit(elem, acc_tx, acc_ty):
+    def visit(elem, acc_tx, acc_ty, inherited_edge_id):
         tag = strip_ns(elem.tag)
         if tag in {"defs", "style", "script"}:
             return
         tx, ty = parse_transform(elem.attrib.get("transform", ""))
         cur_tx = acc_tx + tx
         cur_ty = acc_ty + ty
+        local_edge_id = elem.attrib.get("data-edge-id") or elem.attrib.get("data-id")
+        edge_id = local_edge_id or inherited_edge_id
 
         if tag == "foreignObject":
             width = parse_svg_number(elem.attrib.get("width", ""))
@@ -625,6 +663,8 @@ def parse_text_boxes(svg_path: Path):
                         "width": width,
                         "height": height,
                         "class": elem.attrib.get("class", ""),
+                        "edge_id": edge_id or "",
+                        "edge_id_norm": canonical_edge_id(edge_id),
                     }
                 )
 
@@ -668,13 +708,15 @@ def parse_text_boxes(svg_path: Path):
                         "width": width,
                         "height": height,
                         "class": elem.attrib.get("class", ""),
+                        "edge_id": edge_id or "",
+                        "edge_id_norm": canonical_edge_id(edge_id),
                     }
                 )
 
         for child in list(elem):
-            visit(child, cur_tx, cur_ty)
+            visit(child, cur_tx, cur_ty, edge_id)
 
-    visit(root, 0.0, 0.0)
+    visit(root, 0.0, 0.0, "")
     return boxes
 
 
@@ -710,7 +752,7 @@ def parse_edge_label_boxes(svg_path: Path):
             return False
         return fill in {"#fff", "#ffffff", "white", "rgb(255,255,255)"}
 
-    def visit(elem, acc_tx, acc_ty, in_edge_label_group):
+    def visit(elem, acc_tx, acc_ty, in_edge_label_group, inherited_edge_id):
         tag = strip_ns(elem.tag)
         if tag in {"defs", "style", "script"}:
             return
@@ -718,6 +760,8 @@ def parse_edge_label_boxes(svg_path: Path):
         cur_tx = acc_tx + tx
         cur_ty = acc_ty + ty
         cls = elem.attrib.get("class", "").lower()
+        local_edge_id = elem.attrib.get("data-edge-id") or elem.attrib.get("data-id")
+        edge_id = local_edge_id or inherited_edge_id
         is_edge_label_group = in_edge_label_group or "edgelabel" in cls
 
         if tag == "foreignObject" and is_edge_label_group:
@@ -726,19 +770,37 @@ def parse_edge_label_boxes(svg_path: Path):
             if width > 0.0 and height > 0.0:
                 x = parse_svg_number(elem.attrib.get("x", "")) + cur_tx
                 y = parse_svg_number(elem.attrib.get("y", "")) + cur_ty
-                boxes.append({"x": x, "y": y, "width": width, "height": height})
+                boxes.append(
+                    {
+                        "x": x,
+                        "y": y,
+                        "width": width,
+                        "height": height,
+                        "edge_id": edge_id or "",
+                        "edge_id_norm": canonical_edge_id(edge_id),
+                    }
+                )
         elif tag == "rect" and looks_like_edge_label_rect(elem, is_edge_label_group):
             width = parse_svg_number(elem.attrib.get("width", ""))
             height = parse_svg_number(elem.attrib.get("height", ""))
             if width > 0.0 and height > 0.0:
                 x = parse_svg_number(elem.attrib.get("x", "")) + cur_tx
                 y = parse_svg_number(elem.attrib.get("y", "")) + cur_ty
-                boxes.append({"x": x, "y": y, "width": width, "height": height})
+                boxes.append(
+                    {
+                        "x": x,
+                        "y": y,
+                        "width": width,
+                        "height": height,
+                        "edge_id": edge_id or "",
+                        "edge_id_norm": canonical_edge_id(edge_id),
+                    }
+                )
 
         for child in list(elem):
-            visit(child, cur_tx, cur_ty, is_edge_label_group)
+            visit(child, cur_tx, cur_ty, is_edge_label_group, edge_id)
 
-    visit(root, 0.0, 0.0, False)
+    visit(root, 0.0, 0.0, False, "")
     return boxes
 
 
@@ -1054,6 +1116,17 @@ def compute_label_metrics(
         candidate_edge_labels = [label for label in labels if label.get("owner") is None]
         use_fallback_candidate_filter = True
 
+    edge_points = []
+    edge_points_by_id = {}
+    for edge in edges:
+        points = [tuple(p) for p in edge.get("points", [])]
+        if len(points) < 2:
+            continue
+        edge_points.append(points)
+        edge_id_norm = canonical_edge_id(edge.get("id_norm") or edge.get("id"))
+        if edge_id_norm and edge_id_norm not in edge_points_by_id:
+            edge_points_by_id[edge_id_norm] = points
+
     candidate_records = []
     for label in candidate_edge_labels:
         center = (
@@ -1062,10 +1135,7 @@ def compute_label_metrics(
         )
         min_dist = float("inf")
         min_gap = float("inf")
-        for edge in edges:
-            points = [tuple(p) for p in edge.get("points", [])]
-            if len(points) < 2:
-                continue
+        for points in edge_points:
             min_dist = min(min_dist, point_polyline_distance(center, points))
             min_gap = min(min_gap, polyline_rect_gap(points, label))
         if not math.isfinite(min_dist) or not math.isfinite(min_gap):
@@ -1089,7 +1159,24 @@ def compute_label_metrics(
             and min_gap > candidate_gap_cutoff
         ):
             continue
-        candidate_records.append((label, min_dist, min_gap, bad_limit, path_bad_limit))
+        label_edge_norm = canonical_edge_id(label.get("edge_id_norm") or label.get("edge_id"))
+        owned_points = edge_points_by_id.get(label_edge_norm)
+        owned_mapped = owned_points is not None
+        owned_dist = point_polyline_distance(center, owned_points) if owned_mapped else None
+        owned_gap = polyline_rect_gap(owned_points, label) if owned_mapped else None
+        candidate_records.append(
+            {
+                "label": label,
+                "min_dist": min_dist,
+                "min_gap": min_gap,
+                "bad_limit": bad_limit,
+                "path_bad_limit": path_bad_limit,
+                "has_edge_id": bool(label_edge_norm),
+                "owned_mapped": owned_mapped,
+                "owned_dist": owned_dist,
+                "owned_gap": owned_gap,
+            }
+        )
 
     # Sequence SVGs often contain actor labels in the same text style family.
     # Keep the nearest plausible labels, bounded by expected message-label count.
@@ -1098,10 +1185,14 @@ def compute_label_metrics(
         if not isinstance(target_count, int) or target_count <= 0:
             target_count = sum(1 for edge in edges if len(edge.get("points", [])) >= 2)
         if target_count > 0 and len(candidate_records) > target_count:
-            candidate_records.sort(key=lambda row: (row[2], row[1]))
+            candidate_records.sort(key=lambda row: (row["min_gap"], row["min_dist"]))
             candidate_records = candidate_records[:target_count]
 
-    for _label, min_dist, min_gap, bad_limit, path_bad_limit in candidate_records:
+    for row in candidate_records:
+        min_dist = row["min_dist"]
+        min_gap = row["min_gap"]
+        bad_limit = row["bad_limit"]
+        path_bad_limit = row["path_bad_limit"]
         edge_label_distances.append(min_dist)
         edge_label_path_gaps.append(min_gap)
         if min_dist > bad_limit:
@@ -1116,6 +1207,44 @@ def compute_label_metrics(
             edge_label_clearance_scores.append(math.exp(-0.5 * z * z))
         if 1.0 <= min_gap <= 6.0:
             edge_label_in_band_count += 1
+
+    edge_label_owned_distances = []
+    edge_label_owned_bad_count = 0
+    edge_label_owned_path_gaps = []
+    edge_label_owned_path_bad_count = 0
+    edge_label_owned_path_touch_count = 0
+    edge_label_owned_clearance_scores = []
+    edge_label_owned_in_band_count = 0
+    edge_label_owned_candidate_count = 0
+    edge_label_owned_unmapped_count = 0
+    for row in candidate_records:
+        if not row.get("has_edge_id"):
+            continue
+        edge_label_owned_candidate_count += 1
+        if not row.get("owned_mapped"):
+            edge_label_owned_unmapped_count += 1
+            continue
+        owned_dist = row.get("owned_dist")
+        owned_gap = row.get("owned_gap")
+        if not isinstance(owned_dist, (int, float)) or not isinstance(owned_gap, (int, float)):
+            edge_label_owned_unmapped_count += 1
+            continue
+        bad_limit = row["bad_limit"]
+        path_bad_limit = row["path_bad_limit"]
+        edge_label_owned_distances.append(float(owned_dist))
+        edge_label_owned_path_gaps.append(float(owned_gap))
+        if owned_dist > bad_limit:
+            edge_label_owned_bad_count += 1
+        if owned_gap > path_bad_limit:
+            edge_label_owned_path_bad_count += 1
+        if owned_gap <= edge_label_touch_eps:
+            edge_label_owned_path_touch_count += 1
+            edge_label_owned_clearance_scores.append(0.0)
+        else:
+            z = (owned_gap - edge_label_clearance_target) / edge_label_clearance_sigma
+            edge_label_owned_clearance_scores.append(math.exp(-0.5 * z * z))
+        if 1.0 <= owned_gap <= 6.0:
+            edge_label_owned_in_band_count += 1
 
     edge_label_alignment_mean = (
         sum(edge_label_distances) / len(edge_label_distances)
@@ -1137,6 +1266,26 @@ def compute_label_metrics(
         ordered = sorted(edge_label_path_gaps)
         p95_idx = int(round((len(ordered) - 1) * 0.95))
         edge_label_path_gap_p95 = ordered[p95_idx]
+    edge_label_owned_alignment_mean = (
+        sum(edge_label_owned_distances) / len(edge_label_owned_distances)
+        if edge_label_owned_distances
+        else 0.0
+    )
+    edge_label_owned_alignment_p95 = 0.0
+    if edge_label_owned_distances:
+        ordered = sorted(edge_label_owned_distances)
+        p95_idx = int(round((len(ordered) - 1) * 0.95))
+        edge_label_owned_alignment_p95 = ordered[p95_idx]
+    edge_label_owned_path_gap_mean = (
+        sum(edge_label_owned_path_gaps) / len(edge_label_owned_path_gaps)
+        if edge_label_owned_path_gaps
+        else 0.0
+    )
+    edge_label_owned_path_gap_p95 = 0.0
+    if edge_label_owned_path_gaps:
+        ordered = sorted(edge_label_owned_path_gaps)
+        p95_idx = int(round((len(ordered) - 1) * 0.95))
+        edge_label_owned_path_gap_p95 = ordered[p95_idx]
 
     metrics = {
         "label_count": len(labels),
@@ -1154,6 +1303,17 @@ def compute_label_metrics(
         "edge_label_alignment_bad_count": edge_label_bad_count,
         "edge_label_path_gap_count": len(edge_label_path_gaps),
         "edge_label_detected_count": len(candidate_records),
+        "edge_label_owned_candidate_count": edge_label_owned_candidate_count,
+        "edge_label_owned_unmapped_count": edge_label_owned_unmapped_count,
+        "edge_label_owned_mapping_ratio": (
+            (edge_label_owned_candidate_count - edge_label_owned_unmapped_count)
+            / edge_label_owned_candidate_count
+            if edge_label_owned_candidate_count > 0
+            else 0.0
+        ),
+        "edge_label_owned_alignment_count": len(edge_label_owned_distances),
+        "edge_label_owned_alignment_bad_count": edge_label_owned_bad_count,
+        "edge_label_owned_path_gap_count": len(edge_label_owned_path_gaps),
     }
     if edge_label_distances:
         metrics.update(
@@ -1193,6 +1353,49 @@ def compute_label_metrics(
                 ),
             }
         )
+    if edge_label_owned_distances:
+        metrics.update(
+            {
+                "edge_label_owned_alignment_mean": edge_label_owned_alignment_mean,
+                "edge_label_owned_alignment_p95": edge_label_owned_alignment_p95,
+                "edge_label_owned_alignment_bad_ratio": (
+                    edge_label_owned_bad_count / len(edge_label_owned_distances)
+                ),
+            }
+        )
+    if edge_label_owned_path_gaps:
+        metrics.update(
+            {
+                "edge_label_owned_path_gap_mean": edge_label_owned_path_gap_mean,
+                "edge_label_owned_path_gap_p95": edge_label_owned_path_gap_p95,
+                "edge_label_owned_path_touch_count": edge_label_owned_path_touch_count,
+                "edge_label_owned_path_touch_ratio": (
+                    edge_label_owned_path_touch_count / len(edge_label_owned_path_gaps)
+                ),
+                "edge_label_owned_path_gap_bad_count": edge_label_owned_path_bad_count,
+                "edge_label_owned_path_gap_bad_ratio": (
+                    edge_label_owned_path_bad_count / len(edge_label_owned_path_gaps)
+                ),
+                # Score in [0,1]: 0 when touching path, highest near target
+                # clearance band (~2px), and decays when labels drift too far.
+                "edge_label_owned_path_clearance_score_mean": (
+                    sum(edge_label_owned_clearance_scores)
+                    / len(edge_label_owned_clearance_scores)
+                    if edge_label_owned_clearance_scores
+                    else 0.0
+                ),
+                "edge_label_owned_path_non_touch_ratio": (
+                    1.0
+                    - (
+                        edge_label_owned_path_touch_count
+                        / len(edge_label_owned_path_gaps)
+                    )
+                ),
+                "edge_label_owned_path_in_band_ratio": (
+                    edge_label_owned_in_band_count / len(edge_label_owned_path_gaps)
+                ),
+            }
+        )
     return metrics
 
 
@@ -1228,12 +1431,21 @@ def load_mermaid_svg_graph(svg_path: Path):
         node_list.append((node_id, node, cx, cy, pad))
 
     edges = []
-    for points in edge_paths:
+    for edge_path in edge_paths:
+        points = [tuple(p) for p in edge_path.get("points", [])]
         if len(points) < 2:
             continue
         from_id = match_endpoint(points[0], node_list)
         to_id = match_endpoint(points[-1], node_list)
-        edges.append({"points": points, "from": from_id, "to": to_id})
+        edges.append(
+            {
+                "id": edge_path.get("id", ""),
+                "id_norm": canonical_edge_id(edge_path.get("id")),
+                "points": points,
+                "from": from_id,
+                "to": to_id,
+            }
+        )
 
     return {"width": width, "height": height}, nodes, edges
 
@@ -1555,6 +1767,10 @@ def common_comparison_stats(left, right):
         "arrow_path_intersections",
         "label_overlap_count",
         "label_out_of_bounds_count",
+        "edge_label_path_gap_mean",
+        "edge_label_path_touch_ratio",
+        "edge_label_owned_path_gap_mean",
+        "edge_label_owned_path_touch_ratio",
     ]
     metrics = {}
     for metric in core_metrics:
@@ -1581,6 +1797,7 @@ def common_comparison_stats(left, right):
         "arrow_path_intersections",
         "label_overlap_count",
         "label_out_of_bounds_count",
+        "edge_label_owned_path_touch_ratio",
     ]
     non_worse = 0
     strict = 0
@@ -1625,6 +1842,10 @@ def summarize_common_comparison(left, right):
         "arrow_path_intersections",
         "label_overlap_count",
         "label_out_of_bounds_count",
+        "edge_label_path_gap_mean",
+        "edge_label_path_touch_ratio",
+        "edge_label_owned_path_gap_mean",
+        "edge_label_owned_path_touch_ratio",
     ]:
         metric_stats = stats["metrics"].get(metric, {})
         lines.append(
@@ -2042,6 +2263,30 @@ def main():
         mmdc_label_nontouch, mmdc_label_nontouch_count = summarize_metric(
             results.get("mermaid_cli", {}), "edge_label_path_non_touch_ratio"
         )
+        mmdr_label_owned_gap, mmdr_label_owned_gap_count = summarize_metric(
+            results.get("mmdr", {}), "edge_label_owned_path_gap_mean"
+        )
+        mmdc_label_owned_gap, mmdc_label_owned_gap_count = summarize_metric(
+            results.get("mermaid_cli", {}), "edge_label_owned_path_gap_mean"
+        )
+        mmdr_label_owned_touch, mmdr_label_owned_touch_count = summarize_metric(
+            results.get("mmdr", {}), "edge_label_owned_path_touch_ratio"
+        )
+        mmdc_label_owned_touch, mmdc_label_owned_touch_count = summarize_metric(
+            results.get("mermaid_cli", {}), "edge_label_owned_path_touch_ratio"
+        )
+        mmdr_label_owned_map, mmdr_label_owned_map_count = summarize_metric(
+            results.get("mmdr", {}), "edge_label_owned_mapping_ratio"
+        )
+        mmdc_label_owned_map, mmdc_label_owned_map_count = summarize_metric(
+            results.get("mermaid_cli", {}), "edge_label_owned_mapping_ratio"
+        )
+        mmdr_label_owned_clearance, mmdr_label_owned_clearance_count = summarize_metric(
+            results.get("mmdr", {}), "edge_label_owned_path_clearance_score_mean"
+        )
+        mmdc_label_owned_clearance, mmdc_label_owned_clearance_count = summarize_metric(
+            results.get("mermaid_cli", {}), "edge_label_owned_path_clearance_score_mean"
+        )
         history_summary.update(
             {
                 "mmdr_avg_wasted_space_ratio": mmdr_waste,
@@ -2062,6 +2307,14 @@ def main():
                 "mermaid_cli_avg_edge_label_clearance_score": mmdc_label_clearance,
                 "mmdr_avg_edge_label_non_touch_ratio": mmdr_label_nontouch,
                 "mermaid_cli_avg_edge_label_non_touch_ratio": mmdc_label_nontouch,
+                "mmdr_avg_edge_label_owned_path_gap": mmdr_label_owned_gap,
+                "mermaid_cli_avg_edge_label_owned_path_gap": mmdc_label_owned_gap,
+                "mmdr_avg_edge_label_owned_path_touch_ratio": mmdr_label_owned_touch,
+                "mermaid_cli_avg_edge_label_owned_path_touch_ratio": mmdc_label_owned_touch,
+                "mmdr_avg_edge_label_owned_mapping_ratio": mmdr_label_owned_map,
+                "mermaid_cli_avg_edge_label_owned_mapping_ratio": mmdc_label_owned_map,
+                "mmdr_avg_edge_label_owned_clearance_score": mmdr_label_owned_clearance,
+                "mermaid_cli_avg_edge_label_owned_clearance_score": mmdc_label_owned_clearance,
             }
         )
         if mmdr_label_align_count:
@@ -2086,6 +2339,30 @@ def main():
             print(f"mmdr: avg edge-label non-touch ratio: {mmdr_label_nontouch:.3f}")
         if mmdc_label_nontouch_count:
             print(f"mermaid-cli: avg edge-label non-touch ratio: {mmdc_label_nontouch:.3f}")
+        if mmdr_label_owned_gap_count:
+            print(f"mmdr: avg owned edge-label path gap (0=touching): {mmdr_label_owned_gap:.3f}")
+        if mmdc_label_owned_gap_count:
+            print(
+                f"mermaid-cli: avg owned edge-label path gap (0=touching): {mmdc_label_owned_gap:.3f}"
+            )
+        if mmdr_label_owned_touch_count:
+            print(f"mmdr: avg owned edge-label touch ratio: {mmdr_label_owned_touch:.3f}")
+        if mmdc_label_owned_touch_count:
+            print(f"mermaid-cli: avg owned edge-label touch ratio: {mmdc_label_owned_touch:.3f}")
+        if mmdr_label_owned_clearance_count:
+            print(
+                "mmdr: avg owned edge-label clearance score "
+                f"(touch=0, best near ~2px): {mmdr_label_owned_clearance:.3f}"
+            )
+        if mmdc_label_owned_clearance_count:
+            print(
+                "mermaid-cli: avg owned edge-label clearance score "
+                f"(touch=0, best near ~2px): {mmdc_label_owned_clearance:.3f}"
+            )
+        if mmdr_label_owned_map_count:
+            print(f"mmdr: avg owned edge-label mapping ratio: {mmdr_label_owned_map:.3f}")
+        if mmdc_label_owned_map_count:
+            print(f"mermaid-cli: avg owned edge-label mapping ratio: {mmdc_label_owned_map:.3f}")
         comparison_stats = common_comparison_stats(
             results.get("mmdr", {}), results.get("mermaid_cli", {})
         )
@@ -2199,6 +2476,18 @@ def main():
                     "  "
                     f"{name}: score={metrics.get('edge_label_path_clearance_score_mean', 0.0):.3f}, "
                     f"non_touch={metrics.get('edge_label_path_non_touch_ratio', 0.0):.3f}"
+                )
+            by_owned_touch = sorted(
+                scored,
+                key=lambda kv: kv[1].get("edge_label_owned_path_touch_ratio", 0.0),
+                reverse=True,
+            )[:5]
+            print("Worst 5 by owned edge-label touch ratio (touch = 1):")
+            for name, metrics in by_owned_touch:
+                print(
+                    "  "
+                    f"{name}: touch_ratio={metrics.get('edge_label_owned_path_touch_ratio', 0.0):.3f}, "
+                    f"mapping={metrics.get('edge_label_owned_mapping_ratio', 0.0):.3f}"
                 )
 
     if not args.no_history_log:

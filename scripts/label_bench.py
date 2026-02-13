@@ -54,6 +54,10 @@ def summarize(results):
         "avg_clearance_score": avg("edge_label_path_clearance_score_mean"),
         "avg_in_band_ratio": avg("edge_label_path_in_band_ratio"),
         "avg_bad_ratio": avg("edge_label_path_gap_bad_ratio"),
+        "avg_owned_gap_mean": avg("edge_label_owned_path_gap_mean"),
+        "avg_owned_touch_ratio": avg("edge_label_owned_path_touch_ratio"),
+        "avg_owned_clearance_score": avg("edge_label_owned_path_clearance_score_mean"),
+        "avg_owned_mapping_ratio": avg("edge_label_owned_mapping_ratio"),
     }
 
 
@@ -215,7 +219,11 @@ def main():
                 f"avg_non_touch_ratio={summary['avg_non_touch_ratio']:.3f} "
                 f"avg_clearance_score={summary['avg_clearance_score']:.3f} "
                 f"avg_in_band_ratio={summary['avg_in_band_ratio']:.3f} "
-                f"avg_bad_ratio={summary['avg_bad_ratio']:.3f}"
+                f"avg_bad_ratio={summary['avg_bad_ratio']:.3f} "
+                f"avg_owned_gap_mean={summary['avg_owned_gap_mean']:.3f} "
+                f"avg_owned_touch_ratio={summary['avg_owned_touch_ratio']:.3f} "
+                f"avg_owned_clearance_score={summary['avg_owned_clearance_score']:.3f} "
+                f"avg_owned_mapping_ratio={summary['avg_owned_mapping_ratio']:.3f}"
             )
         mmdr_summary = summary
     else:
@@ -232,7 +240,11 @@ def main():
                 f"avg_non_touch_ratio={summary['avg_non_touch_ratio']:.3f} "
                 f"avg_clearance_score={summary['avg_clearance_score']:.3f} "
                 f"avg_in_band_ratio={summary['avg_in_band_ratio']:.3f} "
-                f"avg_bad_ratio={summary['avg_bad_ratio']:.3f}"
+                f"avg_bad_ratio={summary['avg_bad_ratio']:.3f} "
+                f"avg_owned_gap_mean={summary['avg_owned_gap_mean']:.3f} "
+                f"avg_owned_touch_ratio={summary['avg_owned_touch_ratio']:.3f} "
+                f"avg_owned_clearance_score={summary['avg_owned_clearance_score']:.3f} "
+                f"avg_owned_mapping_ratio={summary['avg_owned_mapping_ratio']:.3f}"
             )
         mmdc_summary = summary
     else:
@@ -250,11 +262,17 @@ def main():
             "edge_label_path_clearance_score_mean",
             "edge_label_path_in_band_ratio",
             "edge_label_path_gap_bad_ratio",
+            "edge_label_owned_path_gap_mean",
+            "edge_label_owned_path_touch_ratio",
+            "edge_label_owned_path_clearance_score_mean",
+            "edge_label_owned_mapping_ratio",
         ]:
             higher_is_better = metric in {
                 "edge_label_path_non_touch_ratio",
                 "edge_label_path_clearance_score_mean",
                 "edge_label_path_in_band_ratio",
+                "edge_label_owned_path_clearance_score_mean",
+                "edge_label_owned_mapping_ratio",
             }
             better, equal, worse, regressions = compare_metric(
                 results["mmdr"],
