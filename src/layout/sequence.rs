@@ -901,10 +901,10 @@ fn choose_sequence_center_label_anchor(
 ) -> (f32, f32) {
     let (anchor, dir) = edge_midpoint_with_direction(points);
     let normal = (-dir.1, dir.0);
-    let normal_step = (label.height + theme.font_size * 0.55).max(10.0);
+    let normal_step = (label.height + theme.font_size * 0.35).max(7.0);
     let tangent_step = (label.width + theme.font_size * 0.45).max(12.0) * 0.38;
     let tangent_offsets = [0.0, -0.35, 0.35, -0.8, 0.8, -1.35, 1.35];
-    let normal_offsets = [-1.0, 1.0, -1.8, 1.8, -2.6, 2.6, -3.4, 3.4];
+    let normal_offsets = [-0.55, 0.55, -1.1, 1.1, -1.7, 1.7, -2.4, 2.4];
     let mut best = anchor;
     let mut best_score = f32::INFINITY;
 
@@ -918,7 +918,7 @@ fn choose_sequence_center_label_anchor(
             let mut score = sequence_label_penalty(rect, center, anchor, points, occupied);
             score += sequence_edge_overlap_penalty(rect, edge_paths, edge_idx);
             let own_dist = point_to_polyline_distance(center, points);
-            score += own_dist * 0.04;
+            score += own_dist * 0.07;
             if dir.0.abs() > dir.1.abs() && center.1 > anchor.1 {
                 // Prefer placing sequence message labels above horizontal edges.
                 score += 0.25;
@@ -944,9 +944,9 @@ fn choose_sequence_endpoint_label_anchor(
 ) -> Option<(f32, f32)> {
     let ((anchor_x, anchor_y), dir) = sequence_endpoint_base(points, start, theme)?;
     let normal = (-dir.1, dir.0);
-    let base_step = (theme.font_size * 0.6).max(8.0);
+    let base_step = (theme.font_size * 0.45).max(6.0);
     let tangent_offsets = [0.0, 0.8, -0.8, 1.7, -1.7];
-    let normal_offsets = [1.0, -1.0, 1.8, -1.8, 2.6, -2.6, 3.4, -3.4];
+    let normal_offsets = [0.6, -0.6, 1.2, -1.2, 1.9, -1.9, 2.7, -2.7];
     let anchor = (anchor_x, anchor_y);
     let mut best = anchor;
     let mut best_score = f32::INFINITY;
@@ -996,7 +996,7 @@ fn sequence_endpoint_base(
         return None;
     }
     let dir = (dx / len, dy / len);
-    let offset = (theme.font_size * 0.6).max(8.0);
+    let offset = (theme.font_size * 0.45).max(6.0);
     let anchor = (p0.0 + dir.0 * offset * 1.4, p0.1 + dir.1 * offset * 1.4);
     Some((anchor, dir))
 }
