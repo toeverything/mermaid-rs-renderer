@@ -219,13 +219,12 @@ def main():
             "edge_label_path_touch_ratio",
             "edge_label_path_gap_bad_ratio",
         ]:
-            higher_is_better = metric == "edge_label_path_touch_ratio"
             better, equal, worse, regressions = compare_metric(
                 results["mmdr"],
                 results["mermaid_cli"],
                 common,
                 metric,
-                higher_is_better=higher_is_better,
+                higher_is_better=False,
             )
             metric_stats = {
                 "better": better,
