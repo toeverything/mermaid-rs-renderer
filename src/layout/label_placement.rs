@@ -44,7 +44,7 @@ fn edge_target_distance(kind: DiagramKind, label_h: f32, label_pad_y: f32) -> f3
     match kind {
         // For flowcharts we want labels visually attached to the carrying edge.
         // Keep them close, but with enough clearance to avoid path contact.
-        DiagramKind::Flowchart => (label_h * 0.52 + label_pad_y * 0.65 + 1.2).max(5.4),
+        DiagramKind::Flowchart => (label_h * 0.52 + label_pad_y * 0.65 + 0.4).max(4.8),
         _ => (label_h * 0.65 + label_pad_y).max(6.0),
     }
 }
@@ -991,12 +991,14 @@ const WEIGHT_FLOWCHART_LABEL_OVERLAP: f32 = 0.45;
 const WEIGHT_EDGE_OVERLAP: f32 = 0.5;
 const WEIGHT_FLOWCHART_EDGE_OVERLAP: f32 = 0.25;
 const WEIGHT_OUTSIDE: f32 = 1.2;
-const OWN_EDGE_CLEARANCE: f32 = 1.8;
-const OWN_EDGE_CLEARANCE_FLOWCHART: f32 = 2.6;
-const OWN_EDGE_CLEARANCE_WEIGHT: f32 = 0.9;
-const OWN_EDGE_CLEARANCE_WEIGHT_FLOWCHART: f32 = 1.4;
-const OWN_EDGE_TOUCH_HARD_PENALTY: f32 = 0.35;
-const OWN_EDGE_TOUCH_HARD_PENALTY_FLOWCHART: f32 = 0.7;
+const OWN_EDGE_GAP_TARGET: f32 = 1.2;
+const OWN_EDGE_GAP_TARGET_FLOWCHART: f32 = 1.8;
+const OWN_EDGE_GAP_UNDER_WEIGHT: f32 = 0.7;
+const OWN_EDGE_GAP_UNDER_WEIGHT_FLOWCHART: f32 = 1.1;
+const OWN_EDGE_GAP_OVER_WEIGHT: f32 = 0.10;
+const OWN_EDGE_GAP_OVER_WEIGHT_FLOWCHART: f32 = 0.16;
+const OWN_EDGE_TOUCH_HARD_PENALTY: f32 = 0.25;
+const OWN_EDGE_TOUCH_HARD_PENALTY_FLOWCHART: f32 = 0.55;
 
 fn label_penalties(
     rect: Rect,
@@ -1048,22 +1050,29 @@ fn label_penalties(
     }
     let own_edge_dist = polyline_rect_distance(own_edge_points, &rect);
     if own_edge_dist.is_finite() {
-        let (clearance, clearance_weight, hard_penalty) = if kind == DiagramKind::Flowchart {
-            (
-                OWN_EDGE_CLEARANCE_FLOWCHART,
-                OWN_EDGE_CLEARANCE_WEIGHT_FLOWCHART,
-                OWN_EDGE_TOUCH_HARD_PENALTY_FLOWCHART,
-            )
-        } else {
-            (
-                OWN_EDGE_CLEARANCE,
-                OWN_EDGE_CLEARANCE_WEIGHT,
-                OWN_EDGE_TOUCH_HARD_PENALTY,
-            )
-        };
-        if own_edge_dist < clearance {
-            let shortage = (clearance - own_edge_dist) / clearance.max(1e-3);
-            overlap += area * (shortage * shortage * clearance_weight);
+        let (target_gap, under_weight, over_weight, hard_penalty) =
+            if kind == DiagramKind::Flowchart {
+                (
+                    OWN_EDGE_GAP_TARGET_FLOWCHART,
+                    OWN_EDGE_GAP_UNDER_WEIGHT_FLOWCHART,
+                    OWN_EDGE_GAP_OVER_WEIGHT_FLOWCHART,
+                    OWN_EDGE_TOUCH_HARD_PENALTY_FLOWCHART,
+                )
+            } else {
+                (
+                    OWN_EDGE_GAP_TARGET,
+                    OWN_EDGE_GAP_UNDER_WEIGHT,
+                    OWN_EDGE_GAP_OVER_WEIGHT,
+                    OWN_EDGE_TOUCH_HARD_PENALTY,
+                )
+            };
+        if own_edge_dist < target_gap {
+            let shortage = (target_gap - own_edge_dist) / target_gap.max(1e-3);
+            overlap += area * (shortage * shortage * under_weight);
+        }
+        if own_edge_dist > target_gap {
+            let excess = (own_edge_dist - target_gap) / target_gap.max(1e-3);
+            overlap += area * (excess * excess * over_weight);
         }
         if own_edge_dist <= 0.35 {
             overlap += area * hard_penalty;
@@ -1310,6 +1319,54 @@ mod tests {
         assert!(
             touch.0 > clear.0,
             "touching own edge should cost more than clear placement"
+        );
+    }
+
+    #[test]
+    fn label_penalties_increase_when_too_far_from_own_edge() {
+        let rect_near: Rect = (10.0, 14.0, 20.0, 10.0);
+        let rect_far: Rect = (10.0, 44.0, 20.0, 10.0);
+        let edge_points = vec![(0.0, 15.0), (40.0, 15.0)];
+        let occupied: Vec<Rect> = Vec::new();
+        let occupied_grid = ObstacleGrid::new(20.0, &occupied);
+        let edge_obstacles: Vec<EdgeObstacle> = Vec::new();
+        let edge_rects: Vec<Rect> = Vec::new();
+        let edge_grid = ObstacleGrid::new(20.0, &edge_rects);
+
+        let near = label_penalties(
+            rect_near,
+            (20.0, 15.0),
+            20.0,
+            10.0,
+            DiagramKind::Flowchart,
+            &occupied,
+            &occupied_grid,
+            0,
+            &edge_obstacles,
+            &edge_grid,
+            0,
+            &edge_points,
+            None,
+        );
+        let far = label_penalties(
+            rect_far,
+            (20.0, 15.0),
+            20.0,
+            10.0,
+            DiagramKind::Flowchart,
+            &occupied,
+            &occupied_grid,
+            0,
+            &edge_obstacles,
+            &edge_grid,
+            0,
+            &edge_points,
+            None,
+        );
+
+        assert!(
+            far.0 > near.0,
+            "large own-edge gap should cost more than near-target placement"
         );
     }
 
