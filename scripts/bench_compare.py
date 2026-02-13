@@ -40,6 +40,7 @@ BIN = os.environ.get("MMDR_BIN", str(ROOT / "target" / "release" / "mmdr"))
 MMD_CLI = os.environ.get("MMD_CLI", "npx -y @mermaid-js/mermaid-cli")
 RUNS = int(os.environ.get("RUNS", "8"))
 WARMUP = int(os.environ.get("WARMUP", "2"))
+MMDR_MEASURE_MEMORY = False
 MMD_CLI_RUNS = int(os.environ.get("MMD_CLI_RUNS", "1"))
 MMD_CLI_WARMUP = int(os.environ.get("MMD_CLI_WARMUP", "0"))
 MMD_CLI_MEASURE_MEMORY = False
@@ -50,7 +51,7 @@ HISTORY_LOG = Path(
         str(ROOT / "tmp" / "benchmark-history" / "bench-compare-runs.jsonl"),
     )
 )
-MMDC_CACHE_SCHEMA_VERSION = 1
+MMDC_CACHE_SCHEMA_VERSION = 2
 
 CASE_NAMES = [
     "flowchart_small",
@@ -112,7 +113,20 @@ def env_bool(name: str) -> bool:
     return value.strip().lower() not in {"", "0", "false", "no", "off"}
 
 
+MMDR_MEASURE_MEMORY = env_bool("MMDR_MEASURE_MEMORY")
 MMD_CLI_MEASURE_MEMORY = env_bool("MMD_CLI_MEASURE_MEMORY")
+
+
+def benchmark_env() -> dict:
+    env = os.environ.copy()
+    if "PUPPETEER_EXECUTABLE_PATH" not in env:
+        chrome = find_puppeteer_chrome()
+        if chrome:
+            env["PUPPETEER_EXECUTABLE_PATH"] = chrome
+    return env
+
+
+BENCHMARK_ENV = benchmark_env()
 
 
 def mmdc_cli_identity(cli_cmd: str) -> str:
@@ -131,7 +145,6 @@ def mmdc_cache_digest(
     fixture_path: Path,
     cli_cmd: str,
     cli_identity: str,
-    script_digest: str,
     runs: int,
     warmup: int,
     config_path: str,
@@ -143,7 +156,6 @@ def mmdc_cache_digest(
     hasher.update(f"runs:{runs}\n".encode("utf-8"))
     hasher.update(f"warmup:{warmup}\n".encode("utf-8"))
     hasher.update(f"config:{config_path}\n".encode("utf-8"))
-    hasher.update(f"script:{script_digest}\n".encode("utf-8"))
     hasher.update(fixture_path.read_bytes())
     if config_path:
         cfg = Path(config_path)
@@ -183,7 +195,6 @@ def init_mmdc_cache_state() -> dict:
             "enabled": False,
             "dir": cache_dir,
             "cli_identity": "",
-            "script_digest": "",
             "hits": 0,
             "misses": 0,
         }
@@ -192,7 +203,6 @@ def init_mmdc_cache_state() -> dict:
         "enabled": True,
         "dir": cache_dir,
         "cli_identity": mmdc_cli_identity(MMD_CLI),
-        "script_digest": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         "hits": 0,
         "misses": 0,
     }
@@ -295,16 +305,11 @@ def summarize_history(results: dict) -> dict:
 
 def run_cmd(cmd, capture_stderr=False):
     """Run a command and return (success, stderr_output)."""
-    env = os.environ.copy()
-    if "PUPPETEER_EXECUTABLE_PATH" not in env:
-        chrome = find_puppeteer_chrome()
-        if chrome:
-            env["PUPPETEER_EXECUTABLE_PATH"] = chrome
     result = subprocess.run(
         cmd,
         capture_output=True,
         text=True,
-        env=env,
+        env=BENCHMARK_ENV,
     )
     if result.returncode != 0 and not capture_stderr:
         raise subprocess.CalledProcessError(result.returncode, cmd)
@@ -332,12 +337,7 @@ def get_memory_usage(cmd) -> Optional[int]:
             # Fall back to resource module for rough estimate
             try:
                 import resource
-                env = os.environ.copy()
-                if "PUPPETEER_EXECUTABLE_PATH" not in env:
-                    chrome = find_puppeteer_chrome()
-                    if chrome:
-                        env["PUPPETEER_EXECUTABLE_PATH"] = chrome
-                subprocess.run(cmd, capture_output=True, env=env)
+                subprocess.run(cmd, capture_output=True, env=BENCHMARK_ENV)
                 # This only gets the current process, not subprocess, so it's not accurate
                 # Return None to indicate we can't measure
                 return None
@@ -345,13 +345,8 @@ def get_memory_usage(cmd) -> Optional[int]:
                 return None
 
     time_cmd = [time_bin, "-v"] + cmd
-    env = os.environ.copy()
-    if "PUPPETEER_EXECUTABLE_PATH" not in env:
-        chrome = find_puppeteer_chrome()
-        if chrome:
-            env["PUPPETEER_EXECUTABLE_PATH"] = chrome
     try:
-        result = subprocess.run(time_cmd, capture_output=True, text=True, env=env)
+        result = subprocess.run(time_cmd, capture_output=True, text=True, env=BENCHMARK_ENV)
     except FileNotFoundError:
         return None
     if result.returncode != 0:
@@ -393,8 +388,8 @@ def bench_mmdr(path: Path):
             except json.JSONDecodeError:
                 pass
 
-    # Get memory usage
-    memory_kb = get_memory_usage(cmd_base)
+    # Optional: mmdr memory probing executes one extra process per case.
+    memory_kb = get_memory_usage(cmd_base) if MMDR_MEASURE_MEMORY else None
 
     return {
         "times": times,
@@ -419,7 +414,6 @@ def bench_mermaid_cli(path: Path, cache_state: dict):
             path,
             MMD_CLI,
             cache_state.get("cli_identity", ""),
-            cache_state.get("script_digest", ""),
             MMD_CLI_RUNS,
             MMD_CLI_WARMUP,
             MMDC_CONFIG,
@@ -438,8 +432,9 @@ def bench_mermaid_cli(path: Path, cache_state: dict):
 
     times = []
 
-    # Warmup (and preflight to detect unsupported diagrams)
-    if MMD_CLI_WARMUP == 0:
+    # Warmup (if any). When warmup is 0, do not run an extra preflight because that
+    # doubles cold-run mermaid-cli time.
+    for _ in range(MMD_CLI_WARMUP):
         success, stderr = run_cmd(cmd, capture_stderr=True)
         if not success:
             result = {
@@ -450,21 +445,10 @@ def bench_mermaid_cli(path: Path, cache_state: dict):
             if cache_json_path:
                 save_json(cache_json_path, result)
             return result
-    else:
-        for _ in range(MMD_CLI_WARMUP):
-            success, stderr = run_cmd(cmd, capture_stderr=True)
-            if not success:
-                result = {
-                    "times": [],
-                    "memory_kb": None,
-                    "error": short_error(stderr) or "mmdc failed",
-                }
-                if cache_json_path:
-                    save_json(cache_json_path, result)
-                return result
 
     # Actual runs
-    for _ in range(MMD_CLI_RUNS):
+    measured_runs = MMD_CLI_RUNS if MMD_CLI_RUNS > 0 else 1
+    for _ in range(measured_runs):
         start = time.perf_counter()
         success, stderr = run_cmd(cmd, capture_stderr=True)
         elapsed = time.perf_counter() - start
@@ -707,8 +691,11 @@ def generate_breakdown_chart(results: dict, output_path: Path):
 def main():
     results = {"mmdr": {}, "mermaid_cli": {}}
     mmdc_cache_state = init_mmdc_cache_state()
+    runtime = {}
+    run_start = time.perf_counter()
 
     print("Benchmarking mmdr...")
+    phase_start = time.perf_counter()
     for name, path in CASES:
         print(f"  {name}...", end=" ", flush=True)
         data = bench_mmdr(path)
@@ -722,9 +709,11 @@ def main():
             print(f"total={results['mmdr'][name]['mean_ms']:.2f}ms (parse={bd['parse_ms']:.2f} layout={bd['layout_ms']:.2f} render={bd['render_ms']:.2f})")
         else:
             print(f"total={results['mmdr'][name]['mean_ms']:.2f}ms")
+    runtime["mmdr_s"] = time.perf_counter() - phase_start
 
     if os.environ.get("SKIP_MERMAID_CLI"):
         print("SKIP_MERMAID_CLI set, skipping mermaid-cli")
+        runtime["mermaid_cli_s"] = 0.0
     else:
         print("\nBenchmarking mermaid-cli...")
         print(
@@ -732,6 +721,7 @@ def main():
             f"runs={MMD_CLI_RUNS}, warmup={MMD_CLI_WARMUP}, "
             f"measure_memory={str(MMD_CLI_MEASURE_MEMORY).lower()}"
         )
+        phase_start = time.perf_counter()
         for name, path in CASES:
             print(f"  {name}...", end=" ", flush=True)
             data = bench_mermaid_cli(path, mmdc_cache_state)
@@ -748,6 +738,7 @@ def main():
                 }
                 cached_suffix = " (cached)" if data.get("cached") else ""
                 print(f"total={results['mermaid_cli'][name]['mean_ms']:.2f}ms{cached_suffix}")
+        runtime["mermaid_cli_s"] = time.perf_counter() - phase_start
 
     # Print summary
     print("\n" + "=" * 70)
@@ -800,11 +791,13 @@ def main():
     print(f"\nWrote {out_json}")
 
     # Generate charts unless explicitly skipped
+    phase_start = time.perf_counter()
     if not os.environ.get("SKIP_CHARTS"):
         charts_dir = Path(os.environ.get("CHARTS_DIR", str(ROOT / "docs" / "benchmarks")))
         charts_dir.mkdir(parents=True, exist_ok=True)
         generate_svg_chart(results, charts_dir / "comparison_chart.svg")
         generate_breakdown_chart(results, charts_dir / "breakdown_chart.svg")
+    runtime["charts_s"] = time.perf_counter() - phase_start
 
     if mmdc_cache_state.get("enabled"):
         print(
@@ -814,7 +807,10 @@ def main():
             f"dir={mmdc_cache_state.get('dir')}"
         )
 
+    runtime["history_s"] = 0.0
+    runtime["total_pre_history_s"] = time.perf_counter() - run_start
     if not env_bool("NO_HISTORY_LOG"):
+        phase_start = time.perf_counter()
         record = {
             "timestamp_utc": iso_utc_now(),
             "history_version": 1,
@@ -828,6 +824,7 @@ def main():
                 "mmd_cli": MMD_CLI,
                 "runs": RUNS,
                 "warmup": WARMUP,
+                "mmdr_measure_memory": MMDR_MEASURE_MEMORY,
                 "mmd_cli_runs": MMD_CLI_RUNS,
                 "mmd_cli_warmup": MMD_CLI_WARMUP,
                 "mmd_cli_measure_memory": MMD_CLI_MEASURE_MEMORY,
@@ -842,10 +839,21 @@ def main():
                 "out_json": str(out_json),
                 "charts_dir": str(Path(os.environ.get("CHARTS_DIR", str(ROOT / "docs" / "benchmarks")))),
             },
+            "runtime": dict(runtime),
             "summary": summarize_history(results),
         }
         append_benchmark_history(HISTORY_LOG, record)
+        runtime["history_s"] = time.perf_counter() - phase_start
         print(f"Wrote history: {HISTORY_LOG}")
+    runtime["total_s"] = time.perf_counter() - run_start
+    print(
+        "runtime breakdown (s): "
+        f"mmdr={runtime.get('mmdr_s', 0.0):.2f}, "
+        f"mermaid-cli={runtime.get('mermaid_cli_s', 0.0):.2f}, "
+        f"charts={runtime.get('charts_s', 0.0):.2f}, "
+        f"history={runtime.get('history_s', 0.0):.2f}, "
+        f"total={runtime.get('total_s', 0.0):.2f}"
+    )
 
 
 if __name__ == "__main__":
