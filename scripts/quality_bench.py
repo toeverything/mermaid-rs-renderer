@@ -1012,17 +1012,21 @@ def compute_label_metrics(svg_path: Path, nodes, edges, diagram_kind=""):
             continue
         # Exclude obvious non-edge labels (titles, distant captions).
         if diagram_kind == "sequence":
-            candidate_cutoff = max(48.0, label["height"] * 6.0)
+            candidate_dist_cutoff = max(36.0, label["height"] * 3.5)
+            candidate_gap_cutoff = max(28.0, label["height"] * 2.2)
             bad_limit = max(24.0, label["height"] * 3.6)
             path_bad_limit = max(18.0, label["height"] * 2.2)
         else:
-            candidate_cutoff = max(24.0, label["height"] * 4.0)
+            # Fallback labels are noisy; only keep labels that are plausibly
+            # attached to an edge by center or by rect-to-path clearance.
+            candidate_dist_cutoff = max(16.0, label["height"] * 1.5)
+            candidate_gap_cutoff = max(12.0, label["height"] * 1.25)
             bad_limit = max(10.0, label["height"] * 1.75)
             path_bad_limit = max(8.0, label["height"] * 0.9)
         if (
             use_fallback_candidate_filter
-            and min_dist > candidate_cutoff
-            and min_gap > candidate_cutoff
+            and min_dist > candidate_dist_cutoff
+            and min_gap > candidate_gap_cutoff
         ):
             continue
         edge_label_distances.append(min_dist)
@@ -1055,7 +1059,7 @@ def compute_label_metrics(svg_path: Path, nodes, edges, diagram_kind=""):
         p95_idx = int(round((len(ordered) - 1) * 0.95))
         edge_label_path_gap_p95 = ordered[p95_idx]
 
-    return {
+    metrics = {
         "label_count": len(labels),
         "label_overlap_count": overlap_count,
         "label_overlap_area": overlap_area,
@@ -1068,31 +1072,36 @@ def compute_label_metrics(svg_path: Path, nodes, edges, diagram_kind=""):
             label_out_of_bounds_area / label_total_area if label_total_area > 1e-9 else 0.0
         ),
         "edge_label_alignment_count": len(edge_label_distances),
-        "edge_label_alignment_mean": edge_label_alignment_mean,
-        "edge_label_alignment_p95": edge_label_alignment_p95,
         "edge_label_alignment_bad_count": edge_label_bad_count,
-        "edge_label_alignment_bad_ratio": (
-            edge_label_bad_count / len(edge_label_distances)
-            if edge_label_distances
-            else 0.0
-        ),
         "edge_label_path_gap_count": len(edge_label_path_gaps),
         "edge_label_detected_count": len(candidate_edge_labels),
-        "edge_label_path_gap_mean": edge_label_path_gap_mean,
-        "edge_label_path_gap_p95": edge_label_path_gap_p95,
-        "edge_label_path_touch_count": edge_label_path_touch_count,
-        "edge_label_path_touch_ratio": (
-            edge_label_path_touch_count / len(edge_label_path_gaps)
-            if edge_label_path_gaps
-            else 0.0
-        ),
-        "edge_label_path_gap_bad_count": edge_label_path_bad_count,
-        "edge_label_path_gap_bad_ratio": (
-            edge_label_path_bad_count / len(edge_label_path_gaps)
-            if edge_label_path_gaps
-            else 0.0
-        ),
     }
+    if edge_label_distances:
+        metrics.update(
+            {
+                "edge_label_alignment_mean": edge_label_alignment_mean,
+                "edge_label_alignment_p95": edge_label_alignment_p95,
+                "edge_label_alignment_bad_ratio": (
+                    edge_label_bad_count / len(edge_label_distances)
+                ),
+            }
+        )
+    if edge_label_path_gaps:
+        metrics.update(
+            {
+                "edge_label_path_gap_mean": edge_label_path_gap_mean,
+                "edge_label_path_gap_p95": edge_label_path_gap_p95,
+                "edge_label_path_touch_count": edge_label_path_touch_count,
+                "edge_label_path_touch_ratio": (
+                    edge_label_path_touch_count / len(edge_label_path_gaps)
+                ),
+                "edge_label_path_gap_bad_count": edge_label_path_bad_count,
+                "edge_label_path_gap_bad_ratio": (
+                    edge_label_path_bad_count / len(edge_label_path_gaps)
+                ),
+            }
+        )
+    return metrics
 
 
 def match_endpoint(point, node_list):
@@ -1284,7 +1293,11 @@ def summarize_scores(results):
 
 
 def summarize_metric(results, key):
-    values = [v[key] for v in results.values() if isinstance(v, dict) and key in v]
+    values = [
+        v[key]
+        for v in results.values()
+        if isinstance(v, dict) and isinstance(v.get(key), (int, float))
+    ]
     if not values:
         return None, 0
     return sum(values) / len(values), len(values)
