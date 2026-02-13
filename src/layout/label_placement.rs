@@ -43,7 +43,8 @@ fn edge_distance_weight(kind: DiagramKind, overlap_pressure: f32) -> f32 {
 fn edge_target_distance(kind: DiagramKind, label_h: f32, label_pad_y: f32) -> f32 {
     match kind {
         // For flowcharts we want labels visually attached to the carrying edge.
-        DiagramKind::Flowchart => (label_h * 0.52 + label_pad_y * 0.65).max(4.5),
+        // Keep them close, but with enough clearance to avoid path contact.
+        DiagramKind::Flowchart => (label_h * 0.52 + label_pad_y * 0.65 + 1.2).max(5.4),
         _ => (label_h * 0.65 + label_pad_y).max(6.0),
     }
 }
@@ -248,6 +249,7 @@ fn resolve_center_labels(
                         &edge_obstacles,
                         &edge_grid,
                         idx,
+                        &edge.points,
                         bounds,
                     );
                     let overlap_pressure = penalty.0;
@@ -491,6 +493,120 @@ fn point_polyline_distance(point: (f32, f32), points: &[(f32, f32)]) -> f32 {
         }
     }
     if best.is_finite() { best } else { 0.0 }
+}
+
+fn point_rect_distance(point: (f32, f32), rect: &Rect) -> f32 {
+    let min_x = rect.0;
+    let min_y = rect.1;
+    let max_x = rect.0 + rect.2;
+    let max_y = rect.1 + rect.3;
+    let dx = if point.0 < min_x {
+        min_x - point.0
+    } else if point.0 > max_x {
+        point.0 - max_x
+    } else {
+        0.0
+    };
+    let dy = if point.1 < min_y {
+        min_y - point.1
+    } else if point.1 > max_y {
+        point.1 - max_y
+    } else {
+        0.0
+    };
+    (dx * dx + dy * dy).sqrt()
+}
+
+fn point_inside_rect(point: (f32, f32), rect: &Rect) -> bool {
+    point.0 >= rect.0
+        && point.0 <= rect.0 + rect.2
+        && point.1 >= rect.1
+        && point.1 <= rect.1 + rect.3
+}
+
+fn orientation(a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> f32 {
+    (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0)
+}
+
+fn point_on_segment(point: (f32, f32), a: (f32, f32), b: (f32, f32), eps: f32) -> bool {
+    point.0 >= a.0.min(b.0) - eps
+        && point.0 <= a.0.max(b.0) + eps
+        && point.1 >= a.1.min(b.1) - eps
+        && point.1 <= a.1.max(b.1) + eps
+}
+
+fn segments_intersect(a: (f32, f32), b: (f32, f32), c: (f32, f32), d: (f32, f32)) -> bool {
+    let eps = 1e-4;
+    let o1 = orientation(a, b, c);
+    let o2 = orientation(a, b, d);
+    let o3 = orientation(c, d, a);
+    let o4 = orientation(c, d, b);
+    let crosses = ((o1 > eps && o2 < -eps) || (o1 < -eps && o2 > eps))
+        && ((o3 > eps && o4 < -eps) || (o3 < -eps && o4 > eps));
+    if crosses {
+        return true;
+    }
+    if o1.abs() <= eps && point_on_segment(c, a, b, eps) {
+        return true;
+    }
+    if o2.abs() <= eps && point_on_segment(d, a, b, eps) {
+        return true;
+    }
+    if o3.abs() <= eps && point_on_segment(a, c, d, eps) {
+        return true;
+    }
+    if o4.abs() <= eps && point_on_segment(b, c, d, eps) {
+        return true;
+    }
+    false
+}
+
+fn segment_intersects_rect(a: (f32, f32), b: (f32, f32), rect: &Rect) -> bool {
+    if point_inside_rect(a, rect) || point_inside_rect(b, rect) {
+        return true;
+    }
+    let x0 = rect.0;
+    let y0 = rect.1;
+    let x1 = rect.0 + rect.2;
+    let y1 = rect.1 + rect.3;
+    let corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
+    corners
+        .iter()
+        .zip(corners.iter().cycle().skip(1))
+        .take(4)
+        .any(|(c0, c1)| segments_intersect(a, b, *c0, *c1))
+}
+
+fn segment_rect_distance(a: (f32, f32), b: (f32, f32), rect: &Rect) -> f32 {
+    if segment_intersects_rect(a, b, rect) {
+        return 0.0;
+    }
+    let mut best = point_rect_distance(a, rect).min(point_rect_distance(b, rect));
+    let x0 = rect.0;
+    let y0 = rect.1;
+    let x1 = rect.0 + rect.2;
+    let y1 = rect.1 + rect.3;
+    for corner in [(x0, y0), (x1, y0), (x1, y1), (x0, y1)] {
+        best = best.min(point_segment_distance(corner, a, b));
+    }
+    best
+}
+
+fn polyline_rect_distance(points: &[(f32, f32)], rect: &Rect) -> f32 {
+    if points.len() < 2 {
+        return f32::INFINITY;
+    }
+    let mut best = f32::INFINITY;
+    for seg in points.windows(2) {
+        let dist = segment_rect_distance(seg[0], seg[1], rect);
+        if dist < best {
+            best = dist;
+        }
+        if best <= 0.0 {
+            break;
+        }
+    }
+    best
 }
 
 fn subgraph_label_rect(sub: &SubgraphLayout, kind: DiagramKind, theme: &Theme) -> Option<Rect> {
@@ -875,6 +991,12 @@ const WEIGHT_FLOWCHART_LABEL_OVERLAP: f32 = 0.45;
 const WEIGHT_EDGE_OVERLAP: f32 = 0.5;
 const WEIGHT_FLOWCHART_EDGE_OVERLAP: f32 = 0.25;
 const WEIGHT_OUTSIDE: f32 = 1.2;
+const OWN_EDGE_CLEARANCE: f32 = 1.8;
+const OWN_EDGE_CLEARANCE_FLOWCHART: f32 = 2.6;
+const OWN_EDGE_CLEARANCE_WEIGHT: f32 = 0.9;
+const OWN_EDGE_CLEARANCE_WEIGHT_FLOWCHART: f32 = 1.4;
+const OWN_EDGE_TOUCH_HARD_PENALTY: f32 = 0.35;
+const OWN_EDGE_TOUCH_HARD_PENALTY_FLOWCHART: f32 = 0.7;
 
 fn label_penalties(
     rect: Rect,
@@ -888,6 +1010,7 @@ fn label_penalties(
     edge_obstacles: &[EdgeObstacle],
     edge_grid: &ObstacleGrid,
     edge_idx: usize,
+    own_edge_points: &[(f32, f32)],
     bounds: Option<(f32, f32)>,
 ) -> (f32, f32) {
     let area = (label_w * label_h).max(1.0);
@@ -922,6 +1045,29 @@ fn label_penalties(
     }
     if let Some(bound) = bounds {
         overlap += outside_area(&rect, bound) * WEIGHT_OUTSIDE;
+    }
+    let own_edge_dist = polyline_rect_distance(own_edge_points, &rect);
+    if own_edge_dist.is_finite() {
+        let (clearance, clearance_weight, hard_penalty) = if kind == DiagramKind::Flowchart {
+            (
+                OWN_EDGE_CLEARANCE_FLOWCHART,
+                OWN_EDGE_CLEARANCE_WEIGHT_FLOWCHART,
+                OWN_EDGE_TOUCH_HARD_PENALTY_FLOWCHART,
+            )
+        } else {
+            (
+                OWN_EDGE_CLEARANCE,
+                OWN_EDGE_CLEARANCE_WEIGHT,
+                OWN_EDGE_TOUCH_HARD_PENALTY,
+            )
+        };
+        if own_edge_dist < clearance {
+            let shortage = (clearance - own_edge_dist) / clearance.max(1e-3);
+            overlap += area * (shortage * shortage * clearance_weight);
+        }
+        if own_edge_dist <= 0.35 {
+            overlap += area * hard_penalty;
+        }
     }
     let dx = (rect.0 + rect.2 * 0.5) - anchor.0;
     let dy = (rect.1 + rect.3 * 0.5) - anchor.1;
@@ -1037,6 +1183,7 @@ fn edge_endpoint_label_position_with_avoid(
                 edge_obstacles,
                 edge_grid,
                 edge_idx,
+                &edge.points,
                 bounds,
             );
             if candidate_better(penalty, best_penalty) {
@@ -1094,6 +1241,76 @@ mod tests {
     fn outside_area_fully_outside() {
         let rect: Rect = (200.0, 200.0, 10.0, 10.0);
         assert_eq!(outside_area(&rect, (100.0, 100.0)), 100.0);
+    }
+
+    #[test]
+    fn polyline_rect_distance_zero_when_segment_crosses_rect() {
+        let rect: Rect = (10.0, 10.0, 20.0, 20.0);
+        let points = vec![(0.0, 20.0), (40.0, 20.0)];
+        let dist = polyline_rect_distance(&points, &rect);
+        assert!(
+            dist <= 1e-4,
+            "expected intersection distance ~0, got {dist}"
+        );
+    }
+
+    #[test]
+    fn polyline_rect_distance_positive_when_clear() {
+        let rect: Rect = (10.0, 10.0, 20.0, 20.0);
+        let points = vec![(0.0, 40.0), (40.0, 40.0)];
+        let dist = polyline_rect_distance(&points, &rect);
+        assert!(
+            (dist - 10.0).abs() < 1e-3,
+            "expected 10px gap below rectangle, got {dist}"
+        );
+    }
+
+    #[test]
+    fn label_penalties_increase_when_touching_own_edge() {
+        let rect_touch: Rect = (10.0, 10.0, 20.0, 10.0);
+        let rect_clear: Rect = (10.0, 16.0, 20.0, 10.0);
+        let edge_points = vec![(0.0, 15.0), (40.0, 15.0)];
+        let occupied: Vec<Rect> = Vec::new();
+        let occupied_grid = ObstacleGrid::new(20.0, &occupied);
+        let edge_obstacles: Vec<EdgeObstacle> = Vec::new();
+        let edge_rects: Vec<Rect> = Vec::new();
+        let edge_grid = ObstacleGrid::new(20.0, &edge_rects);
+
+        let touch = label_penalties(
+            rect_touch,
+            (20.0, 15.0),
+            20.0,
+            10.0,
+            DiagramKind::Flowchart,
+            &occupied,
+            &occupied_grid,
+            0,
+            &edge_obstacles,
+            &edge_grid,
+            0,
+            &edge_points,
+            None,
+        );
+        let clear = label_penalties(
+            rect_clear,
+            (20.0, 15.0),
+            20.0,
+            10.0,
+            DiagramKind::Flowchart,
+            &occupied,
+            &occupied_grid,
+            0,
+            &edge_obstacles,
+            &edge_grid,
+            0,
+            &edge_points,
+            None,
+        );
+
+        assert!(
+            touch.0 > clear.0,
+            "touching own edge should cost more than clear placement"
+        );
     }
 
     #[test]
