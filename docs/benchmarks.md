@@ -143,6 +143,9 @@ This benchmark reports `edge_label_path_gap_*` metrics where:
 
 Candidate selection details:
 - If explicit edge-label boxes are present in SVG, only those boxes are scored.
+- Sequence rendering now emits explicit `.edgeLabel` rectangles for message labels
+  (in addition to text) so sequence path-gap metrics are measured against the
+  rendered label box geometry instead of inferred text-only bounds.
 - Fallback text-label scoring is enabled only for fixtures that appear to contain
   explicit edge labels in source syntax.
 - Sequence fallback candidates are capped to the expected message-label count and

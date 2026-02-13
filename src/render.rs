@@ -680,6 +680,10 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             if let Some(color) = &edge.override_style.stroke {
                 stroke = color.clone();
             }
+            let edge_label_fill = theme.edge_label_background.as_str();
+            let edge_label_stroke = theme.primary_border_color.as_str();
+            let (center_pad_x, center_pad_y) = edge_label_padding(layout.kind, config);
+            let (endpoint_pad_x, endpoint_pad_y) = endpoint_label_padding(layout.kind);
             let marker_id = color_ids.get(&stroke).copied().unwrap_or(0);
             let marker_end = if edge.arrow_end {
                 format!("marker-end=\"url(#arrow-seq-{marker_id})\"")
@@ -746,6 +750,16 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     .label_color
                     .as_deref()
                     .unwrap_or(theme.primary_text_color.as_str());
+                if edge_label_fill != "none" {
+                    let rect_x = mid_x - label.width / 2.0 - center_pad_x;
+                    let rect_y = label_y - label.height / 2.0 - center_pad_y;
+                    let rect_w = label.width + center_pad_x * 2.0;
+                    let rect_h = label.height + center_pad_y * 2.0;
+                    svg.push_str(&format!(
+                        "<rect class=\"edgeLabel sequenceEdgeLabel\" x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"0.90\" stroke=\"{}\" stroke-opacity=\"0.30\" stroke-width=\"0.8\"/>",
+                        edge_label_fill, edge_label_stroke
+                    ));
+                }
                 svg.push_str(&text_block_svg(
                     mid_x,
                     label_y,
@@ -768,6 +782,16 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     .start_label_anchor
                     .or_else(|| edge_endpoint_label_position(edge, true, end_label_offset))
             {
+                if edge_label_fill != "none" {
+                    let rect_x = x - label.width / 2.0 - endpoint_pad_x;
+                    let rect_y = y - label.height / 2.0 - endpoint_pad_y;
+                    let rect_w = label.width + endpoint_pad_x * 2.0;
+                    let rect_h = label.height + endpoint_pad_y * 2.0;
+                    svg.push_str(&format!(
+                        "<rect class=\"edgeLabel sequenceEndpointLabel\" x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"0.88\" stroke=\"{}\" stroke-opacity=\"0.28\" stroke-width=\"0.75\"/>",
+                        edge_label_fill, edge_label_stroke
+                    ));
+                }
                 svg.push_str(&text_block_svg(
                     x,
                     y,
@@ -783,6 +807,16 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     .end_label_anchor
                     .or_else(|| edge_endpoint_label_position(edge, false, end_label_offset))
             {
+                if edge_label_fill != "none" {
+                    let rect_x = x - label.width / 2.0 - endpoint_pad_x;
+                    let rect_y = y - label.height / 2.0 - endpoint_pad_y;
+                    let rect_w = label.width + endpoint_pad_x * 2.0;
+                    let rect_h = label.height + endpoint_pad_y * 2.0;
+                    svg.push_str(&format!(
+                        "<rect class=\"edgeLabel sequenceEndpointLabel\" x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"0.88\" stroke=\"{}\" stroke-opacity=\"0.28\" stroke-width=\"0.75\"/>",
+                        edge_label_fill, edge_label_stroke
+                    ));
+                }
                 svg.push_str(&text_block_svg(
                     x,
                     y,

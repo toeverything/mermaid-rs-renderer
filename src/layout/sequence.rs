@@ -7,8 +7,10 @@ const SEQUENCE_LABEL_PAD_Y: f32 = 2.0;
 const SEQUENCE_ENDPOINT_LABEL_PAD_X: f32 = 2.5;
 const SEQUENCE_ENDPOINT_LABEL_PAD_Y: f32 = 1.5;
 const SEQUENCE_LABEL_GAP_TARGET: f32 = 2.5;
+const SEQUENCE_LABEL_GAP_MIN: f32 = 1.0;
+const SEQUENCE_LABEL_GAP_MAX: f32 = 6.0;
 const SEQUENCE_LABEL_TOUCH_EPS: f32 = 0.5;
-const SEQUENCE_LABEL_FAR_GAP: f32 = 14.0;
+const SEQUENCE_LABEL_FAR_GAP: f32 = 10.0;
 
 pub(super) fn compute_sequence_layout(
     graph: &Graph,
@@ -93,6 +95,25 @@ pub(super) fn compute_sequence_layout(
     }
 
     let base_spacing = (theme.font_size * 2.1).max(18.0);
+    let message_row_spacing: Vec<f32> = graph
+        .edges
+        .iter()
+        .map(|edge| {
+            let mut row_h = 0.0f32;
+            if let Some(label) = &edge.label {
+                row_h = row_h.max(measure_label(label, theme, config).height);
+            }
+            if let Some(label) = &edge.start_label {
+                row_h = row_h.max(measure_label(label, theme, config).height);
+            }
+            if let Some(label) = &edge.end_label {
+                row_h = row_h.max(measure_label(label, theme, config).height);
+            }
+            // Keep enough vertical clearance so message labels can stay close to
+            // their own edge without immediately colliding with neighboring rows.
+            base_spacing.max(row_h + theme.font_size * 0.9)
+        })
+        .collect();
     let note_gap_y = (theme.font_size * 0.55).max(5.0);
     let note_gap_x = (theme.font_size * 0.65).max(7.0);
     let note_padding_x = (theme.font_size * 0.75).max(7.0);
@@ -172,7 +193,7 @@ pub(super) fn compute_sequence_layout(
         if idx < graph.edges.len() {
             message_cursor += extra_before[idx];
             message_ys.push(message_cursor);
-            message_cursor += base_spacing;
+            message_cursor += message_row_spacing[idx];
         }
     }
 
@@ -906,9 +927,14 @@ fn choose_sequence_center_label_anchor(
     let normal = (-dir.1, dir.0);
     let normal_step =
         (label.height * 0.5 + SEQUENCE_LABEL_PAD_Y + SEQUENCE_LABEL_GAP_TARGET).max(6.0);
-    let tangent_step = (label.width + theme.font_size * 0.35).max(10.0) * 0.26;
-    let tangent_offsets = [0.0, -0.2, 0.2, -0.45, 0.45, -0.8, 0.8, -1.2, 1.2];
-    let normal_offsets = [-1.0, 1.0, -1.35, 1.35, -1.7, 1.7, -2.2, 2.2];
+    let tangent_step = (label.width + theme.font_size * 0.35).max(10.0) * 0.24;
+    // First explore along the edge while keeping labels in a near-path clearance band.
+    let tangent_offsets = [
+        0.0, -0.25, 0.25, -0.5, 0.5, -0.9, 0.9, -1.4, 1.4, -2.0, 2.0, -2.8, 2.8, -3.6, 3.6,
+    ];
+    let normal_offsets = [
+        -1.0, 1.0, -0.9, 0.9, -1.12, 1.12, -1.28, 1.28, -1.45, 1.45, -1.7, 1.7,
+    ];
     let mut best = anchor;
     let mut best_score = f32::INFINITY;
 
@@ -949,8 +975,8 @@ fn choose_sequence_endpoint_label_anchor(
     let ((anchor_x, anchor_y), dir) = sequence_endpoint_base(points, start, theme)?;
     let normal = (-dir.1, dir.0);
     let base_step = (theme.font_size * 0.45).max(6.0);
-    let tangent_offsets = [0.0, 0.8, -0.8, 1.7, -1.7];
-    let normal_offsets = [0.3, -0.3, 0.7, -0.7, 1.2, -1.2, 1.9, -1.9, 2.7, -2.7];
+    let tangent_offsets = [0.0, 0.6, -0.6, 1.2, -1.2, 2.0, -2.0, 2.9, -2.9];
+    let normal_offsets = [0.35, -0.35, 0.75, -0.75, 1.1, -1.1, 1.45, -1.45, 1.8, -1.8];
     let anchor = (anchor_x, anchor_y);
     let mut best = anchor;
     let mut best_score = f32::INFINITY;
@@ -1062,20 +1088,21 @@ fn sequence_label_penalty(
     let own_gap = polyline_rect_gap(own_points, rect);
     let mut gap_penalty = 0.0f32;
     if own_gap <= SEQUENCE_LABEL_TOUCH_EPS {
-        gap_penalty += 80.0 + (SEQUENCE_LABEL_TOUCH_EPS - own_gap).max(0.0) * 20.0;
-    } else {
+        gap_penalty += 120.0 + (SEQUENCE_LABEL_TOUCH_EPS - own_gap).max(0.0) * 30.0;
+    } else if own_gap < SEQUENCE_LABEL_GAP_MIN {
+        let delta = (SEQUENCE_LABEL_GAP_MIN - own_gap) / SEQUENCE_LABEL_GAP_MIN.max(1e-3);
+        gap_penalty += delta * delta * 14.0;
+    } else if own_gap <= SEQUENCE_LABEL_GAP_MAX {
         let delta = (own_gap - SEQUENCE_LABEL_GAP_TARGET) / SEQUENCE_LABEL_GAP_TARGET.max(1e-3);
-        let weight = if own_gap > SEQUENCE_LABEL_GAP_TARGET {
-            0.8
-        } else {
-            1.4
-        };
-        gap_penalty += delta * delta * weight;
+        gap_penalty += delta * delta * 0.9;
+    } else {
+        let far = own_gap - SEQUENCE_LABEL_GAP_MAX;
+        gap_penalty += far * far * 2.4 + far * 0.4;
         if own_gap > SEQUENCE_LABEL_FAR_GAP {
-            gap_penalty += (own_gap - SEQUENCE_LABEL_FAR_GAP) * 0.2;
+            gap_penalty += (own_gap - SEQUENCE_LABEL_FAR_GAP) * 0.9;
         }
     }
-    overlap_area_sum * 0.012 + gap_penalty + distance(center, anchor) * 0.028
+    overlap_area_sum * 0.01 + gap_penalty + distance(center, anchor) * 0.025
 }
 
 fn sequence_edge_overlap_penalty(
