@@ -141,6 +141,13 @@ This benchmark reports `edge_label_path_gap_*` metrics where:
 - `edge_label_path_in_band_ratio`: fraction of labels in the target clearance band (`1px..6px`)
 - `edge_label_path_gap_bad_ratio`: fraction of labels beyond diagram-specific gap thresholds
 
+Candidate selection details:
+- If explicit edge-label boxes are present in SVG, only those boxes are scored.
+- Fallback text-label scoring is enabled only for fixtures that appear to contain
+  explicit edge labels in source syntax.
+- Sequence fallback candidates are capped to the expected message-label count and
+  ranked by nearest-path gap to avoid actor/footbox text polluting label metrics.
+
 Run history for this benchmark is also logged by default to:
 - `tmp/benchmark-history/label-runs.jsonl`
 

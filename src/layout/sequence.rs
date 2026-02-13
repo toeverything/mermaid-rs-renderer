@@ -6,6 +6,9 @@ const SEQUENCE_LABEL_PAD_X: f32 = 3.0;
 const SEQUENCE_LABEL_PAD_Y: f32 = 2.0;
 const SEQUENCE_ENDPOINT_LABEL_PAD_X: f32 = 2.5;
 const SEQUENCE_ENDPOINT_LABEL_PAD_Y: f32 = 1.5;
+const SEQUENCE_LABEL_GAP_TARGET: f32 = 2.5;
+const SEQUENCE_LABEL_TOUCH_EPS: f32 = 0.5;
+const SEQUENCE_LABEL_FAR_GAP: f32 = 14.0;
 
 pub(super) fn compute_sequence_layout(
     graph: &Graph,
@@ -901,10 +904,11 @@ fn choose_sequence_center_label_anchor(
 ) -> (f32, f32) {
     let (anchor, dir) = edge_midpoint_with_direction(points);
     let normal = (-dir.1, dir.0);
-    let normal_step = (label.height + theme.font_size * 0.35).max(7.0);
-    let tangent_step = (label.width + theme.font_size * 0.45).max(12.0) * 0.38;
-    let tangent_offsets = [0.0, -0.35, 0.35, -0.8, 0.8, -1.35, 1.35];
-    let normal_offsets = [-0.55, 0.55, -1.1, 1.1, -1.7, 1.7, -2.4, 2.4];
+    let normal_step =
+        (label.height * 0.5 + SEQUENCE_LABEL_PAD_Y + SEQUENCE_LABEL_GAP_TARGET).max(6.0);
+    let tangent_step = (label.width + theme.font_size * 0.35).max(10.0) * 0.26;
+    let tangent_offsets = [0.0, -0.2, 0.2, -0.45, 0.45, -0.8, 0.8, -1.2, 1.2];
+    let normal_offsets = [-1.0, 1.0, -1.35, 1.35, -1.7, 1.7, -2.2, 2.2];
     let mut best = anchor;
     let mut best_score = f32::INFINITY;
 
@@ -918,7 +922,7 @@ fn choose_sequence_center_label_anchor(
             let mut score = sequence_label_penalty(rect, center, anchor, points, occupied);
             score += sequence_edge_overlap_penalty(rect, edge_paths, edge_idx);
             let own_dist = point_to_polyline_distance(center, points);
-            score += own_dist * 0.07;
+            score += own_dist * 0.03;
             if dir.0.abs() > dir.1.abs() && center.1 > anchor.1 {
                 // Prefer placing sequence message labels above horizontal edges.
                 score += 0.25;
@@ -946,7 +950,7 @@ fn choose_sequence_endpoint_label_anchor(
     let normal = (-dir.1, dir.0);
     let base_step = (theme.font_size * 0.45).max(6.0);
     let tangent_offsets = [0.0, 0.8, -0.8, 1.7, -1.7];
-    let normal_offsets = [0.6, -0.6, 1.2, -1.2, 1.9, -1.9, 2.7, -2.7];
+    let normal_offsets = [0.3, -0.3, 0.7, -0.7, 1.2, -1.2, 1.9, -1.9, 2.7, -2.7];
     let anchor = (anchor_x, anchor_y);
     let mut best = anchor;
     let mut best_score = f32::INFINITY;
@@ -965,7 +969,7 @@ fn choose_sequence_endpoint_label_anchor(
             );
             let mut score = sequence_label_penalty(rect, center, anchor, points, occupied);
             score += sequence_edge_overlap_penalty(rect, edge_paths, edge_idx);
-            score += distance(center, anchor) * 0.02;
+            score += distance(center, anchor) * 0.05;
             if score < best_score {
                 best_score = score;
                 best = center;
@@ -1055,8 +1059,23 @@ fn sequence_label_penalty(
     for obstacle in occupied {
         overlap_area_sum += rect_overlap_area(rect, *obstacle);
     }
-    let own_dist = point_to_polyline_distance(center, own_points);
-    overlap_area_sum * 0.025 + own_dist * 0.02 + distance(center, anchor) * 0.012
+    let own_gap = polyline_rect_gap(own_points, rect);
+    let mut gap_penalty = 0.0f32;
+    if own_gap <= SEQUENCE_LABEL_TOUCH_EPS {
+        gap_penalty += 80.0 + (SEQUENCE_LABEL_TOUCH_EPS - own_gap).max(0.0) * 20.0;
+    } else {
+        let delta = (own_gap - SEQUENCE_LABEL_GAP_TARGET) / SEQUENCE_LABEL_GAP_TARGET.max(1e-3);
+        let weight = if own_gap > SEQUENCE_LABEL_GAP_TARGET {
+            0.8
+        } else {
+            1.4
+        };
+        gap_penalty += delta * delta * weight;
+        if own_gap > SEQUENCE_LABEL_FAR_GAP {
+            gap_penalty += (own_gap - SEQUENCE_LABEL_FAR_GAP) * 0.2;
+        }
+    }
+    overlap_area_sum * 0.012 + gap_penalty + distance(center, anchor) * 0.028
 }
 
 fn sequence_edge_overlap_penalty(
@@ -1109,6 +1128,55 @@ fn point_to_polyline_distance(point: (f32, f32), points: &[(f32, f32)]) -> f32 {
     points
         .windows(2)
         .map(|segment| point_to_segment_distance(point, segment[0], segment[1]))
+        .fold(f32::INFINITY, f32::min)
+}
+
+fn point_rect_distance(point: (f32, f32), rect: Rect) -> f32 {
+    let min_x = rect.0;
+    let min_y = rect.1;
+    let max_x = rect.0 + rect.2;
+    let max_y = rect.1 + rect.3;
+    let dx = if point.0 < min_x {
+        min_x - point.0
+    } else if point.0 > max_x {
+        point.0 - max_x
+    } else {
+        0.0
+    };
+    let dy = if point.1 < min_y {
+        min_y - point.1
+    } else if point.1 > max_y {
+        point.1 - max_y
+    } else {
+        0.0
+    };
+    (dx * dx + dy * dy).sqrt()
+}
+
+fn segment_rect_distance(a: (f32, f32), b: (f32, f32), rect: Rect) -> f32 {
+    if segment_intersects_rect(a, b, rect) {
+        return 0.0;
+    }
+    let mut best = point_rect_distance(a, rect).min(point_rect_distance(b, rect));
+    let corners = [
+        (rect.0, rect.1),
+        (rect.0 + rect.2, rect.1),
+        (rect.0 + rect.2, rect.1 + rect.3),
+        (rect.0, rect.1 + rect.3),
+    ];
+    for corner in corners {
+        best = best.min(point_to_segment_distance(corner, a, b));
+    }
+    best
+}
+
+fn polyline_rect_gap(points: &[(f32, f32)], rect: Rect) -> f32 {
+    if points.len() < 2 {
+        return f32::INFINITY;
+    }
+    points
+        .windows(2)
+        .map(|segment| segment_rect_distance(segment[0], segment[1], rect))
         .fold(f32::INFINITY, f32::min)
 }
 

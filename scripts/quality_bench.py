@@ -19,6 +19,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN_RE = re.compile(r"[AaCcHhLlMmQqSsTtVvZz]|[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?")
+PIPE_EDGE_LABEL_RE = re.compile(r"\|[^|\n]+\|")
+QUOTED_EDGE_LABEL_RE = re.compile(r"--\s*\"[^\"]+\"")
+SEQUENCE_MESSAGE_LABEL_RE = re.compile(r"-{1,2}[x+o]?>{1,2}.*:\s*\S")
 
 
 def load_layout_score():
@@ -179,6 +182,31 @@ def detect_diagram_kind(path: Path):
             return "treemap"
         break
     return ""
+
+
+def expected_sequence_label_count(path: Path) -> int:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return 0
+    count = 0
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("%%"):
+            continue
+        if SEQUENCE_MESSAGE_LABEL_RE.search(line):
+            count += 1
+    return count
+
+
+def fixture_has_edge_label(path: Path, diagram_kind: str) -> bool:
+    if diagram_kind == "sequence":
+        return expected_sequence_label_count(path) > 0
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return bool(PIPE_EDGE_LABEL_RE.search(text) or QUOTED_EDGE_LABEL_RE.search(text))
 
 
 def layout_kind_name(diagram_kind: str):
@@ -593,6 +621,7 @@ def parse_text_boxes(svg_path: Path):
                         "y": y,
                         "width": width,
                         "height": height,
+                        "class": elem.attrib.get("class", ""),
                     }
                 )
 
@@ -635,6 +664,7 @@ def parse_text_boxes(svg_path: Path):
                         "y": y,
                         "width": width,
                         "height": height,
+                        "class": elem.attrib.get("class", ""),
                     }
                 )
 
@@ -653,7 +683,7 @@ def parse_edge_label_boxes(svg_path: Path):
         if in_edge_label_group:
             return True
         h = parse_svg_number(elem.attrib.get("height", ""))
-        if h <= 0.0 or h > 40.0:
+        if h <= 0.0 or h > 140.0:
             return False
         rx = parse_svg_number(elem.attrib.get("rx", ""))
         if rx > 6.0:
@@ -663,6 +693,16 @@ def parse_edge_label_boxes(svg_path: Path):
         stroke_opacity = parse_svg_number(
             elem.attrib.get("stroke-opacity", "") or style.get("stroke-opacity", "")
         )
+        stroke_width = parse_svg_number(
+            elem.attrib.get("stroke-width", "") or style.get("stroke-width", "")
+        )
+        # mmdr edge-label boxes are translucent rounded rects with rgba fill.
+        if (
+            fill.startswith("rgba(")
+            and 0.0 < stroke_opacity <= 0.95
+            and (stroke_width <= 0.0 or stroke_width <= 1.2)
+        ):
+            return True
         if stroke_opacity <= 0.0:
             return False
         return fill in {"#fff", "#ffffff", "white", "rgb(255,255,255)"}
@@ -926,7 +966,14 @@ def infer_label_owner(label, nodes):
     return best_id
 
 
-def compute_label_metrics(svg_path: Path, nodes, edges, diagram_kind=""):
+def compute_label_metrics(
+    svg_path: Path,
+    nodes,
+    edges,
+    diagram_kind="",
+    allow_fallback_candidates=True,
+    expected_edge_label_count=None,
+):
     labels = parse_text_boxes(svg_path)
     explicit_edge_label_boxes = parse_edge_label_boxes(svg_path)
     root = ET.fromstring(svg_path.read_text())
@@ -994,12 +1041,13 @@ def compute_label_metrics(svg_path: Path, nodes, edges, diagram_kind=""):
     edge_label_touch_eps = 0.5
     edge_label_clearance_target = 2.0
     edge_label_clearance_sigma = 2.0
-    candidate_edge_labels = explicit_edge_label_boxes
+    candidate_edge_labels = list(explicit_edge_label_boxes)
     use_fallback_candidate_filter = False
-    if not candidate_edge_labels:
+    if not candidate_edge_labels and allow_fallback_candidates:
         candidate_edge_labels = [label for label in labels if label.get("owner") is None]
         use_fallback_candidate_filter = True
 
+    candidate_records = []
     for label in candidate_edge_labels:
         center = (
             label["x"] + label["width"] * 0.5,
@@ -1017,10 +1065,10 @@ def compute_label_metrics(svg_path: Path, nodes, edges, diagram_kind=""):
             continue
         # Exclude obvious non-edge labels (titles, distant captions).
         if diagram_kind == "sequence":
-            candidate_dist_cutoff = max(36.0, label["height"] * 3.5)
-            candidate_gap_cutoff = max(28.0, label["height"] * 2.2)
-            bad_limit = max(24.0, label["height"] * 3.6)
-            path_bad_limit = max(18.0, label["height"] * 2.2)
+            candidate_dist_cutoff = max(28.0, label["height"] * 2.6)
+            candidate_gap_cutoff = max(20.0, label["height"] * 1.8)
+            bad_limit = max(20.0, label["height"] * 3.4)
+            path_bad_limit = max(16.0, label["height"] * 2.0)
         else:
             # Fallback labels are noisy; only keep labels that are plausibly
             # attached to an edge by center or by rect-to-path clearance.
@@ -1034,6 +1082,19 @@ def compute_label_metrics(svg_path: Path, nodes, edges, diagram_kind=""):
             and min_gap > candidate_gap_cutoff
         ):
             continue
+        candidate_records.append((label, min_dist, min_gap, bad_limit, path_bad_limit))
+
+    # Sequence SVGs often contain actor labels in the same text style family.
+    # Keep the nearest plausible labels, bounded by expected message-label count.
+    if use_fallback_candidate_filter and diagram_kind == "sequence" and candidate_records:
+        target_count = expected_edge_label_count
+        if not isinstance(target_count, int) or target_count <= 0:
+            target_count = sum(1 for edge in edges if len(edge.get("points", [])) >= 2)
+        if target_count > 0 and len(candidate_records) > target_count:
+            candidate_records.sort(key=lambda row: (row[2], row[1]))
+            candidate_records = candidate_records[:target_count]
+
+    for _label, min_dist, min_gap, bad_limit, path_bad_limit in candidate_records:
         edge_label_distances.append(min_dist)
         edge_label_path_gaps.append(min_gap)
         if min_dist > bad_limit:
@@ -1085,7 +1146,7 @@ def compute_label_metrics(svg_path: Path, nodes, edges, diagram_kind=""):
         "edge_label_alignment_count": len(edge_label_distances),
         "edge_label_alignment_bad_count": edge_label_bad_count,
         "edge_label_path_gap_count": len(edge_label_path_gaps),
-        "edge_label_detected_count": len(candidate_edge_labels),
+        "edge_label_detected_count": len(candidate_records),
     }
     if edge_label_distances:
         metrics.update(
@@ -1243,6 +1304,10 @@ def compute_mmdr_metrics(files, bin_path, config_path, out_dir):
     results = {}
     for file in files:
         diagram_kind = detect_diagram_kind(file)
+        allow_fallback_labels = fixture_has_edge_label(file, diagram_kind)
+        expected_sequence_labels = (
+            expected_sequence_label_count(file) if diagram_kind == "sequence" else None
+        )
         key = layout_key(file, ROOT)
         layout_path = out_dir / f"{key}-layout.json"
         svg_path = out_dir / f"{key}.svg"
@@ -1268,7 +1333,16 @@ def compute_mmdr_metrics(files, bin_path, config_path, out_dir):
         metrics = layout_score.compute_metrics(data, nodes, edges)
         metrics["score"] = layout_score.weighted_score(metrics)
         _, _, svg_edges = load_mermaid_svg_graph(svg_path)
-        metrics.update(compute_label_metrics(svg_path, nodes, svg_edges, diagram_kind))
+        metrics.update(
+            compute_label_metrics(
+                svg_path,
+                nodes,
+                svg_edges,
+                diagram_kind,
+                allow_fallback_candidates=allow_fallback_labels,
+                expected_edge_label_count=expected_sequence_labels,
+            )
+        )
         svg_metrics = compute_svg_edge_path_metrics(svg_edges)
         metrics.update(svg_metrics)
         metrics["arrow_path_intersections"] = svg_metrics.get("svg_edge_crossings", 0)
@@ -1285,6 +1359,10 @@ def compute_mmdc_metrics(files, cli_cmd, config_path, out_dir):
     results = {}
     for file in files:
         diagram_kind = detect_diagram_kind(file)
+        allow_fallback_labels = fixture_has_edge_label(file, diagram_kind)
+        expected_sequence_labels = (
+            expected_sequence_label_count(file) if diagram_kind == "sequence" else None
+        )
         key = layout_key(file, ROOT)
         svg_path = out_dir / f"{key}-mmdc.svg"
         if svg_path.exists():
@@ -1299,7 +1377,16 @@ def compute_mmdc_metrics(files, cli_cmd, config_path, out_dir):
             data["kind"] = kind_name
         metrics = layout_score.compute_metrics(data, nodes, edges)
         metrics["score"] = layout_score.weighted_score(metrics)
-        metrics.update(compute_label_metrics(svg_path, nodes, edges, diagram_kind))
+        metrics.update(
+            compute_label_metrics(
+                svg_path,
+                nodes,
+                edges,
+                diagram_kind,
+                allow_fallback_candidates=allow_fallback_labels,
+                expected_edge_label_count=expected_sequence_labels,
+            )
+        )
         svg_metrics = compute_svg_edge_path_metrics(edges)
         metrics.update(svg_metrics)
         metrics["arrow_path_intersections"] = svg_metrics.get("svg_edge_crossings", 0)
