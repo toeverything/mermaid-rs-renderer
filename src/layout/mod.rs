@@ -117,6 +117,13 @@ const MAX_MAIN_GAP_FACTOR: f32 = 6.0;
 const FLOWCHART_EDGE_LABEL_WRAP_TRIGGER_CHARS: usize = 34;
 const FLOWCHART_EDGE_LABEL_WRAP_MAX_CHARS: usize = 18;
 
+#[derive(Clone)]
+struct RouteLabelPlan {
+    obstacle_id: String,
+    obstacle_index: usize,
+    center: (f32, f32),
+}
+
 // ── Overlap resolution ───────────────────────────────────────────────
 const OVERLAP_RESOLVE_PASSES: u32 = 6;
 const OVERLAP_MIN_GAP_RATIO: f32 = 0.2;
@@ -961,7 +968,78 @@ fn compute_flowchart_layout(
     let mut route_label_obstacles = label_obstacles;
     let (edge_label_pad_x, edge_label_pad_y) =
         label_placement::edge_label_padding(graph.kind, config);
+    let mut route_label_plans: Vec<Option<RouteLabelPlan>> = vec![None; graph.edges.len()];
+    if !has_label_dummies {
+        for idx in 0..graph.edges.len() {
+            let Some(label) = edge_route_labels.get(idx).and_then(|label| label.as_ref()) else {
+                continue;
+            };
+            if label.width <= 0.0 || label.height <= 0.0 {
+                continue;
+            }
+            let edge = &graph.edges[idx];
+            let from_layout = nodes.get(&edge.from).expect("from node missing");
+            let to_layout = nodes.get(&edge.to).expect("to node missing");
+            let temp_from = from_layout.anchor_subgraph.and_then(|anchor_idx| {
+                subgraphs
+                    .get(anchor_idx)
+                    .map(|sub| anchor_layout_for_edge(from_layout, sub, graph.direction, true))
+            });
+            let temp_to = to_layout.anchor_subgraph.and_then(|anchor_idx| {
+                subgraphs
+                    .get(anchor_idx)
+                    .map(|sub| anchor_layout_for_edge(to_layout, sub, graph.direction, false))
+            });
+            let from = temp_from.as_ref().unwrap_or(from_layout);
+            let to = temp_to.as_ref().unwrap_or(to_layout);
+            let port_info = edge_ports
+                .get(idx)
+                .copied()
+                .expect("edge port info missing");
+            let start = anchor_point_for_node(from, port_info.start_side, port_info.start_offset);
+            let end = anchor_point_for_node(to, port_info.end_side, port_info.end_offset);
+
+            let key = edge_pair_key(edge);
+            let total = *pair_counts.get(&key).unwrap_or(&1) as f32;
+            let idx_in_pair = pair_index[idx] as f32;
+            let mut base_offset = if total > 1.0 {
+                (idx_in_pair - (total - 1.0) / 2.0)
+                    * (config.node_spacing * MULTI_EDGE_OFFSET_RATIO)
+            } else {
+                0.0
+            } + cross_edge_offsets[idx];
+            if graph.kind == crate::ir::DiagramKind::Flowchart {
+                let raw_bias = (port_info.start_offset - port_info.end_offset)
+                    * FLOWCHART_PORT_ROUTE_BIAS_RATIO;
+                let max_bias = (config.node_spacing * FLOWCHART_PORT_ROUTE_BIAS_MAX_RATIO).max(8.0);
+                base_offset += raw_bias.clamp(-max_bias, max_bias);
+            }
+
+            let mut center = ((start.0 + end.0) * 0.5, (start.1 + end.1) * 0.5);
+            if is_horizontal(graph.direction) {
+                center.0 += base_offset;
+            } else {
+                center.1 += base_offset;
+            }
+            let obstacle_id = format!("edge-label-reserved:{idx}");
+            let obstacle_index = route_label_obstacles.len();
+            route_label_obstacles.push(Obstacle {
+                id: obstacle_id.clone(),
+                x: center.0 - label.width / 2.0 - edge_label_pad_x,
+                y: center.1 - label.height / 2.0 - edge_label_pad_y,
+                width: label.width + 2.0 * edge_label_pad_x,
+                height: label.height + 2.0 * edge_label_pad_y,
+                members: None,
+            });
+            route_label_plans[idx] = Some(RouteLabelPlan {
+                obstacle_id,
+                obstacle_index,
+                center,
+            });
+        }
+    }
     let mut existing_segments: Vec<Segment> = Vec::new();
+    let mut label_anchors: Vec<Option<(f32, f32)>> = vec![None; graph.edges.len()];
     for (_, _, _, idx) in &route_order {
         let edge = &graph.edges[*idx];
         let key = edge_pair_key(edge);
@@ -1017,6 +1095,14 @@ fn compute_flowchart_layout(
         let avoid_short_tie = graph.kind == crate::ir::DiagramKind::Flowchart
             && (has_endpoint_label
                 || max_edge_label_chars >= FLOWCHART_EDGE_LABEL_WRAP_TRIGGER_CHARS);
+        let preferred_label_id = route_label_plans
+            .get(*idx)
+            .and_then(|plan| plan.as_ref())
+            .map(|plan| plan.obstacle_id.as_str());
+        let preferred_label_center = route_label_plans
+            .get(*idx)
+            .and_then(|plan| plan.as_ref())
+            .map(|plan| plan.center);
         let route_ctx = RouteContext {
             from_id: &edge.from,
             to_id: &edge.to,
@@ -1034,6 +1120,8 @@ fn compute_flowchart_layout(
             end_offset: port_info.end_offset,
             stub_len,
             prefer_shorter_ties: !avoid_short_tie,
+            preferred_label_id,
+            preferred_label_center,
         };
         let use_existing_for_edge = !(matches!(
             graph.kind,
@@ -1071,6 +1159,8 @@ fn compute_flowchart_layout(
                 end_offset: route_ctx.end_offset,
                 stub_len: route_ctx.stub_len,
                 prefer_shorter_ties: route_ctx.prefer_shorter_ties,
+                preferred_label_id: route_ctx.preferred_label_id,
+                preferred_label_center: route_ctx.preferred_label_center,
             };
             let fast_points = route_edge_with_avoidance(&fast_ctx, None, None, existing_for_edge);
             let fast_hits = path_obstacle_intersections(
@@ -1079,7 +1169,11 @@ fn compute_flowchart_layout(
                 route_ctx.from_id,
                 route_ctx.to_id,
             );
-            let fast_label_hits = path_label_intersections(&fast_points, route_ctx.label_obstacles);
+            let fast_label_hits = path_label_intersections(
+                &fast_points,
+                route_ctx.label_obstacles,
+                route_ctx.preferred_label_id,
+            );
             if fast_hits == 0 && fast_label_hits == 0 {
                 let (fast_cross, fast_overlap) =
                     edge_crossings_with_existing(&fast_points, &existing_segments);
@@ -1093,19 +1187,24 @@ fn compute_flowchart_layout(
             }
         }
         if !has_label_dummies
-            && let Some(label) = edge_route_labels.get(*idx).and_then(|label| label.as_ref())
-            && label.width > 0.0
-            && label.height > 0.0
-            && let Some((label_x, label_y)) = edge_label_anchor_from_points(&points)
+            && let Some(plan) = route_label_plans
+                .get_mut(*idx)
+                .and_then(|plan| plan.as_mut())
         {
-            route_label_obstacles.push(Obstacle {
-                id: format!("edge-label:{}", idx),
-                x: label_x - label.width / 2.0 - edge_label_pad_x,
-                y: label_y - label.height / 2.0 - edge_label_pad_y,
-                width: label.width + 2.0 * edge_label_pad_x,
-                height: label.height + 2.0 * edge_label_pad_y,
-                members: None,
-            });
+            let label_center = edge_label_anchor_from_points(&points).unwrap_or(plan.center);
+            plan.center = label_center;
+            label_anchors[*idx] = Some(label_center);
+            if points.len() >= 2 {
+                insert_label_via_point(&mut points, label_center, graph.direction);
+            }
+            if let Some(label) = edge_route_labels.get(*idx).and_then(|label| label.as_ref())
+                && let Some(obstacle) = route_label_obstacles.get_mut(plan.obstacle_index)
+            {
+                obstacle.x = label_center.0 - label.width / 2.0 - edge_label_pad_x;
+                obstacle.y = label_center.1 - label.height / 2.0 - edge_label_pad_y;
+                obstacle.width = label.width + 2.0 * edge_label_pad_x;
+                obstacle.height = label.height + 2.0 * edge_label_pad_y;
+            }
         }
         if let Some(occ) = edge_occupancy.as_mut() {
             occ.add_path(&points);
@@ -1134,7 +1233,6 @@ fn compute_flowchart_layout(
     // Insert label dummy via-points so edges pass through label positions.
     // For each edge with a label dummy, insert the dummy center into the
     // routed path at the correct main-axis position.
-    let mut label_anchors: Vec<Option<(f32, f32)>> = vec![None; graph.edges.len()];
     for (idx, dummy_id_opt) in label_dummy_ids.iter().enumerate() {
         let Some(dummy_id) = dummy_id_opt else {
             continue;
@@ -5563,6 +5661,8 @@ mod tests {
             fast_route: false,
             stub_len: port_stub_length(&config, &from, &to),
             prefer_shorter_ties: true,
+            preferred_label_id: None,
+            preferred_label_center: None,
         };
         let mut occupancy = EdgeOccupancy::new(
             config.node_spacing.max(MIN_NODE_SPACING_FLOOR) * EDGE_OCCUPANCY_CELL_RATIO,
@@ -5602,6 +5702,8 @@ mod tests {
             fast_route: false,
             stub_len: port_stub_length(&config, &from, &to),
             prefer_shorter_ties: true,
+            preferred_label_id: None,
+            preferred_label_center: None,
         };
         let points = route_edge_with_avoidance(&ctx, None, None, None);
         assert!(!points.is_empty());
@@ -5641,6 +5743,8 @@ mod tests {
             fast_route: false,
             stub_len: port_stub_length(&config, &from, &to),
             prefer_shorter_ties: true,
+            preferred_label_id: None,
+            preferred_label_center: None,
         };
         let start = anchor_point_for_node(&from, EdgeSide::Right, 0.0);
         let end = anchor_point_for_node(&to, EdgeSide::Left, 0.0);
@@ -5651,5 +5755,68 @@ mod tests {
             route_edge_with_grid(&ctx, &grid, None, start_stub, end_stub).expect("grid route");
         let hits = path_obstacle_intersections(&points, &obstacles, &from.id, &to.id);
         assert_eq!(hits, 0, "grid path should avoid obstacle");
+    }
+
+    #[test]
+    fn path_label_intersections_can_ignore_owned_reservation() {
+        let path = vec![(0.0, 0.0), (100.0, 0.0)];
+        let labels = vec![
+            Obstacle {
+                id: "edge-label-reserved:0".to_string(),
+                x: 40.0,
+                y: -5.0,
+                width: 20.0,
+                height: 10.0,
+                members: None,
+            },
+            Obstacle {
+                id: "edge-label-reserved:1".to_string(),
+                x: 70.0,
+                y: -5.0,
+                width: 20.0,
+                height: 10.0,
+                members: None,
+            },
+        ];
+        let all_hits = path_label_intersections(&path, &labels, None);
+        assert_eq!(all_hits, 2);
+        let own_ignored = path_label_intersections(&path, &labels, Some("edge-label-reserved:0"));
+        assert_eq!(own_ignored, 1);
+    }
+
+    #[test]
+    fn routing_prefers_path_through_preferred_label_center() {
+        let config = LayoutConfig::default();
+        let from = make_node("A", 0.0, 0.0, 40.0, 40.0);
+        let to = make_node("B", 220.0, 0.0, 40.0, 40.0);
+        let obstacles: Vec<Obstacle> = Vec::new();
+        let label_obstacles: Vec<Obstacle> = Vec::new();
+        let preferred = (120.0, 84.0);
+        let ctx = RouteContext {
+            from_id: &from.id,
+            to_id: &to.id,
+            from: &from,
+            to: &to,
+            direction: Direction::LeftRight,
+            config: &config,
+            obstacles: &obstacles,
+            label_obstacles: &label_obstacles,
+            base_offset: 0.0,
+            start_side: EdgeSide::Right,
+            end_side: EdgeSide::Left,
+            start_offset: 0.0,
+            end_offset: 0.0,
+            fast_route: false,
+            stub_len: port_stub_length(&config, &from, &to),
+            prefer_shorter_ties: true,
+            preferred_label_id: Some("edge-label-reserved:0"),
+            preferred_label_center: Some(preferred),
+        };
+        let points = route_edge_with_avoidance(&ctx, None, None, None);
+        let dist = polyline_point_distance(&points, preferred);
+        assert!(
+            dist <= 0.51,
+            "expected routed path to pass through preferred label center, got distance {dist:.3}"
+        );
     }
 }

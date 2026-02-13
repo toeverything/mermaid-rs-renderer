@@ -77,6 +77,23 @@ fn edge_distance_weight(kind: DiagramKind, overlap_pressure: f32) -> f32 {
     }
 }
 
+fn center_label_node_obstacle_pad(
+    kind: DiagramKind,
+    theme: &Theme,
+    label_pad_x: f32,
+    label_pad_y: f32,
+) -> f32 {
+    match kind {
+        DiagramKind::Flowchart => (theme.font_size * 0.55)
+            .max(label_pad_x.max(label_pad_y + FLOWCHART_LABEL_CLEARANCE_PAD)),
+        // State labels often sit in tight transition corridors; large node
+        // inflation forces labels unnaturally far from their own edges.
+        DiagramKind::State => (theme.font_size * 0.22).max(label_pad_y).max(2.0),
+        DiagramKind::Class => (theme.font_size * 0.28).max(label_pad_y).max(2.2),
+        _ => (theme.font_size * 0.45).max(label_pad_x.max(label_pad_y)),
+    }
+}
+
 fn edge_target_distance(kind: DiagramKind, label_h: f32, label_pad_y: f32) -> f32 {
     match kind {
         // For flowcharts we want labels visually attached to the carrying edge.
@@ -167,11 +184,7 @@ fn resolve_center_labels(
     config: &LayoutConfig,
 ) {
     let (label_pad_x, label_pad_y) = edge_label_padding(kind, config);
-    let node_obstacle_pad = if kind == DiagramKind::Flowchart {
-        (theme.font_size * 0.55).max(label_pad_x.max(label_pad_y + FLOWCHART_LABEL_CLEARANCE_PAD))
-    } else {
-        (theme.font_size * 0.45).max(label_pad_x.max(label_pad_y))
-    };
+    let node_obstacle_pad = center_label_node_obstacle_pad(kind, theme, label_pad_x, label_pad_y);
     let edge_obstacle_pad = (theme.font_size * 0.35).max(label_pad_y);
     let step_normal_pad = (theme.font_size * 0.25).max(label_pad_y);
     let step_tangent_pad = (theme.font_size * 0.35).max(label_pad_x);
@@ -201,11 +214,44 @@ fn resolve_center_labels(
     } else {
         vec![None; edges.len()]
     };
+    let mut fixed_center_indices: HashSet<usize> = HashSet::new();
+    for (idx, edge) in edges.iter_mut().enumerate() {
+        let (Some(label), Some(anchor)) = (&edge.label, edge.label_anchor) else {
+            continue;
+        };
+        let clamped = if let Some(bound) = bounds {
+            clamp_label_center_to_bounds(
+                anchor,
+                label.width,
+                label.height,
+                label_pad_x,
+                label_pad_y,
+                bound,
+            )
+        } else {
+            anchor
+        };
+        let rect = (
+            clamped.0 - label.width / 2.0 - label_pad_x,
+            clamped.1 - label.height / 2.0 - label_pad_y,
+            label.width + 2.0 * label_pad_x,
+            label.height + 2.0 * label_pad_y,
+        );
+        let occupied_rect = if kind == DiagramKind::Flowchart {
+            inflate_rect(rect, FLOWCHART_LABEL_CLEARANCE_PAD)
+        } else {
+            rect
+        };
+        occupied_grid.insert(occupied.len(), &occupied_rect);
+        occupied.push(occupied_rect);
+        edge.label_anchor = Some(clamped);
+        fixed_center_indices.insert(idx);
+    }
 
-    // Sort edges by constraint level: shorter edges and edges with pre-set
-    // anchors first, so they get first pick of placement spots.
+    // Sort movable edges by constraint level: larger labels and shorter edges
+    // get first pick of placement spots.
     let mut order: Vec<usize> = (0..edges.len())
-        .filter(|&i| edges[i].label.is_some())
+        .filter(|&i| edges[i].label.is_some() && !fixed_center_indices.contains(&i))
         .collect();
     order.sort_by(|&a, &b| {
         let a_fixed = edges[a].label_anchor.is_some();
@@ -577,6 +623,7 @@ fn resolve_center_labels(
         theme,
         label_pad_x,
         label_pad_y,
+        &fixed_center_indices,
     );
 }
 
@@ -1134,6 +1181,7 @@ fn tighten_center_label_gaps(
     theme: &Theme,
     label_pad_x: f32,
     label_pad_y: f32,
+    locked_indices: &HashSet<usize>,
 ) {
     if edges
         .iter()
@@ -1148,11 +1196,7 @@ fn tighten_center_label_gaps(
         DiagramKind::State | DiagramKind::Class => 6,
         _ => 4,
     };
-    let node_obstacle_pad = if kind == DiagramKind::Flowchart {
-        (theme.font_size * 0.55).max(label_pad_x.max(label_pad_y + FLOWCHART_LABEL_CLEARANCE_PAD))
-    } else {
-        (theme.font_size * 0.45).max(label_pad_x.max(label_pad_y))
-    };
+    let node_obstacle_pad = center_label_node_obstacle_pad(kind, theme, label_pad_x, label_pad_y);
     let subgraph_label_pad = (theme.font_size * 0.35).max(3.0);
     let mut static_obstacles = build_label_obstacles(
         nodes,
@@ -1179,6 +1223,9 @@ fn tighten_center_label_gaps(
             .iter()
             .enumerate()
             .filter_map(|(idx, edge)| {
+                if locked_indices.contains(&idx) {
+                    return None;
+                }
                 let (Some(label), Some(center)) = (&edge.label, edge.label_anchor) else {
                     return None;
                 };

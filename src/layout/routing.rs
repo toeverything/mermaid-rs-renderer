@@ -67,6 +67,8 @@ const OVERLAP_TRIGGER_MIN: f32 = 4.0;
 const OVERLAP_DETOUR_MIN: f32 = 3.0;
 /// Path-length epsilon used when preferring shorter routes in tie-breaks.
 const ROUTE_LENGTH_TIE_EPS: f32 = 2.0;
+/// Tie-break epsilon for path distance to the preferred label center.
+const ROUTE_VIA_TIE_EPS: f32 = 0.4;
 
 // ── Label obstacle padding ──────────────────────────────────────────
 /// Padding around node labels when building label obstacles.
@@ -353,6 +355,8 @@ pub(super) struct RouteContext<'a> {
     pub(super) end_offset: f32,
     pub(super) stub_len: f32,
     pub(super) prefer_shorter_ties: bool,
+    pub(super) preferred_label_id: Option<&'a str>,
+    pub(super) preferred_label_center: Option<(f32, f32)>,
 }
 
 #[derive(Debug, Clone)]
@@ -944,7 +948,12 @@ pub(super) fn compress_path(points: &[(f32, f32)]) -> Vec<(f32, f32)> {
         let dx2 = next.0 - curr.0;
         let dy2 = next.1 - curr.1;
         if (dx1.abs() <= 1e-4 && dx2.abs() <= 1e-4) || (dy1.abs() <= 1e-4 && dy2.abs() <= 1e-4) {
-            continue;
+            // Keep explicit reversal points (U-turns). They are needed when
+            // forcing a route through a reserved label center.
+            let dot = dx1 * dx2 + dy1 * dy2;
+            if dot >= 0.0 {
+                continue;
+            }
         }
         out.push(curr);
     }
@@ -1114,12 +1123,17 @@ pub(super) fn push_route_candidate_metrics(
     crossings: &mut Vec<usize>,
     label_hits: &mut Vec<usize>,
     overlaps: &mut Vec<f32>,
+    via_distances: &mut Vec<f32>,
 ) {
     if points.len() < 2 || !path_coords_reasonable(&points) {
         return;
     }
     let hits = path_obstacle_intersections(&points, ctx.obstacles, ctx.from_id, ctx.to_id);
-    let labels = path_label_intersections(&points, ctx.label_obstacles);
+    let labels = path_label_intersections(&points, ctx.label_obstacles, ctx.preferred_label_id);
+    let via_dist = ctx
+        .preferred_label_center
+        .map(|center| polyline_point_distance(&points, center))
+        .unwrap_or(0.0);
     let (cross, overlap) = if use_existing {
         edge_crossings_with_existing(&points, existing_segments)
     } else {
@@ -1130,6 +1144,7 @@ pub(super) fn push_route_candidate_metrics(
     crossings.push(cross);
     label_hits.push(labels);
     overlaps.push(overlap);
+    via_distances.push(via_dist);
 }
 
 pub(super) fn path_coords_reasonable(points: &[(f32, f32)]) -> bool {
@@ -1137,6 +1152,54 @@ pub(super) fn path_coords_reasonable(points: &[(f32, f32)]) -> bool {
     points
         .iter()
         .all(|(x, y)| x.is_finite() && y.is_finite() && x.abs() <= LIMIT && y.abs() <= LIMIT)
+}
+
+fn point_segment_distance(a: (f32, f32), b: (f32, f32), p: (f32, f32)) -> f32 {
+    let vx = b.0 - a.0;
+    let vy = b.1 - a.1;
+    let wx = p.0 - a.0;
+    let wy = p.1 - a.1;
+    let vv = vx * vx + vy * vy;
+    if vv <= 1e-6 {
+        let dx = p.0 - a.0;
+        let dy = p.1 - a.1;
+        return (dx * dx + dy * dy).sqrt();
+    }
+    let t = ((wx * vx + wy * vy) / vv).clamp(0.0, 1.0);
+    let proj_x = a.0 + t * vx;
+    let proj_y = a.1 + t * vy;
+    let dx = p.0 - proj_x;
+    let dy = p.1 - proj_y;
+    (dx * dx + dy * dy).sqrt()
+}
+
+pub(super) fn polyline_point_distance(points: &[(f32, f32)], point: (f32, f32)) -> f32 {
+    if points.is_empty() {
+        return f32::INFINITY;
+    }
+    if points.len() == 1 {
+        let dx = points[0].0 - point.0;
+        let dy = points[0].1 - point.1;
+        return (dx * dx + dy * dy).sqrt();
+    }
+    let mut best = f32::INFINITY;
+    for segment in points.windows(2) {
+        best = best.min(point_segment_distance(segment[0], segment[1], point));
+    }
+    best
+}
+
+fn enforce_preferred_label_via(points: &mut Vec<(f32, f32)>, ctx: &RouteContext<'_>) {
+    let Some(via) = ctx.preferred_label_center else {
+        return;
+    };
+    if points.len() < 2 {
+        return;
+    }
+    if polyline_point_distance(points, via) <= 0.6 {
+        return;
+    }
+    insert_label_via_point(points, via, ctx.direction);
 }
 
 pub(super) fn route_edge_with_avoidance(
@@ -1153,6 +1216,7 @@ pub(super) fn route_edge_with_avoidance(
         let mut crossings: Vec<usize> = Vec::new();
         let mut label_hits: Vec<usize> = Vec::new();
         let mut overlaps: Vec<f32> = Vec::new();
+        let mut via_distances: Vec<f32> = Vec::new();
 
         let pad = ctx.config.node_spacing.max(ROUTING_PAD_MIN_SPACING) * ROUTING_PAD_RATIO;
         for points in route_self_loop_candidates(ctx.from, pad) {
@@ -1166,6 +1230,7 @@ pub(super) fn route_edge_with_avoidance(
                 &mut crossings,
                 &mut label_hits,
                 &mut overlaps,
+                &mut via_distances,
             );
         }
         push_route_candidate_metrics(
@@ -1178,6 +1243,7 @@ pub(super) fn route_edge_with_avoidance(
             &mut crossings,
             &mut label_hits,
             &mut overlaps,
+            &mut via_distances,
         );
 
         if candidates.is_empty() {
@@ -1189,6 +1255,7 @@ pub(super) fn route_edge_with_avoidance(
         let mut best_cross = usize::MAX;
         let mut best_label_hits = usize::MAX;
         let mut best_overlap = f32::MAX;
+        let mut best_via_dist = f32::MAX;
         let mut best_bends = usize::MAX;
         let mut best_len = f32::MAX;
         let mut best_score = u32::MAX;
@@ -1198,6 +1265,7 @@ pub(super) fn route_edge_with_avoidance(
             let cross = crossings.get(idx).copied().unwrap_or(0);
             let label = label_hits.get(idx).copied().unwrap_or(0);
             let overlap = overlaps.get(idx).copied().unwrap_or(0.0);
+            let via_dist = via_distances.get(idx).copied().unwrap_or(f32::MAX);
             let bends = path_bend_count(points);
             let len = path_length(points);
             let score = occupancy.map(|grid| grid.score_path(points)).unwrap_or(0);
@@ -1213,11 +1281,18 @@ pub(super) fn route_edge_with_avoidance(
                         && cross == best_cross
                         && label == best_label_hits
                         && (overlap - best_overlap).abs() <= 1e-4
+                        && via_dist + ROUTE_VIA_TIE_EPS < best_via_dist)
+                    || (hits == best_hits
+                        && cross == best_cross
+                        && label == best_label_hits
+                        && (overlap - best_overlap).abs() <= 1e-4
+                        && (via_dist - best_via_dist).abs() <= ROUTE_VIA_TIE_EPS
                         && len + ROUTE_LENGTH_TIE_EPS < best_len)
                     || (hits == best_hits
                         && cross == best_cross
                         && label == best_label_hits
                         && (overlap - best_overlap).abs() <= 1e-4
+                        && (via_dist - best_via_dist).abs() <= ROUTE_VIA_TIE_EPS
                         && (len - best_len).abs() <= ROUTE_LENGTH_TIE_EPS
                         && occupancy.is_some()
                         && score < best_score)
@@ -1225,6 +1300,7 @@ pub(super) fn route_edge_with_avoidance(
                         && cross == best_cross
                         && label == best_label_hits
                         && (overlap - best_overlap).abs() <= 1e-4
+                        && (via_dist - best_via_dist).abs() <= ROUTE_VIA_TIE_EPS
                         && (len - best_len).abs() <= ROUTE_LENGTH_TIE_EPS
                         && (!occupancy.is_some() || score == best_score)
                         && bends < best_bends)
@@ -1240,11 +1316,18 @@ pub(super) fn route_edge_with_avoidance(
                         && cross == best_cross
                         && label == best_label_hits
                         && (overlap - best_overlap).abs() <= 1e-4
+                        && via_dist + ROUTE_VIA_TIE_EPS < best_via_dist)
+                    || (hits == best_hits
+                        && cross == best_cross
+                        && label == best_label_hits
+                        && (overlap - best_overlap).abs() <= 1e-4
+                        && (via_dist - best_via_dist).abs() <= ROUTE_VIA_TIE_EPS
                         && bends < best_bends)
                     || (hits == best_hits
                         && cross == best_cross
                         && label == best_label_hits
                         && (overlap - best_overlap).abs() <= 1e-4
+                        && (via_dist - best_via_dist).abs() <= ROUTE_VIA_TIE_EPS
                         && bends == best_bends
                         && occupancy.is_some()
                         && score < best_score)
@@ -1252,6 +1335,7 @@ pub(super) fn route_edge_with_avoidance(
                         && cross == best_cross
                         && label == best_label_hits
                         && (overlap - best_overlap).abs() <= 1e-4
+                        && (via_dist - best_via_dist).abs() <= ROUTE_VIA_TIE_EPS
                         && bends == best_bends
                         && (!occupancy.is_some() || score == best_score)
                         && len < best_len)
@@ -1261,6 +1345,7 @@ pub(super) fn route_edge_with_avoidance(
                 best_cross = cross;
                 best_label_hits = label;
                 best_overlap = overlap;
+                best_via_dist = via_dist;
                 best_bends = bends;
                 best_len = len;
                 best_score = score;
@@ -1268,7 +1353,9 @@ pub(super) fn route_edge_with_avoidance(
             }
         }
 
-        return compress_path(&candidates.swap_remove(best_idx));
+        let mut best = compress_path(&candidates.swap_remove(best_idx));
+        enforce_preferred_label_via(&mut best, ctx);
+        return compress_path(&best);
     }
 
     let (_, _, is_backward) = edge_sides(ctx.from, ctx.to, ctx.direction);
@@ -1299,13 +1386,16 @@ pub(super) fn route_edge_with_avoidance(
         }
     }
     if ctx.fast_route {
-        return compress_path(&[start, route_start, route_end, end]);
+        let mut fast = compress_path(&[start, route_start, route_end, end]);
+        enforce_preferred_label_via(&mut fast, ctx);
+        return compress_path(&fast);
     }
     let mut candidates: Vec<Vec<(f32, f32)>> = Vec::new();
     let mut intersections: Vec<usize> = Vec::new();
     let mut crossings: Vec<usize> = Vec::new();
     let mut label_hits: Vec<usize> = Vec::new();
     let mut overlaps: Vec<f32> = Vec::new();
+    let mut via_distances: Vec<f32> = Vec::new();
     let existing_segments = existing.unwrap_or(&[]);
     let use_existing = !existing_segments.is_empty();
 
@@ -1365,6 +1455,7 @@ pub(super) fn route_edge_with_avoidance(
                 &mut crossings,
                 &mut label_hits,
                 &mut overlaps,
+                &mut via_distances,
             );
         }
 
@@ -1387,6 +1478,7 @@ pub(super) fn route_edge_with_avoidance(
                 &mut crossings,
                 &mut label_hits,
                 &mut overlaps,
+                &mut via_distances,
             );
         }
 
@@ -1409,6 +1501,7 @@ pub(super) fn route_edge_with_avoidance(
                 &mut crossings,
                 &mut label_hits,
                 &mut overlaps,
+                &mut via_distances,
             );
         }
 
@@ -1431,6 +1524,7 @@ pub(super) fn route_edge_with_avoidance(
                 &mut crossings,
                 &mut label_hits,
                 &mut overlaps,
+                &mut via_distances,
             );
         }
     }
@@ -1447,7 +1541,52 @@ pub(super) fn route_edge_with_avoidance(
         &mut crossings,
         &mut label_hits,
         &mut overlaps,
+        &mut via_distances,
     );
+
+    if let Some(via) = ctx.preferred_label_center {
+        let via_mid_x = via.0;
+        let via_mid_y = via.1;
+        let through_vertical = vec![
+            route_start,
+            (via_mid_x, route_start.1),
+            (via_mid_x, via_mid_y),
+            (via_mid_x, route_end.1),
+            route_end,
+        ];
+        push_route_candidate_metrics(
+            through_vertical,
+            ctx,
+            existing_segments,
+            use_existing,
+            &mut candidates,
+            &mut intersections,
+            &mut crossings,
+            &mut label_hits,
+            &mut overlaps,
+            &mut via_distances,
+        );
+
+        let through_horizontal = vec![
+            route_start,
+            (route_start.0, via_mid_y),
+            (via_mid_x, via_mid_y),
+            (route_end.0, via_mid_y),
+            route_end,
+        ];
+        push_route_candidate_metrics(
+            through_horizontal,
+            ctx,
+            existing_segments,
+            use_existing,
+            &mut candidates,
+            &mut intersections,
+            &mut crossings,
+            &mut label_hits,
+            &mut overlaps,
+            &mut via_distances,
+        );
+    }
 
     // Fall back to orthogonal routing with control points
     let step = ctx.config.node_spacing.max(ORTHO_STEP_MIN_SPACING) * ROUTING_PAD_RATIO;
@@ -1487,6 +1626,7 @@ pub(super) fn route_edge_with_avoidance(
                 &mut crossings,
                 &mut label_hits,
                 &mut overlaps,
+                &mut via_distances,
             );
 
             let mid_y = (route_start.1 + route_end.1) / 2.0 + offset;
@@ -1506,6 +1646,7 @@ pub(super) fn route_edge_with_avoidance(
                 &mut crossings,
                 &mut label_hits,
                 &mut overlaps,
+                &mut via_distances,
             );
 
             if use_channel_candidates && offset_rank <= 3 {
@@ -1526,6 +1667,7 @@ pub(super) fn route_edge_with_avoidance(
                     &mut crossings,
                     &mut label_hits,
                     &mut overlaps,
+                    &mut via_distances,
                 );
 
                 let near_end_x = route_end.0 + offset;
@@ -1545,6 +1687,7 @@ pub(super) fn route_edge_with_avoidance(
                     &mut crossings,
                     &mut label_hits,
                     &mut overlaps,
+                    &mut via_distances,
                 );
             }
         } else {
@@ -1565,6 +1708,7 @@ pub(super) fn route_edge_with_avoidance(
                 &mut crossings,
                 &mut label_hits,
                 &mut overlaps,
+                &mut via_distances,
             );
 
             let mid_x = (route_start.0 + route_end.0) / 2.0 + offset;
@@ -1584,6 +1728,7 @@ pub(super) fn route_edge_with_avoidance(
                 &mut crossings,
                 &mut label_hits,
                 &mut overlaps,
+                &mut via_distances,
             );
 
             if use_channel_candidates && offset_rank <= 3 {
@@ -1604,6 +1749,7 @@ pub(super) fn route_edge_with_avoidance(
                     &mut crossings,
                     &mut label_hits,
                     &mut overlaps,
+                    &mut via_distances,
                 );
 
                 let near_end_y = route_end.1 + offset;
@@ -1623,6 +1769,7 @@ pub(super) fn route_edge_with_avoidance(
                     &mut crossings,
                     &mut label_hits,
                     &mut overlaps,
+                    &mut via_distances,
                 );
             }
         }
@@ -1708,6 +1855,7 @@ pub(super) fn route_edge_with_avoidance(
                     &mut crossings,
                     &mut label_hits,
                     &mut overlaps,
+                    &mut via_distances,
                 );
             }
         }
@@ -1728,6 +1876,7 @@ pub(super) fn route_edge_with_avoidance(
             &mut crossings,
             &mut label_hits,
             &mut overlaps,
+            &mut via_distances,
         );
     }
 
@@ -1737,6 +1886,7 @@ pub(super) fn route_edge_with_avoidance(
         let mut best_cross = usize::MAX;
         let mut best_label_hits = usize::MAX;
         let mut best_overlap = f32::MAX;
+        let mut best_via_dist = f32::MAX;
         let mut best_bends = usize::MAX;
         let mut best_score = u32::MAX;
         let mut best_len = f32::MAX;
@@ -1745,6 +1895,7 @@ pub(super) fn route_edge_with_avoidance(
             let cross = crossings.get(idx).copied().unwrap_or(0);
             let label = label_hits.get(idx).copied().unwrap_or(0);
             let overlap = overlaps.get(idx).copied().unwrap_or(0.0);
+            let via_dist = via_distances.get(idx).copied().unwrap_or(f32::MAX);
             let bends = path_bend_count(points);
             let score = grid.score_path(points);
             let len = path_length(points);
@@ -1760,17 +1911,25 @@ pub(super) fn route_edge_with_avoidance(
                         && cross == best_cross
                         && label == best_label_hits
                         && (overlap - best_overlap).abs() <= 1e-4
+                        && via_dist + ROUTE_VIA_TIE_EPS < best_via_dist)
+                    || (hits == best_hits
+                        && cross == best_cross
+                        && label == best_label_hits
+                        && (overlap - best_overlap).abs() <= 1e-4
+                        && (via_dist - best_via_dist).abs() <= ROUTE_VIA_TIE_EPS
                         && len + ROUTE_LENGTH_TIE_EPS < best_len)
                     || (hits == best_hits
                         && cross == best_cross
                         && label == best_label_hits
                         && (overlap - best_overlap).abs() <= 1e-4
+                        && (via_dist - best_via_dist).abs() <= ROUTE_VIA_TIE_EPS
                         && (len - best_len).abs() <= ROUTE_LENGTH_TIE_EPS
                         && score < best_score)
                     || (hits == best_hits
                         && cross == best_cross
                         && label == best_label_hits
                         && (overlap - best_overlap).abs() <= 1e-4
+                        && (via_dist - best_via_dist).abs() <= ROUTE_VIA_TIE_EPS
                         && (len - best_len).abs() <= ROUTE_LENGTH_TIE_EPS
                         && score == best_score
                         && bends < best_bends)
@@ -1786,17 +1945,25 @@ pub(super) fn route_edge_with_avoidance(
                         && cross == best_cross
                         && label == best_label_hits
                         && (overlap - best_overlap).abs() <= 1e-4
+                        && via_dist + ROUTE_VIA_TIE_EPS < best_via_dist)
+                    || (hits == best_hits
+                        && cross == best_cross
+                        && label == best_label_hits
+                        && (overlap - best_overlap).abs() <= 1e-4
+                        && (via_dist - best_via_dist).abs() <= ROUTE_VIA_TIE_EPS
                         && bends < best_bends)
                     || (hits == best_hits
                         && cross == best_cross
                         && label == best_label_hits
                         && (overlap - best_overlap).abs() <= 1e-4
+                        && (via_dist - best_via_dist).abs() <= ROUTE_VIA_TIE_EPS
                         && bends == best_bends
                         && score < best_score)
                     || (hits == best_hits
                         && cross == best_cross
                         && label == best_label_hits
                         && (overlap - best_overlap).abs() <= 1e-4
+                        && (via_dist - best_via_dist).abs() <= ROUTE_VIA_TIE_EPS
                         && bends == best_bends
                         && score == best_score
                         && len < best_len)
@@ -1806,6 +1973,7 @@ pub(super) fn route_edge_with_avoidance(
                 best_cross = cross;
                 best_label_hits = label;
                 best_overlap = overlap;
+                best_via_dist = via_dist;
                 best_bends = bends;
                 best_score = score;
                 best_len = len;
@@ -1816,6 +1984,7 @@ pub(super) fn route_edge_with_avoidance(
         combined.push(start);
         combined.extend(candidates.swap_remove(best_idx));
         combined.push(end);
+        enforce_preferred_label_via(&mut combined, ctx);
         return compress_path(&combined);
     }
 
@@ -1824,6 +1993,7 @@ pub(super) fn route_edge_with_avoidance(
     let mut best_cross = usize::MAX;
     let mut best_label_hits = usize::MAX;
     let mut best_overlap = f32::MAX;
+    let mut best_via_dist = f32::MAX;
     let mut best_bends = usize::MAX;
     let mut best_len = f32::MAX;
     for (idx, points) in candidates.iter().enumerate() {
@@ -1831,6 +2001,7 @@ pub(super) fn route_edge_with_avoidance(
         let cross = crossings.get(idx).copied().unwrap_or(0);
         let label = label_hits.get(idx).copied().unwrap_or(0);
         let overlap = overlaps.get(idx).copied().unwrap_or(0.0);
+        let via_dist = via_distances.get(idx).copied().unwrap_or(f32::MAX);
         let bends = path_bend_count(points);
         let len = path_length(points);
         let better = if ctx.prefer_shorter_ties {
@@ -1845,11 +2016,18 @@ pub(super) fn route_edge_with_avoidance(
                     && cross == best_cross
                     && label == best_label_hits
                     && (overlap - best_overlap).abs() <= 1e-4
+                    && via_dist + ROUTE_VIA_TIE_EPS < best_via_dist)
+                || (hits == best_hits
+                    && cross == best_cross
+                    && label == best_label_hits
+                    && (overlap - best_overlap).abs() <= 1e-4
+                    && (via_dist - best_via_dist).abs() <= ROUTE_VIA_TIE_EPS
                     && len + ROUTE_LENGTH_TIE_EPS < best_len)
                 || (hits == best_hits
                     && cross == best_cross
                     && label == best_label_hits
                     && (overlap - best_overlap).abs() <= 1e-4
+                    && (via_dist - best_via_dist).abs() <= ROUTE_VIA_TIE_EPS
                     && (len - best_len).abs() <= ROUTE_LENGTH_TIE_EPS
                     && bends < best_bends)
         } else {
@@ -1864,11 +2042,18 @@ pub(super) fn route_edge_with_avoidance(
                     && cross == best_cross
                     && label == best_label_hits
                     && (overlap - best_overlap).abs() <= 1e-4
+                    && via_dist + ROUTE_VIA_TIE_EPS < best_via_dist)
+                || (hits == best_hits
+                    && cross == best_cross
+                    && label == best_label_hits
+                    && (overlap - best_overlap).abs() <= 1e-4
+                    && (via_dist - best_via_dist).abs() <= ROUTE_VIA_TIE_EPS
                     && bends < best_bends)
                 || (hits == best_hits
                     && cross == best_cross
                     && label == best_label_hits
                     && (overlap - best_overlap).abs() <= 1e-4
+                    && (via_dist - best_via_dist).abs() <= ROUTE_VIA_TIE_EPS
                     && bends == best_bends
                     && len < best_len)
         };
@@ -1877,6 +2062,7 @@ pub(super) fn route_edge_with_avoidance(
             best_cross = cross;
             best_label_hits = label;
             best_overlap = overlap;
+            best_via_dist = via_dist;
             best_bends = bends;
             best_len = len;
             best_idx = idx;
@@ -1886,6 +2072,7 @@ pub(super) fn route_edge_with_avoidance(
     combined.push(start);
     combined.extend(candidates.swap_remove(best_idx));
     combined.push(end);
+    enforce_preferred_label_via(&mut combined, ctx);
     compress_path(&combined)
 }
 
@@ -1921,6 +2108,7 @@ pub(super) fn path_obstacle_intersections(
 pub(super) fn path_label_intersections(
     points: &[(f32, f32)],
     label_obstacles: &[Obstacle],
+    ignore_label_id: Option<&str>,
 ) -> usize {
     if points.len() < 2 || label_obstacles.is_empty() {
         return 0;
@@ -1929,6 +2117,9 @@ pub(super) fn path_label_intersections(
     for segment in points.windows(2) {
         let (a, b) = (segment[0], segment[1]);
         for obstacle in label_obstacles {
+            if ignore_label_id.is_some_and(|id| id == obstacle.id) {
+                continue;
+            }
             if segment_intersects_rect(a, b, obstacle) {
                 count += 1;
             }
