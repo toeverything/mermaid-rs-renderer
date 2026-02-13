@@ -17,7 +17,9 @@ import sys
 import time
 import datetime
 import getpass
+import hashlib
 import platform
+import shutil
 import socket
 from pathlib import Path
 from typing import Optional
@@ -38,12 +40,14 @@ BIN = os.environ.get("MMDR_BIN", str(ROOT / "target" / "release" / "mmdr"))
 MMD_CLI = os.environ.get("MMD_CLI", "npx -y @mermaid-js/mermaid-cli")
 RUNS = int(os.environ.get("RUNS", "8"))
 WARMUP = int(os.environ.get("WARMUP", "2"))
+MMDC_CONFIG = os.environ.get("MMDC_CONFIG", "")
 HISTORY_LOG = Path(
     os.environ.get(
         "HISTORY_LOG",
         str(ROOT / "tmp" / "benchmark-history" / "bench-compare-runs.jsonl"),
     )
 )
+MMDC_CACHE_SCHEMA_VERSION = 1
 
 CASE_NAMES = [
     "flowchart_small",
@@ -103,6 +107,89 @@ def env_bool(name: str) -> bool:
     if value is None:
         return False
     return value.strip().lower() not in {"", "0", "false", "no", "off"}
+
+
+def mmdc_cli_identity(cli_cmd: str) -> str:
+    result = subprocess.run(
+        shlex.split(cli_cmd) + ["--version"],
+        capture_output=True,
+        text=True,
+    )
+    output = (result.stdout or "").strip() or (result.stderr or "").strip()
+    if not output:
+        output = f"rc={result.returncode}"
+    return output.splitlines()[-1][:240]
+
+
+def mmdc_cache_digest(
+    fixture_path: Path,
+    cli_cmd: str,
+    cli_identity: str,
+    script_digest: str,
+    runs: int,
+    warmup: int,
+    config_path: str,
+) -> str:
+    hasher = hashlib.sha256()
+    hasher.update(f"schema:{MMDC_CACHE_SCHEMA_VERSION}\n".encode("utf-8"))
+    hasher.update(f"cli:{cli_cmd}\n".encode("utf-8"))
+    hasher.update(f"cli_identity:{cli_identity}\n".encode("utf-8"))
+    hasher.update(f"runs:{runs}\n".encode("utf-8"))
+    hasher.update(f"warmup:{warmup}\n".encode("utf-8"))
+    hasher.update(f"config:{config_path}\n".encode("utf-8"))
+    hasher.update(f"script:{script_digest}\n".encode("utf-8"))
+    hasher.update(fixture_path.read_bytes())
+    if config_path:
+        cfg = Path(config_path)
+        if cfg.exists():
+            hasher.update(cfg.read_bytes())
+    return hasher.hexdigest()
+
+
+def load_json_if_exists(path: Path) -> Optional[dict]:
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def save_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+def init_mmdc_cache_state() -> dict:
+    enabled = not env_bool("NO_MMDC_CACHE")
+    cache_dir = Path(
+        os.environ.get(
+            "MMDC_CACHE_DIR",
+            str(ROOT / "tmp" / "benchmark-cache" / "bench-compare" / "mmdc"),
+        )
+    )
+    if not enabled:
+        return {
+            "enabled": False,
+            "dir": cache_dir,
+            "cli_identity": "",
+            "script_digest": "",
+            "hits": 0,
+            "misses": 0,
+        }
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return {
+        "enabled": True,
+        "dir": cache_dir,
+        "cli_identity": mmdc_cli_identity(MMD_CLI),
+        "script_digest": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "hits": 0,
+        "misses": 0,
+    }
 
 
 def resolve_cases():
@@ -310,10 +397,38 @@ def bench_mmdr(path: Path):
     }
 
 
-def bench_mermaid_cli(path: Path):
+def bench_mermaid_cli(path: Path, cache_state: dict):
     """Benchmark mermaid-cli (no timing breakdown available)."""
     out = ROOT / "target" / f"bench-{path.stem}-mmdc.svg"
-    cmd = MMD_CLI.split() + ["-i", str(path), "-o", str(out)]
+    cmd = shlex.split(MMD_CLI) + ["-i", str(path), "-o", str(out)]
+    if MMDC_CONFIG:
+        cfg = Path(MMDC_CONFIG)
+        if cfg.exists():
+            cmd += ["-c", str(cfg)]
+
+    cache_json_path: Optional[Path] = None
+    cache_svg_path: Optional[Path] = None
+    if cache_state.get("enabled"):
+        digest = mmdc_cache_digest(
+            path,
+            MMD_CLI,
+            cache_state.get("cli_identity", ""),
+            cache_state.get("script_digest", ""),
+            RUNS,
+            WARMUP,
+            MMDC_CONFIG,
+        )
+        cache_json_path = Path(cache_state["dir"]) / f"{digest}.json"
+        cache_svg_path = Path(cache_state["dir"]) / f"{digest}.svg"
+        cached = load_json_if_exists(cache_json_path)
+        if cached is not None:
+            cache_state["hits"] += 1
+            if cache_svg_path.exists():
+                shutil.copy2(cache_svg_path, out)
+            cached_result = dict(cached)
+            cached_result["cached"] = True
+            return cached_result
+        cache_state["misses"] += 1
 
     times = []
 
@@ -321,20 +436,26 @@ def bench_mermaid_cli(path: Path):
     if WARMUP == 0:
         success, stderr = run_cmd(cmd, capture_stderr=True)
         if not success:
-            return {
+            result = {
                 "times": [],
                 "memory_kb": None,
                 "error": short_error(stderr) or "mmdc failed",
             }
+            if cache_json_path:
+                save_json(cache_json_path, result)
+            return result
     else:
         for _ in range(WARMUP):
             success, stderr = run_cmd(cmd, capture_stderr=True)
             if not success:
-                return {
+                result = {
                     "times": [],
                     "memory_kb": None,
                     "error": short_error(stderr) or "mmdc failed",
                 }
+                if cache_json_path:
+                    save_json(cache_json_path, result)
+                return result
 
     # Actual runs
     for _ in range(RUNS):
@@ -342,20 +463,29 @@ def bench_mermaid_cli(path: Path):
         success, stderr = run_cmd(cmd, capture_stderr=True)
         elapsed = time.perf_counter() - start
         if not success:
-            return {
+            result = {
                 "times": [],
                 "memory_kb": None,
                 "error": short_error(stderr) or "mmdc failed",
             }
+            if cache_json_path:
+                save_json(cache_json_path, result)
+            return result
         times.append(elapsed)
 
     # Get memory usage
     memory_kb = get_memory_usage(cmd)
-
-    return {
+    result = {
         "times": times,
         "memory_kb": memory_kb,
     }
+    if cache_json_path:
+        save_json(cache_json_path, result)
+        if cache_svg_path and out.exists():
+            cache_svg_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(out, cache_svg_path)
+
+    return result
 
 
 def summarize(times):
@@ -569,6 +699,7 @@ def generate_breakdown_chart(results: dict, output_path: Path):
 
 def main():
     results = {"mmdr": {}, "mermaid_cli": {}}
+    mmdc_cache_state = init_mmdc_cache_state()
 
     print("Benchmarking mmdr...")
     for name, path in CASES:
@@ -591,7 +722,7 @@ def main():
         print("\nBenchmarking mermaid-cli...")
         for name, path in CASES:
             print(f"  {name}...", end=" ", flush=True)
-            data = bench_mermaid_cli(path)
+            data = bench_mermaid_cli(path, mmdc_cache_state)
             if data.get("error"):
                 results["mermaid_cli"][name] = {
                     "error": data["error"],
@@ -603,7 +734,8 @@ def main():
                     **summarize(data["times"]),
                     "memory_kb": data["memory_kb"],
                 }
-                print(f"total={results['mermaid_cli'][name]['mean_ms']:.2f}ms")
+                cached_suffix = " (cached)" if data.get("cached") else ""
+                print(f"total={results['mermaid_cli'][name]['mean_ms']:.2f}ms{cached_suffix}")
 
     # Print summary
     print("\n" + "=" * 70)
@@ -662,6 +794,14 @@ def main():
         generate_svg_chart(results, charts_dir / "comparison_chart.svg")
         generate_breakdown_chart(results, charts_dir / "breakdown_chart.svg")
 
+    if mmdc_cache_state.get("enabled"):
+        print(
+            "mermaid-cli cache: "
+            f"hits={mmdc_cache_state.get('hits', 0)} "
+            f"misses={mmdc_cache_state.get('misses', 0)} "
+            f"dir={mmdc_cache_state.get('dir')}"
+        )
+
     if not env_bool("NO_HISTORY_LOG"):
         record = {
             "timestamp_utc": iso_utc_now(),
@@ -676,9 +816,14 @@ def main():
                 "mmd_cli": MMD_CLI,
                 "runs": RUNS,
                 "warmup": WARMUP,
+                "mmdc_config": MMDC_CONFIG,
                 "cases": [name for name, _ in CASES],
                 "skip_mermaid_cli": bool(os.environ.get("SKIP_MERMAID_CLI")),
                 "skip_charts": bool(os.environ.get("SKIP_CHARTS")),
+                "mmdc_cache_enabled": bool(mmdc_cache_state.get("enabled")),
+                "mmdc_cache_dir": str(mmdc_cache_state.get("dir")),
+                "mmdc_cache_hits": int(mmdc_cache_state.get("hits", 0)),
+                "mmdc_cache_misses": int(mmdc_cache_state.get("misses", 0)),
                 "out_json": str(out_json),
                 "charts_dir": str(Path(os.environ.get("CHARTS_DIR", str(ROOT / "docs" / "benchmarks")))),
             },

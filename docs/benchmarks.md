@@ -174,4 +174,19 @@ Run history for this benchmark is also logged by default to:
 `scripts/bench_compare.py` now appends run history by default to:
 - `tmp/benchmark-history/bench-compare-runs.jsonl`
 
+`scripts/bench_compare.py` also supports mermaid-cli result caching by default
+to avoid rerunning slow CLI loops on unchanged inputs:
+- cache dir default: `tmp/benchmark-cache/bench-compare/mmdc`
+- cache key inputs: fixture contents, mermaid-cli command + version, bench
+  script revision, run-count settings (`RUNS`, `WARMUP`), and optional
+  `MMDC_CONFIG`
+
+Useful environment knobs:
+
+```bash
+MMDC_CACHE_DIR=tmp/benchmark-cache/bench-compare/mmdc python3 scripts/bench_compare.py
+NO_MMDC_CACHE=1 python3 scripts/bench_compare.py
+MMDC_CONFIG=tests/fixtures/modern-config.json python3 scripts/bench_compare.py
+```
+
 Each history record includes timestamp, git commit/branch/dirty state, host metadata, run settings, and summary metrics.
