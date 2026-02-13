@@ -65,6 +65,8 @@ const OVERLAP_TRIGGER_RATIO: f32 = 0.35;
 const OVERLAP_TRIGGER_MIN: f32 = 4.0;
 /// Minimum collinear overlap length (px) that should trigger extra detour search.
 const OVERLAP_DETOUR_MIN: f32 = 3.0;
+/// Path-length epsilon used when preferring shorter routes in tie-breaks.
+const ROUTE_LENGTH_TIE_EPS: f32 = 2.0;
 
 // ── Label obstacle padding ──────────────────────────────────────────
 /// Padding around node labels when building label obstacles.
@@ -350,6 +352,7 @@ pub(super) struct RouteContext<'a> {
     pub(super) start_offset: f32,
     pub(super) end_offset: f32,
     pub(super) stub_len: f32,
+    pub(super) prefer_shorter_ties: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -1198,33 +1201,62 @@ pub(super) fn route_edge_with_avoidance(
             let bends = path_bend_count(points);
             let len = path_length(points);
             let score = occupancy.map(|grid| grid.score_path(points)).unwrap_or(0);
-            if hits < best_hits
-                || (hits == best_hits && cross < best_cross)
-                || (hits == best_hits && cross == best_cross && label < best_label_hits)
-                || (hits == best_hits
-                    && cross == best_cross
-                    && label == best_label_hits
-                    && overlap < best_overlap)
-                || (hits == best_hits
-                    && cross == best_cross
-                    && label == best_label_hits
-                    && (overlap - best_overlap).abs() <= 1e-4
-                    && bends < best_bends)
-                || (hits == best_hits
-                    && cross == best_cross
-                    && label == best_label_hits
-                    && (overlap - best_overlap).abs() <= 1e-4
-                    && bends == best_bends
-                    && occupancy.is_some()
-                    && score < best_score)
-                || (hits == best_hits
-                    && cross == best_cross
-                    && label == best_label_hits
-                    && (overlap - best_overlap).abs() <= 1e-4
-                    && bends == best_bends
-                    && (!occupancy.is_some() || score == best_score)
-                    && len < best_len)
-            {
+            let better = if ctx.prefer_shorter_ties {
+                hits < best_hits
+                    || (hits == best_hits && cross < best_cross)
+                    || (hits == best_hits && cross == best_cross && label < best_label_hits)
+                    || (hits == best_hits
+                        && cross == best_cross
+                        && label == best_label_hits
+                        && overlap < best_overlap)
+                    || (hits == best_hits
+                        && cross == best_cross
+                        && label == best_label_hits
+                        && (overlap - best_overlap).abs() <= 1e-4
+                        && len + ROUTE_LENGTH_TIE_EPS < best_len)
+                    || (hits == best_hits
+                        && cross == best_cross
+                        && label == best_label_hits
+                        && (overlap - best_overlap).abs() <= 1e-4
+                        && (len - best_len).abs() <= ROUTE_LENGTH_TIE_EPS
+                        && occupancy.is_some()
+                        && score < best_score)
+                    || (hits == best_hits
+                        && cross == best_cross
+                        && label == best_label_hits
+                        && (overlap - best_overlap).abs() <= 1e-4
+                        && (len - best_len).abs() <= ROUTE_LENGTH_TIE_EPS
+                        && (!occupancy.is_some() || score == best_score)
+                        && bends < best_bends)
+            } else {
+                hits < best_hits
+                    || (hits == best_hits && cross < best_cross)
+                    || (hits == best_hits && cross == best_cross && label < best_label_hits)
+                    || (hits == best_hits
+                        && cross == best_cross
+                        && label == best_label_hits
+                        && overlap < best_overlap)
+                    || (hits == best_hits
+                        && cross == best_cross
+                        && label == best_label_hits
+                        && (overlap - best_overlap).abs() <= 1e-4
+                        && bends < best_bends)
+                    || (hits == best_hits
+                        && cross == best_cross
+                        && label == best_label_hits
+                        && (overlap - best_overlap).abs() <= 1e-4
+                        && bends == best_bends
+                        && occupancy.is_some()
+                        && score < best_score)
+                    || (hits == best_hits
+                        && cross == best_cross
+                        && label == best_label_hits
+                        && (overlap - best_overlap).abs() <= 1e-4
+                        && bends == best_bends
+                        && (!occupancy.is_some() || score == best_score)
+                        && len < best_len)
+            };
+            if better {
                 best_hits = hits;
                 best_cross = cross;
                 best_label_hits = label;
@@ -1614,10 +1646,18 @@ pub(super) fn route_edge_with_avoidance(
             let score = occ.score_path(points);
             let bends = path_bend_count(points);
             let len = path_length(points);
-            if score < best_score
-                || (score == best_score && bends < best_bends)
-                || (score == best_score && bends == best_bends && len < best_len)
-            {
+            let better = if ctx.prefer_shorter_ties {
+                score < best_score
+                    || (score == best_score && len + ROUTE_LENGTH_TIE_EPS < best_len)
+                    || (score == best_score
+                        && (len - best_len).abs() <= ROUTE_LENGTH_TIE_EPS
+                        && bends < best_bends)
+            } else {
+                score < best_score
+                    || (score == best_score && bends < best_bends)
+                    || (score == best_score && bends == best_bends && len < best_len)
+            };
+            if better {
                 best_score = score;
                 best_bends = bends;
                 best_len = len;
@@ -1708,32 +1748,60 @@ pub(super) fn route_edge_with_avoidance(
             let bends = path_bend_count(points);
             let score = grid.score_path(points);
             let len = path_length(points);
-            if hits < best_hits
-                || (hits == best_hits && cross < best_cross)
-                || (hits == best_hits && cross == best_cross && label < best_label_hits)
-                || (hits == best_hits
-                    && cross == best_cross
-                    && label == best_label_hits
-                    && overlap < best_overlap)
-                || (hits == best_hits
-                    && cross == best_cross
-                    && label == best_label_hits
-                    && (overlap - best_overlap).abs() <= 1e-4
-                    && bends < best_bends)
-                || (hits == best_hits
-                    && cross == best_cross
-                    && label == best_label_hits
-                    && (overlap - best_overlap).abs() <= 1e-4
-                    && bends == best_bends
-                    && score < best_score)
-                || (hits == best_hits
-                    && cross == best_cross
-                    && label == best_label_hits
-                    && (overlap - best_overlap).abs() <= 1e-4
-                    && bends == best_bends
-                    && score == best_score
-                    && len < best_len)
-            {
+            let better = if ctx.prefer_shorter_ties {
+                hits < best_hits
+                    || (hits == best_hits && cross < best_cross)
+                    || (hits == best_hits && cross == best_cross && label < best_label_hits)
+                    || (hits == best_hits
+                        && cross == best_cross
+                        && label == best_label_hits
+                        && overlap < best_overlap)
+                    || (hits == best_hits
+                        && cross == best_cross
+                        && label == best_label_hits
+                        && (overlap - best_overlap).abs() <= 1e-4
+                        && len + ROUTE_LENGTH_TIE_EPS < best_len)
+                    || (hits == best_hits
+                        && cross == best_cross
+                        && label == best_label_hits
+                        && (overlap - best_overlap).abs() <= 1e-4
+                        && (len - best_len).abs() <= ROUTE_LENGTH_TIE_EPS
+                        && score < best_score)
+                    || (hits == best_hits
+                        && cross == best_cross
+                        && label == best_label_hits
+                        && (overlap - best_overlap).abs() <= 1e-4
+                        && (len - best_len).abs() <= ROUTE_LENGTH_TIE_EPS
+                        && score == best_score
+                        && bends < best_bends)
+            } else {
+                hits < best_hits
+                    || (hits == best_hits && cross < best_cross)
+                    || (hits == best_hits && cross == best_cross && label < best_label_hits)
+                    || (hits == best_hits
+                        && cross == best_cross
+                        && label == best_label_hits
+                        && overlap < best_overlap)
+                    || (hits == best_hits
+                        && cross == best_cross
+                        && label == best_label_hits
+                        && (overlap - best_overlap).abs() <= 1e-4
+                        && bends < best_bends)
+                    || (hits == best_hits
+                        && cross == best_cross
+                        && label == best_label_hits
+                        && (overlap - best_overlap).abs() <= 1e-4
+                        && bends == best_bends
+                        && score < best_score)
+                    || (hits == best_hits
+                        && cross == best_cross
+                        && label == best_label_hits
+                        && (overlap - best_overlap).abs() <= 1e-4
+                        && bends == best_bends
+                        && score == best_score
+                        && len < best_len)
+            };
+            if better {
                 best_hits = hits;
                 best_cross = cross;
                 best_label_hits = label;
@@ -1765,25 +1833,46 @@ pub(super) fn route_edge_with_avoidance(
         let overlap = overlaps.get(idx).copied().unwrap_or(0.0);
         let bends = path_bend_count(points);
         let len = path_length(points);
-        if hits < best_hits
-            || (hits == best_hits && cross < best_cross)
-            || (hits == best_hits && cross == best_cross && label < best_label_hits)
-            || (hits == best_hits
-                && cross == best_cross
-                && label == best_label_hits
-                && overlap < best_overlap)
-            || (hits == best_hits
-                && cross == best_cross
-                && label == best_label_hits
-                && (overlap - best_overlap).abs() <= 1e-4
-                && bends < best_bends)
-            || (hits == best_hits
-                && cross == best_cross
-                && label == best_label_hits
-                && (overlap - best_overlap).abs() <= 1e-4
-                && bends == best_bends
-                && len < best_len)
-        {
+        let better = if ctx.prefer_shorter_ties {
+            hits < best_hits
+                || (hits == best_hits && cross < best_cross)
+                || (hits == best_hits && cross == best_cross && label < best_label_hits)
+                || (hits == best_hits
+                    && cross == best_cross
+                    && label == best_label_hits
+                    && overlap < best_overlap)
+                || (hits == best_hits
+                    && cross == best_cross
+                    && label == best_label_hits
+                    && (overlap - best_overlap).abs() <= 1e-4
+                    && len + ROUTE_LENGTH_TIE_EPS < best_len)
+                || (hits == best_hits
+                    && cross == best_cross
+                    && label == best_label_hits
+                    && (overlap - best_overlap).abs() <= 1e-4
+                    && (len - best_len).abs() <= ROUTE_LENGTH_TIE_EPS
+                    && bends < best_bends)
+        } else {
+            hits < best_hits
+                || (hits == best_hits && cross < best_cross)
+                || (hits == best_hits && cross == best_cross && label < best_label_hits)
+                || (hits == best_hits
+                    && cross == best_cross
+                    && label == best_label_hits
+                    && overlap < best_overlap)
+                || (hits == best_hits
+                    && cross == best_cross
+                    && label == best_label_hits
+                    && (overlap - best_overlap).abs() <= 1e-4
+                    && bends < best_bends)
+                || (hits == best_hits
+                    && cross == best_cross
+                    && label == best_label_hits
+                    && (overlap - best_overlap).abs() <= 1e-4
+                    && bends == best_bends
+                    && len < best_len)
+        };
+        if better {
             best_hits = hits;
             best_cross = cross;
             best_label_hits = label;

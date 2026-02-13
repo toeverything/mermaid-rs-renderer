@@ -1003,6 +1003,20 @@ fn compute_flowchart_layout(
             | crate::ir::DiagramKind::Requirement => 0.0,
             _ => default_stub,
         };
+        let max_edge_label_chars = [
+            edge.label.as_deref(),
+            edge.start_label.as_deref(),
+            edge.end_label.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .map(|label| label.chars().count())
+        .max()
+        .unwrap_or(0);
+        let has_endpoint_label = edge.start_label.is_some() || edge.end_label.is_some();
+        let avoid_short_tie = graph.kind == crate::ir::DiagramKind::Flowchart
+            && (has_endpoint_label
+                || max_edge_label_chars >= FLOWCHART_EDGE_LABEL_WRAP_TRIGGER_CHARS);
         let route_ctx = RouteContext {
             from_id: &edge.from,
             to_id: &edge.to,
@@ -1019,6 +1033,7 @@ fn compute_flowchart_layout(
             start_offset: port_info.start_offset,
             end_offset: port_info.end_offset,
             stub_len,
+            prefer_shorter_ties: !avoid_short_tie,
         };
         let use_existing_for_edge = !(matches!(
             graph.kind,
@@ -1055,6 +1070,7 @@ fn compute_flowchart_layout(
                 start_offset: route_ctx.start_offset,
                 end_offset: route_ctx.end_offset,
                 stub_len: route_ctx.stub_len,
+                prefer_shorter_ties: route_ctx.prefer_shorter_ties,
             };
             let fast_points = route_edge_with_avoidance(&fast_ctx, None, None, existing_for_edge);
             let fast_hits = path_obstacle_intersections(
@@ -5546,6 +5562,7 @@ mod tests {
             end_offset: 0.0,
             fast_route: false,
             stub_len: port_stub_length(&config, &from, &to),
+            prefer_shorter_ties: true,
         };
         let mut occupancy = EdgeOccupancy::new(
             config.node_spacing.max(MIN_NODE_SPACING_FLOOR) * EDGE_OCCUPANCY_CELL_RATIO,
@@ -5584,6 +5601,7 @@ mod tests {
             end_offset: 0.0,
             fast_route: false,
             stub_len: port_stub_length(&config, &from, &to),
+            prefer_shorter_ties: true,
         };
         let points = route_edge_with_avoidance(&ctx, None, None, None);
         assert!(!points.is_empty());
@@ -5622,6 +5640,7 @@ mod tests {
             end_offset: 0.0,
             fast_route: false,
             stub_len: port_stub_length(&config, &from, &to),
+            prefer_shorter_ties: true,
         };
         let start = anchor_point_for_node(&from, EdgeSide::Right, 0.0);
         let end = anchor_point_for_node(&to, EdgeSide::Left, 0.0);

@@ -583,6 +583,79 @@ fn deoverlap_flowchart_center_labels(
         }
     }
 
+    // If overlaps still remain, force-separate conflicted pairs by selecting a
+    // non-overlapping candidate for one side of the pair.
+    for _ in 0..6 {
+        let current_rects: Vec<Rect> = entries
+            .iter()
+            .map(|entry| {
+                flowchart_center_label_rect(
+                    entry.current_center,
+                    entry.label_w,
+                    entry.label_h,
+                    label_pad_x,
+                    label_pad_y,
+                )
+            })
+            .collect();
+        let mut adjusted = false;
+        'pair_search: for i in 0..entries.len() {
+            for j in (i + 1)..entries.len() {
+                if overlap_area(&current_rects[i], &current_rects[j]) <= LABEL_OVERLAP_WIDE_THRESHOLD
+                {
+                    continue;
+                }
+                for &move_idx in &[i, j] {
+                    let entry_snapshot = entries[move_idx].clone();
+                    let others: Vec<Rect> = current_rects
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(k, rect)| if k == move_idx { None } else { Some(*rect) })
+                        .collect();
+                    let mut best_center: Option<(f32, f32)> = None;
+                    let mut best_cost = (f32::INFINITY, f32::INFINITY);
+                    for candidate in entry_snapshot.candidates.iter().copied() {
+                        let rect = flowchart_center_label_rect(
+                            candidate,
+                            entry_snapshot.label_w,
+                            entry_snapshot.label_h,
+                            label_pad_x,
+                            label_pad_y,
+                        );
+                        if others.iter().any(|other| {
+                            overlap_area(&rect, other) > LABEL_OVERLAP_WIDE_THRESHOLD
+                        }) {
+                            continue;
+                        }
+                        let cost = flowchart_center_label_refine_cost(
+                            &entry_snapshot,
+                            candidate,
+                            label_pad_x,
+                            label_pad_y,
+                            &others,
+                            &fixed_obstacles,
+                        );
+                        if best_center.is_none() || candidate_better(cost, best_cost) {
+                            best_center = Some(candidate);
+                            best_cost = cost;
+                        }
+                    }
+                    if let Some(center) = best_center
+                        && ((center.0 - entries[move_idx].current_center.0).abs() > 0.2
+                            || (center.1 - entries[move_idx].current_center.1).abs() > 0.2)
+                    {
+                        entries[move_idx].current_center = center;
+                        adjusted = true;
+                        break 'pair_search;
+                    }
+                }
+            }
+        }
+        if !adjusted {
+            break;
+        }
+    }
+
     for entry in entries {
         edges[entry.edge_idx].label_anchor = Some(entry.current_center);
     }
@@ -750,8 +823,8 @@ fn flowchart_center_label_refine_cost(
     let edge_target = edge_target_distance(DiagramKind::Flowchart, entry.label_h, label_pad_y);
     let edge_center_penalty =
         ((edge_center_dist - edge_target).max(0.0) / edge_target.max(1e-3)) * 0.45;
-    let primary = fixed_overlap_count as f32 * 70.0
-        + (fixed_overlap_area / area) * 24.0
+    let primary = fixed_overlap_count as f32 * 110.0
+        + (fixed_overlap_area / area) * 40.0
         + overlap_count as f32 * 80.0
         + (overlap_area_sum / area) * 30.0
         + own_edge_penalty
