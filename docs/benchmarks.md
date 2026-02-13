@@ -135,6 +135,10 @@ This benchmark reports `edge_label_path_gap_*` metrics where:
 - `edge_label_path_gap_mean`: average label-box to nearest edge-path gap
 - `edge_label_path_gap_p95`: 95th percentile gap
 - `edge_label_path_touch_ratio`: fraction of labels touching their nearest edge path (`0` gap)
+- `edge_label_path_non_touch_ratio`: fraction of labels not touching their nearest edge path (`1 - touch_ratio`)
+- `edge_label_path_clearance_score_mean`: average clearance quality score in `[0,1]`
+  where touching scores `0` and score peaks near a small positive clearance band
+- `edge_label_path_in_band_ratio`: fraction of labels in the target clearance band (`1px..6px`)
 - `edge_label_path_gap_bad_ratio`: fraction of labels beyond diagram-specific gap thresholds
 
 Run history for this benchmark is also logged by default to:

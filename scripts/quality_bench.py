@@ -989,6 +989,11 @@ def compute_label_metrics(svg_path: Path, nodes, edges, diagram_kind=""):
     edge_label_path_gaps = []
     edge_label_path_bad_count = 0
     edge_label_path_touch_count = 0
+    edge_label_clearance_scores = []
+    edge_label_in_band_count = 0
+    edge_label_touch_eps = 0.5
+    edge_label_clearance_target = 2.0
+    edge_label_clearance_sigma = 2.0
     candidate_edge_labels = explicit_edge_label_boxes
     use_fallback_candidate_filter = False
     if not candidate_edge_labels:
@@ -1035,8 +1040,14 @@ def compute_label_metrics(svg_path: Path, nodes, edges, diagram_kind=""):
             edge_label_bad_count += 1
         if min_gap > path_bad_limit:
             edge_label_path_bad_count += 1
-        if min_gap <= 0.5:
+        if min_gap <= edge_label_touch_eps:
             edge_label_path_touch_count += 1
+            edge_label_clearance_scores.append(0.0)
+        else:
+            z = (min_gap - edge_label_clearance_target) / edge_label_clearance_sigma
+            edge_label_clearance_scores.append(math.exp(-0.5 * z * z))
+        if 1.0 <= min_gap <= 6.0:
+            edge_label_in_band_count += 1
 
     edge_label_alignment_mean = (
         sum(edge_label_distances) / len(edge_label_distances)
@@ -1098,6 +1109,19 @@ def compute_label_metrics(svg_path: Path, nodes, edges, diagram_kind=""):
                 "edge_label_path_gap_bad_count": edge_label_path_bad_count,
                 "edge_label_path_gap_bad_ratio": (
                     edge_label_path_bad_count / len(edge_label_path_gaps)
+                ),
+                # Score in [0,1]: 0 when touching path, highest near target
+                # clearance band (~2px), and decays when labels drift too far.
+                "edge_label_path_clearance_score_mean": (
+                    sum(edge_label_clearance_scores) / len(edge_label_clearance_scores)
+                    if edge_label_clearance_scores
+                    else 0.0
+                ),
+                "edge_label_path_non_touch_ratio": (
+                    1.0 - (edge_label_path_touch_count / len(edge_label_path_gaps))
+                ),
+                "edge_label_path_in_band_ratio": (
+                    edge_label_in_band_count / len(edge_label_path_gaps)
                 ),
             }
         )
@@ -1806,6 +1830,18 @@ def main():
         mmdc_label_gap, mmdc_label_gap_count = summarize_metric(
             results.get("mermaid_cli", {}), "edge_label_path_gap_mean"
         )
+        mmdr_label_clearance, mmdr_label_clearance_count = summarize_metric(
+            results.get("mmdr", {}), "edge_label_path_clearance_score_mean"
+        )
+        mmdc_label_clearance, mmdc_label_clearance_count = summarize_metric(
+            results.get("mermaid_cli", {}), "edge_label_path_clearance_score_mean"
+        )
+        mmdr_label_nontouch, mmdr_label_nontouch_count = summarize_metric(
+            results.get("mmdr", {}), "edge_label_path_non_touch_ratio"
+        )
+        mmdc_label_nontouch, mmdc_label_nontouch_count = summarize_metric(
+            results.get("mermaid_cli", {}), "edge_label_path_non_touch_ratio"
+        )
         history_summary.update(
             {
                 "mmdr_avg_wasted_space_ratio": mmdr_waste,
@@ -1822,6 +1858,10 @@ def main():
                 "mermaid_cli_avg_edge_label_distance": mmdc_label_align,
                 "mmdr_avg_edge_label_path_gap": mmdr_label_gap,
                 "mermaid_cli_avg_edge_label_path_gap": mmdc_label_gap,
+                "mmdr_avg_edge_label_clearance_score": mmdr_label_clearance,
+                "mermaid_cli_avg_edge_label_clearance_score": mmdc_label_clearance,
+                "mmdr_avg_edge_label_non_touch_ratio": mmdr_label_nontouch,
+                "mermaid_cli_avg_edge_label_non_touch_ratio": mmdc_label_nontouch,
             }
         )
         if mmdr_label_align_count:
@@ -1832,6 +1872,20 @@ def main():
             print(f"mmdr: avg edge-label path gap (0=touching): {mmdr_label_gap:.3f}")
         if mmdc_label_gap_count:
             print(f"mermaid-cli: avg edge-label path gap (0=touching): {mmdc_label_gap:.3f}")
+        if mmdr_label_clearance_count:
+            print(
+                "mmdr: avg edge-label clearance score "
+                f"(touch=0, best near ~2px): {mmdr_label_clearance:.3f}"
+            )
+        if mmdc_label_clearance_count:
+            print(
+                "mermaid-cli: avg edge-label clearance score "
+                f"(touch=0, best near ~2px): {mmdc_label_clearance:.3f}"
+            )
+        if mmdr_label_nontouch_count:
+            print(f"mmdr: avg edge-label non-touch ratio: {mmdr_label_nontouch:.3f}")
+        if mmdc_label_nontouch_count:
+            print(f"mermaid-cli: avg edge-label non-touch ratio: {mmdc_label_nontouch:.3f}")
         comparison_stats = common_comparison_stats(
             results.get("mmdr", {}), results.get("mermaid_cli", {})
         )
@@ -1934,6 +1988,17 @@ def main():
                     "  "
                     f"{name}: gap_mean={metrics.get('edge_label_path_gap_mean', 0.0):.2f}, "
                     f"touch_ratio={metrics.get('edge_label_path_touch_ratio', 0.0):.3f}"
+                )
+            by_clearance_score = sorted(
+                scored,
+                key=lambda kv: kv[1].get("edge_label_path_clearance_score_mean", 0.0),
+            )[:5]
+            print("Worst 5 by edge-label clearance score (touch = 0):")
+            for name, metrics in by_clearance_score:
+                print(
+                    "  "
+                    f"{name}: score={metrics.get('edge_label_path_clearance_score_mean', 0.0):.3f}, "
+                    f"non_touch={metrics.get('edge_label_path_non_touch_ratio', 0.0):.3f}"
                 )
 
     if not args.no_history_log:

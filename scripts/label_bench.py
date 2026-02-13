@@ -50,6 +50,9 @@ def summarize(results):
         "avg_gap_mean": avg("edge_label_path_gap_mean"),
         "avg_gap_p95": avg("edge_label_path_gap_p95"),
         "avg_touch_ratio": avg("edge_label_path_touch_ratio"),
+        "avg_non_touch_ratio": avg("edge_label_path_non_touch_ratio"),
+        "avg_clearance_score": avg("edge_label_path_clearance_score_mean"),
+        "avg_in_band_ratio": avg("edge_label_path_in_band_ratio"),
         "avg_bad_ratio": avg("edge_label_path_gap_bad_ratio"),
     }
 
@@ -87,7 +90,10 @@ def compare_metric(left, right, keys, metric, higher_is_better=False, eps=1e-9):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Benchmark edge-label placement by path gap (0 means touching path)"
+        description=(
+            "Benchmark edge-label placement by path gap and clearance score "
+            "(touching path yields score 0)"
+        )
     )
     parser.add_argument(
         "--fixtures",
@@ -189,6 +195,9 @@ def main():
                 f"avg_gap_mean={summary['avg_gap_mean']:.3f} "
                 f"avg_gap_p95={summary['avg_gap_p95']:.3f} "
                 f"avg_touch_ratio={summary['avg_touch_ratio']:.3f} "
+                f"avg_non_touch_ratio={summary['avg_non_touch_ratio']:.3f} "
+                f"avg_clearance_score={summary['avg_clearance_score']:.3f} "
+                f"avg_in_band_ratio={summary['avg_in_band_ratio']:.3f} "
                 f"avg_bad_ratio={summary['avg_bad_ratio']:.3f}"
             )
         mmdr_summary = summary
@@ -203,6 +212,9 @@ def main():
                 f"avg_gap_mean={summary['avg_gap_mean']:.3f} "
                 f"avg_gap_p95={summary['avg_gap_p95']:.3f} "
                 f"avg_touch_ratio={summary['avg_touch_ratio']:.3f} "
+                f"avg_non_touch_ratio={summary['avg_non_touch_ratio']:.3f} "
+                f"avg_clearance_score={summary['avg_clearance_score']:.3f} "
+                f"avg_in_band_ratio={summary['avg_in_band_ratio']:.3f} "
                 f"avg_bad_ratio={summary['avg_bad_ratio']:.3f}"
             )
         mmdc_summary = summary
@@ -217,14 +229,22 @@ def main():
             "edge_label_path_gap_mean",
             "edge_label_path_gap_p95",
             "edge_label_path_touch_ratio",
+            "edge_label_path_non_touch_ratio",
+            "edge_label_path_clearance_score_mean",
+            "edge_label_path_in_band_ratio",
             "edge_label_path_gap_bad_ratio",
         ]:
+            higher_is_better = metric in {
+                "edge_label_path_non_touch_ratio",
+                "edge_label_path_clearance_score_mean",
+                "edge_label_path_in_band_ratio",
+            }
             better, equal, worse, regressions = compare_metric(
                 results["mmdr"],
                 results["mermaid_cli"],
                 common,
                 metric,
-                higher_is_better=False,
+                higher_is_better=higher_is_better,
             )
             metric_stats = {
                 "better": better,
