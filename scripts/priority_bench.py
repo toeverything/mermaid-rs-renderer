@@ -66,7 +66,7 @@ DEFAULT_PRIORITY_METRICS = [
     "label_out_of_bounds_ratio",
     "edge_label_owned_path_touch_ratio",
     "edge_label_owned_path_gap_bad_ratio",
-    "edge_label_owned_path_gap_mean",
+    "edge_label_owned_path_clearance_penalty",
     "edge_label_owned_mapping_ratio",
 ]
 

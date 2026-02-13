@@ -1328,6 +1328,11 @@ def compute_label_metrics(
             }
         )
     if edge_label_path_gaps:
+        path_clearance_score = (
+            sum(edge_label_clearance_scores) / len(edge_label_clearance_scores)
+            if edge_label_clearance_scores
+            else 0.0
+        )
         metrics.update(
             {
                 "edge_label_path_gap_mean": edge_label_path_gap_mean,
@@ -1342,11 +1347,8 @@ def compute_label_metrics(
                 ),
                 # Score in [0,1]: 0 when touching path, highest near target
                 # clearance band (~2px), and decays when labels drift too far.
-                "edge_label_path_clearance_score_mean": (
-                    sum(edge_label_clearance_scores) / len(edge_label_clearance_scores)
-                    if edge_label_clearance_scores
-                    else 0.0
-                ),
+                "edge_label_path_clearance_score_mean": path_clearance_score,
+                "edge_label_path_clearance_penalty": (1.0 - path_clearance_score),
                 "edge_label_path_non_touch_ratio": (
                     1.0 - (edge_label_path_touch_count / len(edge_label_path_gaps))
                 ),
@@ -1366,6 +1368,11 @@ def compute_label_metrics(
             }
         )
     if edge_label_owned_path_gaps:
+        owned_clearance_score = (
+            sum(edge_label_owned_clearance_scores) / len(edge_label_owned_clearance_scores)
+            if edge_label_owned_clearance_scores
+            else 0.0
+        )
         metrics.update(
             {
                 "edge_label_owned_path_gap_mean": edge_label_owned_path_gap_mean,
@@ -1380,12 +1387,8 @@ def compute_label_metrics(
                 ),
                 # Score in [0,1]: 0 when touching path, highest near target
                 # clearance band (~2px), and decays when labels drift too far.
-                "edge_label_owned_path_clearance_score_mean": (
-                    sum(edge_label_owned_clearance_scores)
-                    / len(edge_label_owned_clearance_scores)
-                    if edge_label_owned_clearance_scores
-                    else 0.0
-                ),
+                "edge_label_owned_path_clearance_score_mean": owned_clearance_score,
+                "edge_label_owned_path_clearance_penalty": (1.0 - owned_clearance_score),
                 "edge_label_owned_path_non_touch_ratio": (
                     1.0
                     - (
@@ -1801,9 +1804,9 @@ def common_comparison_stats(left, right):
         "arrow_path_intersections",
         "label_overlap_count",
         "label_out_of_bounds_count",
-        "edge_label_path_gap_mean",
+        "edge_label_path_clearance_penalty",
         "edge_label_path_touch_ratio",
-        "edge_label_owned_path_gap_mean",
+        "edge_label_owned_path_clearance_penalty",
         "edge_label_owned_path_touch_ratio",
     ]
     metrics = {}
@@ -1831,6 +1834,7 @@ def common_comparison_stats(left, right):
         "arrow_path_intersections",
         "label_overlap_count",
         "label_out_of_bounds_count",
+        "edge_label_owned_path_clearance_penalty",
         "edge_label_owned_path_touch_ratio",
     ]
     non_worse = 0
@@ -1876,9 +1880,9 @@ def summarize_common_comparison(left, right):
         "arrow_path_intersections",
         "label_overlap_count",
         "label_out_of_bounds_count",
-        "edge_label_path_gap_mean",
+        "edge_label_path_clearance_penalty",
         "edge_label_path_touch_ratio",
-        "edge_label_owned_path_gap_mean",
+        "edge_label_owned_path_clearance_penalty",
         "edge_label_owned_path_touch_ratio",
     ]:
         metric_stats = stats["metrics"].get(metric, {})
