@@ -40,6 +40,8 @@ BIN = os.environ.get("MMDR_BIN", str(ROOT / "target" / "release" / "mmdr"))
 MMD_CLI = os.environ.get("MMD_CLI", "npx -y @mermaid-js/mermaid-cli")
 RUNS = int(os.environ.get("RUNS", "8"))
 WARMUP = int(os.environ.get("WARMUP", "2"))
+MMD_CLI_RUNS = int(os.environ.get("MMD_CLI_RUNS", "1"))
+MMD_CLI_WARMUP = int(os.environ.get("MMD_CLI_WARMUP", "0"))
 MMDC_CONFIG = os.environ.get("MMDC_CONFIG", "")
 HISTORY_LOG = Path(
     os.environ.get(
@@ -414,8 +416,8 @@ def bench_mermaid_cli(path: Path, cache_state: dict):
             MMD_CLI,
             cache_state.get("cli_identity", ""),
             cache_state.get("script_digest", ""),
-            RUNS,
-            WARMUP,
+            MMD_CLI_RUNS,
+            MMD_CLI_WARMUP,
             MMDC_CONFIG,
         )
         cache_json_path = Path(cache_state["dir"]) / f"{digest}.json"
@@ -433,7 +435,7 @@ def bench_mermaid_cli(path: Path, cache_state: dict):
     times = []
 
     # Warmup (and preflight to detect unsupported diagrams)
-    if WARMUP == 0:
+    if MMD_CLI_WARMUP == 0:
         success, stderr = run_cmd(cmd, capture_stderr=True)
         if not success:
             result = {
@@ -445,7 +447,7 @@ def bench_mermaid_cli(path: Path, cache_state: dict):
                 save_json(cache_json_path, result)
             return result
     else:
-        for _ in range(WARMUP):
+        for _ in range(MMD_CLI_WARMUP):
             success, stderr = run_cmd(cmd, capture_stderr=True)
             if not success:
                 result = {
@@ -458,7 +460,7 @@ def bench_mermaid_cli(path: Path, cache_state: dict):
                 return result
 
     # Actual runs
-    for _ in range(RUNS):
+    for _ in range(MMD_CLI_RUNS):
         start = time.perf_counter()
         success, stderr = run_cmd(cmd, capture_stderr=True)
         elapsed = time.perf_counter() - start
@@ -720,6 +722,9 @@ def main():
         print("SKIP_MERMAID_CLI set, skipping mermaid-cli")
     else:
         print("\nBenchmarking mermaid-cli...")
+        print(
+            f"  sampling config: runs={MMD_CLI_RUNS}, warmup={MMD_CLI_WARMUP}"
+        )
         for name, path in CASES:
             print(f"  {name}...", end=" ", flush=True)
             data = bench_mermaid_cli(path, mmdc_cache_state)
@@ -816,6 +821,8 @@ def main():
                 "mmd_cli": MMD_CLI,
                 "runs": RUNS,
                 "warmup": WARMUP,
+                "mmd_cli_runs": MMD_CLI_RUNS,
+                "mmd_cli_warmup": MMD_CLI_WARMUP,
                 "mmdc_config": MMDC_CONFIG,
                 "cases": [name for name, _ in CASES],
                 "skip_mermaid_cli": bool(os.environ.get("SKIP_MERMAID_CLI")),
