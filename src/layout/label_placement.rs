@@ -56,22 +56,23 @@ struct FlowchartBeamState {
 fn edge_distance_weight(kind: DiagramKind, overlap_pressure: f32) -> f32 {
     let base = match kind {
         DiagramKind::Flowchart => 0.72,
-        DiagramKind::Class | DiagramKind::State => 0.20,
+        DiagramKind::State => 0.38,
+        DiagramKind::Class => 0.24,
         _ => 0.16,
     };
     if overlap_pressure <= 0.025 {
         base
     } else if overlap_pressure <= 0.10 {
-        if kind == DiagramKind::Flowchart {
-            base * 0.92
-        } else {
-            base * 0.55
+        match kind {
+            DiagramKind::Flowchart => base * 0.92,
+            DiagramKind::State => base * 0.80,
+            _ => base * 0.55,
         }
     } else {
-        if kind == DiagramKind::Flowchart {
-            base * 0.68
-        } else {
-            base * 0.2
+        match kind {
+            DiagramKind::Flowchart => base * 0.68,
+            DiagramKind::State => base * 0.55,
+            _ => base * 0.2,
         }
     }
 }
@@ -339,64 +340,111 @@ fn resolve_center_labels(
             } else {
                 label.height + label_pad_y + step_tangent_pad
             };
+            let half_w = label.width * 0.5 + label_pad_x;
+            let half_h = label.height * 0.5 + label_pad_y;
+            let normal_extent = normal_x.abs() * half_w + normal_y.abs() * half_h;
+            let mut score_center = |x: f32, y: f32, tangent_metric: f32, normal_metric: f32| {
+                let center = if let Some(bound) = bounds {
+                    clamp_label_center_to_bounds(
+                        (x, y),
+                        label.width,
+                        label.height,
+                        label_pad_x,
+                        label_pad_y,
+                        bound,
+                    )
+                } else {
+                    (x, y)
+                };
+                let rect = (
+                    center.0 - label.width / 2.0 - label_pad_x,
+                    center.1 - label.height / 2.0 - label_pad_y,
+                    pad_w,
+                    pad_h,
+                );
+                if let Some(max_gap) = max_own_gap {
+                    let own_gap = polyline_rect_distance(&edge.points, &rect);
+                    if own_gap.is_finite() && own_gap > max_gap {
+                        return;
+                    }
+                }
+                evaluated = true;
+                let penalty = label_penalties(
+                    rect,
+                    (anchor_x, anchor_y),
+                    label.width,
+                    label.height,
+                    kind,
+                    &occupied,
+                    &occupied_grid,
+                    node_obstacle_count,
+                    &edge_obstacles,
+                    &edge_grid,
+                    idx,
+                    &edge.points,
+                    bounds,
+                );
+                let overlap_pressure = penalty.0;
+                let edge_dist = point_polyline_distance(center, &edge.points);
+                let edge_target = edge_target_distance(kind, label.height, label_pad_y);
+                let edge_dist_weight = edge_distance_weight(kind, overlap_pressure);
+                let edge_dist_penalty =
+                    ((edge_dist - edge_target).max(0.0) / edge_target) * edge_dist_weight;
+                let sweep_penalty = sweep_bias(kind, tangent_metric, normal_metric);
+                let penalty = (penalty.0 + edge_dist_penalty + sweep_penalty, penalty.1);
+                if candidate_better(penalty, *best_penalty) {
+                    *best_penalty = penalty;
+                    *best_pos = center;
+                }
+            };
+
+            // Geometry-aware bands: place labels by explicit edge-clearance gaps,
+            // independent of label dimensions, so large labels can still hug paths.
+            let (gap_targets, tangent_focus): (&[f32], &[f32]) = match kind {
+                DiagramKind::Flowchart => (
+                    &[0.8, 1.4, 2.0, 3.0, 4.4, 6.2],
+                    &[0.0, 0.3, -0.3, 0.8, -0.8, 1.4, -1.4],
+                ),
+                DiagramKind::State => (
+                    &[0.8, 1.3, 1.9, 2.8, 3.9, 5.3],
+                    &[0.0, 0.12, -0.12, 0.35, -0.35, 0.8, -0.8],
+                ),
+                _ => (
+                    &[0.8, 1.4, 2.1, 3.0, 4.1, 5.6],
+                    &[0.0, 0.2, -0.2, 0.6, -0.6, 1.2, -1.2],
+                ),
+            };
+            for t in tangent_focus {
+                let base_x = anchor_x + dir_x * step_t * *t;
+                let base_y = anchor_y + dir_y * step_t * *t;
+                for gap in gap_targets {
+                    let offset = normal_extent + *gap;
+                    let approx_normal = offset / step_n.max(1.0);
+                    score_center(
+                        base_x + normal_x * offset,
+                        base_y + normal_y * offset,
+                        *t,
+                        approx_normal,
+                    );
+                    score_center(
+                        base_x - normal_x * offset,
+                        base_y - normal_y * offset,
+                        *t,
+                        -approx_normal,
+                    );
+                }
+            }
+
             for t in tangents {
                 let base_x = anchor_x + dir_x * step_t * *t;
                 let base_y = anchor_y + dir_y * step_t * *t;
                 for n in normals {
-                    let x = base_x + normal_x * step_n * *n;
-                    let y = base_y + normal_y * step_n * *n;
-                    let center = if let Some(bound) = bounds {
-                        clamp_label_center_to_bounds(
-                            (x, y),
-                            label.width,
-                            label.height,
-                            label_pad_x,
-                            label_pad_y,
-                            bound,
-                        )
-                    } else {
-                        (x, y)
-                    };
-                    let rect = (
-                        center.0 - label.width / 2.0 - label_pad_x,
-                        center.1 - label.height / 2.0 - label_pad_y,
-                        pad_w,
-                        pad_h,
+                    score_center(
+                        base_x + normal_x * step_n * *n,
+                        base_y + normal_y * step_n * *n,
+                        *t,
+                        *n,
                     );
-                    if let Some(max_gap) = max_own_gap {
-                        let own_gap = polyline_rect_distance(&edge.points, &rect);
-                        if own_gap.is_finite() && own_gap > max_gap {
-                            continue;
-                        }
-                    }
-                    evaluated = true;
-                    let penalty = label_penalties(
-                        rect,
-                        (anchor_x, anchor_y),
-                        label.width,
-                        label.height,
-                        kind,
-                        &occupied,
-                        &occupied_grid,
-                        node_obstacle_count,
-                        &edge_obstacles,
-                        &edge_grid,
-                        idx,
-                        &edge.points,
-                        bounds,
-                    );
-                    let overlap_pressure = penalty.0;
-                    let edge_dist = point_polyline_distance(center, &edge.points);
-                    let edge_target = edge_target_distance(kind, label.height, label_pad_y);
-                    let edge_dist_weight = edge_distance_weight(kind, overlap_pressure);
-                    let edge_dist_penalty =
-                        ((edge_dist - edge_target).max(0.0) / edge_target) * edge_dist_weight;
-                    let sweep_penalty = sweep_bias(kind, *t, *n);
-                    let penalty = (penalty.0 + edge_dist_penalty + sweep_penalty, penalty.1);
-                    if candidate_better(penalty, *best_penalty) {
-                        *best_penalty = penalty;
-                        *best_pos = center;
-                    }
                 }
             }
             evaluated
@@ -621,7 +669,7 @@ fn deoverlap_flowchart_center_labels(
         let current_rects: Vec<Rect> = entries
             .iter()
             .map(|entry| {
-                flowchart_center_label_rect(
+                flowchart_center_label_obstacle_rect(
                     entry.current_center,
                     entry.label_w,
                     entry.label_h,
@@ -667,7 +715,7 @@ fn deoverlap_flowchart_center_labels(
                     if i == entry_idx {
                         None
                     } else {
-                        Some(flowchart_center_label_rect(
+                        Some(flowchart_center_label_obstacle_rect(
                             entry.current_center,
                             entry.label_w,
                             entry.label_h,
@@ -767,7 +815,7 @@ fn deoverlap_flowchart_center_labels(
         let current_rects: Vec<Rect> = entries
             .iter()
             .map(|entry| {
-                flowchart_center_label_rect(
+                flowchart_center_label_obstacle_rect(
                     entry.current_center,
                     entry.label_w,
                     entry.label_h,
@@ -822,10 +870,17 @@ fn deoverlap_flowchart_center_labels(
                                 label_pad_x,
                                 label_pad_y,
                             );
+                            let obstacle_rect = flowchart_center_label_obstacle_rect(
+                                candidate,
+                                entry_snapshot.label_w,
+                                entry_snapshot.label_h,
+                                label_pad_x,
+                                label_pad_y,
+                            );
                             let mut overlap_penalty = 0.0f32;
                             let mut has_overlap = false;
                             for other in &others {
-                                let ov = overlap_area(&rect, other);
+                                let ov = overlap_area(&obstacle_rect, other);
                                 if ov > LABEL_OVERLAP_WIDE_THRESHOLD {
                                     has_overlap = true;
                                     overlap_penalty += (ov / rect_area) * 140.0;
@@ -1161,14 +1216,21 @@ fn build_flowchart_candidate_set(
 
     let mut scored: Vec<FlowchartCenterCandidate> = Vec::new();
     for center in centers {
-        let rect = flowchart_center_label_rect(
+        let core_rect = flowchart_center_label_rect(
             center,
             entry.label_w,
             entry.label_h,
             label_pad_x,
             label_pad_y,
         );
-        let own_gap = polyline_rect_distance(&entry.edge_points, &rect);
+        let obstacle_rect = flowchart_center_label_obstacle_rect(
+            center,
+            entry.label_w,
+            entry.label_h,
+            label_pad_x,
+            label_pad_y,
+        );
+        let own_gap = polyline_rect_distance(&entry.edge_points, &core_rect);
         if own_gap.is_finite() && own_gap > FLOWCHART_OWN_EDGE_HARD_MAX_GAP + 4.0 {
             continue;
         }
@@ -1185,7 +1247,7 @@ fn build_flowchart_candidate_set(
         let center_soft_max = center_target + center_soft_delta;
         let center_hard_max = center_soft_max + center_hard_delta;
         let (fixed_overlap_count, fixed_overlap_area) =
-            overlap_stats(rect, fixed_obstacles, LABEL_OVERLAP_WIDE_THRESHOLD);
+            overlap_stats(obstacle_rect, fixed_obstacles, LABEL_OVERLAP_WIDE_THRESHOLD);
         let mut cost = flowchart_center_label_refine_cost(
             entry,
             center,
@@ -1216,7 +1278,7 @@ fn build_flowchart_candidate_set(
         cost.0 += (s_norm - 0.5).abs() * 0.015 + d_signed.abs() * 0.01;
         scored.push(FlowchartCenterCandidate {
             center,
-            rect,
+            rect: obstacle_rect,
             cost,
             own_gap,
             center_dist,
@@ -1277,7 +1339,7 @@ fn flowchart_entry_components(
     let rects: Vec<Rect> = entries
         .iter()
         .map(|entry| {
-            flowchart_center_label_rect(
+            flowchart_center_label_obstacle_rect(
                 entry.current_center,
                 entry.label_w,
                 entry.label_h,
@@ -1435,8 +1497,8 @@ fn flowchart_pose_center_target(
     let (tx, ty) = edge_nearest_segment_tangent(points, center)?;
     let nx = -ty;
     let ny = tx;
-    let half_w = label_w * 0.5 + label_pad_x + FLOWCHART_LABEL_CLEARANCE_PAD;
-    let half_h = label_h * 0.5 + label_pad_y + FLOWCHART_LABEL_CLEARANCE_PAD;
+    let half_w = label_w * 0.5 + label_pad_x;
+    let half_h = label_h * 0.5 + label_pad_y;
     let oriented_extent = nx.abs() * half_w + ny.abs() * half_h;
     let base_extent = half_h;
     let anisotropy_bonus = (oriented_extent - base_extent).max(0.0) * 0.45;
@@ -1468,13 +1530,25 @@ fn flowchart_center_label_rect(
     label_pad_x: f32,
     label_pad_y: f32,
 ) -> Rect {
-    let base = (
+    (
         center.0 - label_w / 2.0 - label_pad_x,
         center.1 - label_h / 2.0 - label_pad_y,
         label_w + 2.0 * label_pad_x,
         label_h + 2.0 * label_pad_y,
-    );
-    inflate_rect(base, FLOWCHART_LABEL_CLEARANCE_PAD)
+    )
+}
+
+fn flowchart_center_label_obstacle_rect(
+    center: (f32, f32),
+    label_w: f32,
+    label_h: f32,
+    label_pad_x: f32,
+    label_pad_y: f32,
+) -> Rect {
+    inflate_rect(
+        flowchart_center_label_rect(center, label_w, label_h, label_pad_x, label_pad_y),
+        FLOWCHART_LABEL_CLEARANCE_PAD,
+    )
 }
 
 fn push_center_unique(centers: &mut Vec<(f32, f32)>, candidate: (f32, f32)) {
@@ -1580,7 +1654,14 @@ fn flowchart_center_label_refine_cost(
     edge_obstacles: &[EdgeObstacle],
     edge_grid: &ObstacleGrid,
 ) -> (f32, f32) {
-    let rect = flowchart_center_label_rect(
+    let core_rect = flowchart_center_label_rect(
+        center,
+        entry.label_w,
+        entry.label_h,
+        label_pad_x,
+        label_pad_y,
+    );
+    let obstacle_rect = flowchart_center_label_obstacle_rect(
         center,
         entry.label_w,
         entry.label_h,
@@ -1592,7 +1673,7 @@ fn flowchart_center_label_refine_cost(
     let mut overlap_area_sum = 0.0f32;
     let mut overlap_count = 0u32;
     for other in others {
-        let ov = overlap_area(&rect, other);
+        let ov = overlap_area(&obstacle_rect, other);
         if ov > 0.0 {
             overlap_area_sum += ov;
             overlap_count += 1;
@@ -1602,14 +1683,14 @@ fn flowchart_center_label_refine_cost(
     let mut fixed_overlap_area = 0.0f32;
     let mut fixed_overlap_count = 0u32;
     for obstacle in fixed_obstacles {
-        let ov = overlap_area(&rect, obstacle);
+        let ov = overlap_area(&obstacle_rect, obstacle);
         if ov > 0.0 {
             fixed_overlap_area += ov;
             fixed_overlap_count += 1;
         }
     }
 
-    let own_edge_dist = polyline_rect_distance(&entry.edge_points, &rect);
+    let own_edge_dist = polyline_rect_distance(&entry.edge_points, &core_rect);
     let mut own_edge_penalty = 0.0f32;
     if own_edge_dist.is_finite() {
         let target_gap = OWN_EDGE_GAP_TARGET_FLOWCHART.max(1e-3);
@@ -1641,12 +1722,12 @@ fn flowchart_center_label_refine_cost(
     }
     let mut foreign_edge_overlap_area = 0.0f32;
     let mut foreign_edge_touch = false;
-    for edge_obs_idx in edge_grid.query(&rect) {
+    for edge_obs_idx in edge_grid.query(&obstacle_rect) {
         let (obs_edge_idx, obs) = edge_obstacles[edge_obs_idx];
         if obs_edge_idx == entry.edge_idx {
             continue;
         }
-        let ov = overlap_area(&rect, &obs);
+        let ov = overlap_area(&obstacle_rect, &obs);
         if ov > 0.0 {
             foreign_edge_overlap_area += ov;
             foreign_edge_touch = true;
