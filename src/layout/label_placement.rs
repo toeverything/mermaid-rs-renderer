@@ -314,11 +314,7 @@ fn resolve_center_labels(
         };
         let mut best_pos = (anchors[0].0, anchors[0].1);
         let mut best_penalty = (f32::INFINITY, f32::INFINITY);
-        let flowchart_max_gap = if kind == DiagramKind::Flowchart {
-            Some(FLOWCHART_OWN_EDGE_HARD_MAX_GAP)
-        } else {
-            None
-        };
+        let center_max_gap = center_label_hard_max_gap(kind);
         let evaluate_candidates = |anchor: (f32, f32, f32, f32),
                                    tangents: &[f32],
                                    normals: &[f32],
@@ -455,14 +451,14 @@ fn resolve_center_labels(
                 *anchor,
                 &tangent_steps,
                 &normal_steps,
-                flowchart_max_gap,
+                center_max_gap,
                 &mut best_penalty,
                 &mut best_pos,
             ) {
                 evaluated = true;
             }
         }
-        if !evaluated && flowchart_max_gap.is_some() {
+        if !evaluated && center_max_gap.is_some() {
             for anchor in &anchors {
                 evaluate_candidates(
                     *anchor,
@@ -512,14 +508,14 @@ fn resolve_center_labels(
                     *anchor,
                     &tangent_steps_wide,
                     &normal_steps_wide,
-                    flowchart_max_gap,
+                    center_max_gap,
                     &mut best_penalty,
                     &mut best_pos,
                 ) {
                     evaluated_wide = true;
                 }
             }
-            if !evaluated_wide && flowchart_max_gap.is_some() {
+            if !evaluated_wide && center_max_gap.is_some() {
                 for anchor in &anchors {
                     evaluate_candidates(
                         *anchor,
@@ -571,6 +567,17 @@ fn resolve_center_labels(
             label_pad_y,
         );
     }
+
+    tighten_center_label_gaps(
+        edges,
+        nodes,
+        subgraphs,
+        bounds,
+        kind,
+        theme,
+        label_pad_x,
+        label_pad_y,
+    );
 }
 
 fn deoverlap_flowchart_center_labels(
@@ -944,6 +951,418 @@ fn deoverlap_flowchart_center_labels(
 
     for entry in entries {
         edges[entry.edge_idx].label_anchor = Some(entry.current_center);
+    }
+}
+
+fn center_label_gap_limits(kind: DiagramKind) -> (f32, f32, f32) {
+    match kind {
+        DiagramKind::Flowchart => (
+            OWN_EDGE_GAP_TARGET_FLOWCHART,
+            FLOWCHART_OWN_EDGE_SOFT_MAX_GAP,
+            FLOWCHART_OWN_EDGE_HARD_MAX_GAP,
+        ),
+        DiagramKind::State => (1.7, 4.8, STATE_OWN_EDGE_HARD_MAX_GAP),
+        DiagramKind::Class => (1.6, 4.6, CLASS_OWN_EDGE_HARD_MAX_GAP),
+        _ => (1.5, 5.0, DEFAULT_OWN_EDGE_HARD_MAX_GAP),
+    }
+}
+
+fn center_label_obstacle_rect(
+    kind: DiagramKind,
+    center: (f32, f32),
+    label_w: f32,
+    label_h: f32,
+    label_pad_x: f32,
+    label_pad_y: f32,
+) -> Rect {
+    let rect = (
+        center.0 - label_w / 2.0 - label_pad_x,
+        center.1 - label_h / 2.0 - label_pad_y,
+        label_w + 2.0 * label_pad_x,
+        label_h + 2.0 * label_pad_y,
+    );
+    if kind == DiagramKind::Flowchart {
+        inflate_rect(rect, FLOWCHART_LABEL_CLEARANCE_PAD)
+    } else {
+        rect
+    }
+}
+
+fn center_label_gap_penalty(
+    gap: f32,
+    target_gap: f32,
+    soft_max_gap: f32,
+    hard_max_gap: f32,
+) -> f32 {
+    if !gap.is_finite() {
+        return 120.0;
+    }
+    let target = target_gap.max(1e-3);
+    let mut penalty = 0.0f32;
+    if gap <= 0.35 {
+        penalty += 28.0;
+    }
+    let dev = (gap - target) / target;
+    penalty += dev * dev * 0.8;
+    if gap > soft_max_gap {
+        let over = gap - soft_max_gap;
+        penalty += over * over * 2.0;
+    }
+    if gap > hard_max_gap {
+        let over = gap - hard_max_gap;
+        penalty += over * 10.0;
+    }
+    penalty
+}
+
+fn center_label_tighten_candidates(
+    edge: &EdgeLayout,
+    current_center: (f32, f32),
+    label_w: f32,
+    label_h: f32,
+    label_pad_x: f32,
+    label_pad_y: f32,
+    kind: DiagramKind,
+    bounds: Option<(f32, f32)>,
+) -> Vec<(f32, f32)> {
+    let mut candidates = Vec::new();
+    let mut push_candidate = |mut center: (f32, f32)| {
+        if let Some(bound) = bounds {
+            center = clamp_label_center_to_bounds(
+                center,
+                label_w,
+                label_h,
+                label_pad_x,
+                label_pad_y,
+                bound,
+            );
+        }
+        push_center_unique(&mut candidates, center);
+    };
+    push_candidate(current_center);
+
+    let mut anchors: Vec<(f32, f32, f32, f32)> = Vec::new();
+    if let Some(anchor) = edge_label_anchor_from_point(edge, current_center) {
+        push_anchor_unique(&mut anchors, anchor);
+    }
+    for frac in LABEL_ANCHOR_FRACTIONS {
+        if let Some(anchor) = edge_label_anchor_at_fraction(edge, frac) {
+            push_anchor_unique(&mut anchors, anchor);
+        }
+    }
+    for anchor in edge_segment_anchors(edge, LABEL_EXTRA_SEGMENT_ANCHORS) {
+        push_anchor_unique(&mut anchors, anchor);
+    }
+    if kind == DiagramKind::Flowchart || kind == DiagramKind::State {
+        for anchor in edge_terminal_segment_anchors(edge, 2) {
+            push_anchor_unique(&mut anchors, anchor);
+        }
+    }
+    if anchors.is_empty() {
+        anchors.push(edge_label_anchor(edge));
+    } else {
+        push_anchor_unique(&mut anchors, edge_label_anchor(edge));
+    }
+
+    let (gap_targets, tangent_steps): (&[f32], &[f32]) = match kind {
+        DiagramKind::Flowchart => (
+            &[0.9, 1.4, 1.9, 2.6, 3.6, 4.8, 6.2],
+            &[
+                0.0, 0.25, -0.25, 0.7, -0.7, 1.3, -1.3, 2.1, -2.1, 3.2, -3.2, 4.4, -4.4,
+            ],
+        ),
+        DiagramKind::State => (
+            &[0.9, 1.4, 1.9, 2.5, 3.4, 4.4, 5.8],
+            &[0.0, 0.18, -0.18, 0.5, -0.5, 1.0, -1.0, 1.8, -1.8, 2.8, -2.8],
+        ),
+        _ => (
+            &[0.8, 1.3, 1.8, 2.4, 3.2, 4.2, 5.6],
+            &[0.0, 0.2, -0.2, 0.6, -0.6, 1.2, -1.2, 2.0, -2.0, 3.0, -3.0],
+        ),
+    };
+    let local_tangent_steps: &[f32] = &[0.0, 0.35, -0.35, 0.8, -0.8];
+    let local_normal_steps: &[f32] = &[0.0, 0.2, -0.2, 0.45, -0.45];
+
+    for (anchor_x, anchor_y, dir_x, dir_y) in anchors {
+        let normal_x = -dir_y;
+        let normal_y = dir_x;
+        let step_n = if normal_x.abs() > normal_y.abs() {
+            label_w + label_pad_x
+        } else {
+            label_h + label_pad_y
+        };
+        let step_t = if dir_x.abs() > dir_y.abs() {
+            label_w + label_pad_x
+        } else {
+            label_h + label_pad_y
+        };
+        let half_w = label_w * 0.5 + label_pad_x;
+        let half_h = label_h * 0.5 + label_pad_y;
+        let normal_extent = normal_x.abs() * half_w + normal_y.abs() * half_h;
+        for t in tangent_steps {
+            let base_x = anchor_x + dir_x * step_t * *t;
+            let base_y = anchor_y + dir_y * step_t * *t;
+            for gap in gap_targets {
+                let offset = normal_extent + *gap;
+                push_candidate((base_x + normal_x * offset, base_y + normal_y * offset));
+                push_candidate((base_x - normal_x * offset, base_y - normal_y * offset));
+            }
+        }
+        for t in local_tangent_steps {
+            let base_x = anchor_x + dir_x * step_t * *t;
+            let base_y = anchor_y + dir_y * step_t * *t;
+            for n in local_normal_steps {
+                push_candidate((
+                    base_x + normal_x * step_n * *n,
+                    base_y + normal_y * step_n * *n,
+                ));
+            }
+        }
+    }
+
+    candidates
+}
+
+fn tighten_center_label_gaps(
+    edges: &mut [EdgeLayout],
+    nodes: &BTreeMap<String, NodeLayout>,
+    subgraphs: &[SubgraphLayout],
+    bounds: Option<(f32, f32)>,
+    kind: DiagramKind,
+    theme: &Theme,
+    label_pad_x: f32,
+    label_pad_y: f32,
+) {
+    if edges
+        .iter()
+        .all(|edge| edge.label.is_none() || edge.label_anchor.is_none())
+    {
+        return;
+    }
+
+    let (target_gap, soft_max_gap, hard_max_gap) = center_label_gap_limits(kind);
+    let iterations = match kind {
+        DiagramKind::Flowchart => 4,
+        DiagramKind::State | DiagramKind::Class => 6,
+        _ => 4,
+    };
+    let node_obstacle_pad = if kind == DiagramKind::Flowchart {
+        (theme.font_size * 0.55).max(label_pad_x.max(label_pad_y + FLOWCHART_LABEL_CLEARANCE_PAD))
+    } else {
+        (theme.font_size * 0.45).max(label_pad_x.max(label_pad_y))
+    };
+    let subgraph_label_pad = (theme.font_size * 0.35).max(3.0);
+    let mut static_obstacles = build_label_obstacles(
+        nodes,
+        subgraphs,
+        kind,
+        theme,
+        node_obstacle_pad,
+        subgraph_label_pad,
+    );
+    if kind == DiagramKind::Flowchart {
+        static_obstacles.extend(build_node_text_obstacles(
+            nodes,
+            (theme.font_size * 0.2).max(2.0),
+        ));
+    }
+    let node_obstacle_count = static_obstacles.len();
+    let edge_obstacle_pad = (theme.font_size * 0.35).max(label_pad_y);
+    let edge_obstacles = build_edge_obstacles(edges, edge_obstacle_pad);
+    let edge_obs_rects: Vec<Rect> = edge_obstacles.iter().map(|(_, r)| *r).collect();
+    let edge_grid = ObstacleGrid::new(48.0, &edge_obs_rects);
+
+    for _ in 0..iterations {
+        let mut order: Vec<(usize, f32)> = edges
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, edge)| {
+                let (Some(label), Some(center)) = (&edge.label, edge.label_anchor) else {
+                    return None;
+                };
+                let rect = (
+                    center.0 - label.width * 0.5 - label_pad_x,
+                    center.1 - label.height * 0.5 - label_pad_y,
+                    label.width + 2.0 * label_pad_x,
+                    label.height + 2.0 * label_pad_y,
+                );
+                let gap = polyline_rect_distance(&edge.points, &rect);
+                if gap.is_finite() && gap > target_gap + 0.3 {
+                    Some((idx, gap))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if order.is_empty() {
+            break;
+        }
+        order.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        let mut moved = false;
+        for (idx, _) in order {
+            let (label, current_center, edge_points) = {
+                let edge = &edges[idx];
+                let (Some(label), Some(center)) = (&edge.label, edge.label_anchor) else {
+                    continue;
+                };
+                (label.clone(), center, edge.points.clone())
+            };
+            if edge_points.len() < 2 {
+                continue;
+            }
+
+            let mut occupied = static_obstacles.clone();
+            for (other_idx, other) in edges.iter().enumerate() {
+                if other_idx == idx {
+                    continue;
+                }
+                let (Some(other_label), Some(other_center)) = (&other.label, other.label_anchor)
+                else {
+                    continue;
+                };
+                occupied.push(center_label_obstacle_rect(
+                    kind,
+                    other_center,
+                    other_label.width,
+                    other_label.height,
+                    label_pad_x,
+                    label_pad_y,
+                ));
+            }
+            let occupied_grid = ObstacleGrid::new(48.0, &occupied);
+            let current_rect = (
+                current_center.0 - label.width * 0.5 - label_pad_x,
+                current_center.1 - label.height * 0.5 - label_pad_y,
+                label.width + 2.0 * label_pad_x,
+                label.height + 2.0 * label_pad_y,
+            );
+            let current_anchor = edge_label_anchor_from_point(&edges[idx], current_center)
+                .unwrap_or_else(|| edge_label_anchor(&edges[idx]));
+            let current_gap = polyline_rect_distance(&edge_points, &current_rect);
+            let mut current_cost = label_penalties(
+                current_rect,
+                (current_anchor.0, current_anchor.1),
+                label.width,
+                label.height,
+                kind,
+                &occupied,
+                &occupied_grid,
+                node_obstacle_count,
+                &edge_obstacles,
+                &edge_grid,
+                idx,
+                &edge_points,
+                bounds,
+            );
+            current_cost.0 +=
+                center_label_gap_penalty(current_gap, target_gap, soft_max_gap, hard_max_gap);
+
+            let candidates = center_label_tighten_candidates(
+                &edges[idx],
+                current_center,
+                label.width,
+                label.height,
+                label_pad_x,
+                label_pad_y,
+                kind,
+                bounds,
+            );
+            let mut best_center = current_center;
+            let mut best_cost = current_cost;
+            let mut best_gap = current_gap;
+            let evaluate = |center: (f32, f32),
+                            allow_above_hard: bool,
+                            best_center: &mut (f32, f32),
+                            best_cost: &mut (f32, f32),
+                            best_gap: &mut f32| {
+                if (center.0 - current_center.0).abs() <= 0.2
+                    && (center.1 - current_center.1).abs() <= 0.2
+                {
+                    return;
+                }
+                let rect = (
+                    center.0 - label.width * 0.5 - label_pad_x,
+                    center.1 - label.height * 0.5 - label_pad_y,
+                    label.width + 2.0 * label_pad_x,
+                    label.height + 2.0 * label_pad_y,
+                );
+                let gap = polyline_rect_distance(&edge_points, &rect);
+                if !allow_above_hard && gap.is_finite() && gap > hard_max_gap {
+                    return;
+                }
+                let anchor = edge_label_anchor_from_point(&edges[idx], center)
+                    .unwrap_or_else(|| edge_label_anchor(&edges[idx]));
+                let mut cost = label_penalties(
+                    rect,
+                    (anchor.0, anchor.1),
+                    label.width,
+                    label.height,
+                    kind,
+                    &occupied,
+                    &occupied_grid,
+                    node_obstacle_count,
+                    &edge_obstacles,
+                    &edge_grid,
+                    idx,
+                    &edge_points,
+                    bounds,
+                );
+                cost.0 += center_label_gap_penalty(gap, target_gap, soft_max_gap, hard_max_gap);
+                let dx = center.0 - current_center.0;
+                let dy = center.1 - current_center.1;
+                cost.1 += (dx * dx + dy * dy).sqrt() / (label.width + label.height + 1.0) * 0.35;
+                if candidate_better(cost, *best_cost) {
+                    *best_center = center;
+                    *best_cost = cost;
+                    *best_gap = gap;
+                }
+            };
+
+            for center in candidates.iter().copied() {
+                evaluate(
+                    center,
+                    false,
+                    &mut best_center,
+                    &mut best_cost,
+                    &mut best_gap,
+                );
+            }
+            if (best_center.0 - current_center.0).abs() <= 0.2
+                && (best_center.1 - current_center.1).abs() <= 0.2
+            {
+                for center in candidates {
+                    evaluate(
+                        center,
+                        true,
+                        &mut best_center,
+                        &mut best_cost,
+                        &mut best_gap,
+                    );
+                }
+            }
+
+            if (best_center.0 - current_center.0).abs() <= 0.2
+                && (best_center.1 - current_center.1).abs() <= 0.2
+            {
+                continue;
+            }
+            let gap_improved = best_gap + 0.05 < current_gap;
+            let needs_tightening = current_gap > soft_max_gap + 0.2;
+            let cost_improved = candidate_better(best_cost, current_cost);
+            let acceptable = if gap_improved {
+                best_cost.0 <= current_cost.0 + 0.35
+            } else {
+                false
+            };
+            if (cost_improved && (gap_improved || needs_tightening)) || acceptable {
+                edges[idx].label_anchor = Some(best_center);
+                moved = true;
+            }
+        }
+        if !moved {
+            break;
+        }
     }
 }
 
@@ -2629,6 +3048,19 @@ const FLOWCHART_OWN_EDGE_SOFT_MAX_GAP_WEIGHT: f32 = 0.85;
 const FLOWCHART_OWN_EDGE_HARD_MAX_GAP_WEIGHT: f32 = 4.5;
 const FLOWCHART_FOREIGN_EDGE_OVERLAP_WEIGHT: f32 = 0.9;
 const FLOWCHART_FOREIGN_EDGE_TOUCH_HARD_PENALTY: f32 = 2.0;
+const STATE_OWN_EDGE_HARD_MAX_GAP: f32 = 7.0;
+const CLASS_OWN_EDGE_HARD_MAX_GAP: f32 = 7.0;
+const DEFAULT_OWN_EDGE_HARD_MAX_GAP: f32 = 8.0;
+
+fn center_label_hard_max_gap(kind: DiagramKind) -> Option<f32> {
+    match kind {
+        DiagramKind::Flowchart => Some(FLOWCHART_OWN_EDGE_HARD_MAX_GAP),
+        DiagramKind::State => Some(STATE_OWN_EDGE_HARD_MAX_GAP),
+        DiagramKind::Class => Some(CLASS_OWN_EDGE_HARD_MAX_GAP),
+        DiagramKind::Sequence | DiagramKind::ZenUML => None,
+        _ => Some(DEFAULT_OWN_EDGE_HARD_MAX_GAP),
+    }
+}
 
 fn label_penalties(
     rect: Rect,
