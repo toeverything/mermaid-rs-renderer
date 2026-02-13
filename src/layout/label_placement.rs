@@ -272,6 +272,11 @@ fn resolve_center_labels(
         for candidate in edge_segment_anchors(edge, LABEL_EXTRA_SEGMENT_ANCHORS) {
             push_anchor_unique(&mut anchors, candidate);
         }
+        if kind == DiagramKind::Flowchart {
+            for candidate in edge_terminal_segment_anchors(edge, 2) {
+                push_anchor_unique(&mut anchors, candidate);
+            }
+        }
         if anchors.is_empty() {
             anchors.push(edge_label_anchor(edge));
         } else {
@@ -1520,6 +1525,9 @@ fn flowchart_center_label_candidates(
     for anchor in edge_segment_anchors(edge, LABEL_EXTRA_SEGMENT_ANCHORS) {
         push_anchor_unique(&mut anchors, anchor);
     }
+    for anchor in edge_terminal_segment_anchors(edge, 2) {
+        push_anchor_unique(&mut anchors, anchor);
+    }
     if anchors.is_empty() {
         anchors.push(edge_label_anchor(edge));
     } else {
@@ -2268,6 +2276,43 @@ fn edge_segment_anchors(edge: &EdgeLayout, max_count: usize) -> Vec<(f32, f32, f
         .take(max_count)
         .map(|(_, anchor)| anchor)
         .collect()
+}
+
+fn edge_terminal_segment_anchors(edge: &EdgeLayout, max_count: usize) -> Vec<(f32, f32, f32, f32)> {
+    if edge.points.len() < 2 || max_count == 0 {
+        return Vec::new();
+    }
+    let mut result: Vec<(f32, f32, f32, f32)> = Vec::new();
+    let seg_count = edge.points.len() - 1;
+    for seg_idx in [0usize, seg_count.saturating_sub(1)] {
+        if result.len() >= max_count {
+            break;
+        }
+        if seg_idx >= seg_count {
+            continue;
+        }
+        let p1 = edge.points[seg_idx];
+        let p2 = edge.points[seg_idx + 1];
+        let dx = p2.0 - p1.0;
+        let dy = p2.1 - p1.1;
+        let len = (dx * dx + dy * dy).sqrt();
+        if len <= 8.0 {
+            continue;
+        }
+        let dir_x = dx / len;
+        let dir_y = dy / len;
+        let anchor = ((p1.0 + p2.0) * 0.5, (p1.1 + p2.1) * 0.5, dir_x, dir_y);
+        if !result.iter().any(|existing| {
+            (existing.0 - anchor.0).abs() <= LABEL_ANCHOR_POS_EPS
+                && (existing.1 - anchor.1).abs() <= LABEL_ANCHOR_POS_EPS
+                && (existing.2 - anchor.2).abs() <= LABEL_ANCHOR_DIR_EPS
+                && (existing.3 - anchor.3).abs() <= LABEL_ANCHOR_DIR_EPS
+        }) {
+            result.push(anchor);
+        }
+    }
+    result.truncate(max_count);
+    result
 }
 
 fn push_anchor_unique(anchors: &mut Vec<(f32, f32, f32, f32)>, candidate: (f32, f32, f32, f32)) {
