@@ -2149,6 +2149,33 @@ pub(super) fn path_length(points: &[(f32, f32)]) -> f32 {
     length
 }
 
+pub(super) fn path_point_at_progress(points: &[(f32, f32)], progress: f32) -> Option<(f32, f32)> {
+    if points.len() < 2 {
+        return None;
+    }
+    let total = path_length(points);
+    if !total.is_finite() || total <= 1e-6 {
+        return Some(points[0]);
+    }
+    let mut remain = total * progress.clamp(0.0, 1.0);
+    for segment in points.windows(2) {
+        let a = segment[0];
+        let b = segment[1];
+        let dx = b.0 - a.0;
+        let dy = b.1 - a.1;
+        let seg_len = (dx * dx + dy * dy).sqrt();
+        if seg_len <= 1e-6 {
+            continue;
+        }
+        if remain <= seg_len {
+            let t = remain / seg_len;
+            return Some((a.0 + dx * t, a.1 + dy * t));
+        }
+        remain -= seg_len;
+    }
+    points.last().copied()
+}
+
 pub(super) fn path_bend_count(points: &[(f32, f32)]) -> usize {
     if points.len() < 3 {
         return 0;
@@ -2174,45 +2201,9 @@ pub(super) fn path_bend_count(points: &[(f32, f32)]) -> usize {
 }
 
 pub(super) fn edge_label_anchor_from_points(points: &[(f32, f32)]) -> Option<(f32, f32)> {
-    if points.len() < 2 {
-        return None;
-    }
-    let segment_count = points.len() - 1;
-    let (start_idx, end_idx) = if segment_count >= 3 {
-        (1, segment_count - 1)
-    } else {
-        (0, segment_count)
-    };
-    let mut best_idx = None;
-    let mut best_len = 0.0f32;
-    for idx in start_idx..end_idx {
-        let p1 = points[idx];
-        let p2 = points[idx + 1];
-        let dx = p2.0 - p1.0;
-        let dy = p2.1 - p1.1;
-        let len = dx * dx + dy * dy;
-        if len > best_len {
-            best_len = len;
-            best_idx = Some(idx);
-        }
-    }
-    if best_idx.is_none() {
-        for idx in 0..segment_count {
-            let p1 = points[idx];
-            let p2 = points[idx + 1];
-            let dx = p2.0 - p1.0;
-            let dy = p2.1 - p1.1;
-            let len = dx * dx + dy * dy;
-            if len > best_len {
-                best_len = len;
-                best_idx = Some(idx);
-            }
-        }
-    }
-    let idx = best_idx.unwrap_or(0);
-    let p1 = points[idx];
-    let p2 = points[idx + 1];
-    Some(((p1.0 + p2.0) / 2.0, (p1.1 + p2.1) / 2.0))
+    // Center labels should stay on the geometric midpoint of the routed path
+    // (arc-length progress 0.5), not merely the midpoint of the longest run.
+    path_point_at_progress(points, 0.5)
 }
 
 pub(super) fn route_self_loop(

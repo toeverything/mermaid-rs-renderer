@@ -121,6 +121,7 @@ const FLOWCHART_EDGE_LABEL_WRAP_MAX_CHARS: usize = 18;
 struct RouteLabelPlan {
     obstacle_id: String,
     obstacle_index: usize,
+    progress: f32,
     center: (f32, f32),
 }
 
@@ -1034,6 +1035,7 @@ fn compute_flowchart_layout(
             route_label_plans[idx] = Some(RouteLabelPlan {
                 obstacle_id,
                 obstacle_index,
+                progress: 0.5,
                 center,
             });
         }
@@ -1099,10 +1101,14 @@ fn compute_flowchart_layout(
             .get(*idx)
             .and_then(|plan| plan.as_ref())
             .map(|plan| plan.obstacle_id.as_str());
-        let preferred_label_center = route_label_plans
-            .get(*idx)
-            .and_then(|plan| plan.as_ref())
-            .map(|plan| plan.center);
+        let preferred_label_center = if graph.kind == crate::ir::DiagramKind::Flowchart {
+            None
+        } else {
+            route_label_plans
+                .get(*idx)
+                .and_then(|plan| plan.as_ref())
+                .map(|plan| plan.center)
+        };
         let route_ctx = RouteContext {
             from_id: &edge.from,
             to_id: &edge.to,
@@ -1191,7 +1197,9 @@ fn compute_flowchart_layout(
                 .get_mut(*idx)
                 .and_then(|plan| plan.as_mut())
         {
-            let label_center = edge_label_anchor_from_points(&points).unwrap_or(plan.center);
+            let label_center = path_point_at_progress(&points, plan.progress)
+                .or_else(|| edge_label_anchor_from_points(&points))
+                .unwrap_or(plan.center);
             plan.center = label_center;
             label_anchors[*idx] = Some(label_center);
             if points.len() >= 2 {
@@ -1235,14 +1243,19 @@ fn compute_flowchart_layout(
     // center labels stay attached to their owning edge paths.
     if !has_label_dummies {
         for idx in 0..routed_points.len() {
-            let Some(plan) = route_label_plans.get_mut(idx).and_then(|plan| plan.as_mut()) else {
+            let Some(plan) = route_label_plans
+                .get_mut(idx)
+                .and_then(|plan| plan.as_mut())
+            else {
                 continue;
             };
             let points = &mut routed_points[idx];
             if points.len() < 2 {
                 continue;
             }
-            let refreshed_center = edge_label_anchor_from_points(points).unwrap_or(plan.center);
+            let refreshed_center = path_point_at_progress(points, plan.progress)
+                .or_else(|| edge_label_anchor_from_points(points))
+                .unwrap_or(plan.center);
             plan.center = refreshed_center;
             insert_label_via_point(points, refreshed_center, graph.direction);
             label_anchors[idx] = Some(refreshed_center);
@@ -5638,6 +5651,14 @@ mod tests {
         let orth = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (20.0, 10.0)];
         assert_eq!(path_bend_count(&straight), 0);
         assert_eq!(path_bend_count(&orth), 2);
+    }
+
+    #[test]
+    fn edge_label_anchor_uses_path_progress_midpoint() {
+        let points = vec![(0.0, 0.0), (20.0, 0.0), (20.0, 100.0)];
+        let center = edge_label_anchor_from_points(&points).expect("anchor");
+        assert!((center.0 - 20.0).abs() <= 1e-3);
+        assert!((center.1 - 40.0).abs() <= 1e-3);
     }
 
     #[test]
