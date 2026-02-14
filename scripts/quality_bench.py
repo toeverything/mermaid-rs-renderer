@@ -754,7 +754,14 @@ def parse_edge_label_boxes(svg_path: Path):
             return False
         return fill in {"#fff", "#ffffff", "white", "rgb(255,255,255)"}
 
-    def visit(elem, acc_tx, acc_ty, in_edge_label_group, inherited_edge_id):
+    def visit(
+        elem,
+        acc_tx,
+        acc_ty,
+        in_edge_label_group,
+        inherited_edge_id,
+        inherited_label_kind,
+    ):
         tag = strip_ns(elem.tag)
         if tag in {"defs", "style", "script"}:
             return
@@ -764,6 +771,8 @@ def parse_edge_label_boxes(svg_path: Path):
         cls = elem.attrib.get("class", "").lower()
         local_edge_id = elem.attrib.get("data-edge-id") or elem.attrib.get("data-id")
         edge_id = local_edge_id or inherited_edge_id
+        local_label_kind = (elem.attrib.get("data-label-kind") or "").strip().lower()
+        label_kind = local_label_kind or inherited_label_kind
         is_edge_label_group = in_edge_label_group or "edgelabel" in cls
 
         if tag == "foreignObject" and is_edge_label_group:
@@ -780,6 +789,7 @@ def parse_edge_label_boxes(svg_path: Path):
                         "height": height,
                         "edge_id": edge_id or "",
                         "edge_id_norm": canonical_edge_id(edge_id),
+                        "label_kind": label_kind or "center",
                     }
                 )
         elif tag == "rect" and looks_like_edge_label_rect(elem, is_edge_label_group):
@@ -796,13 +806,14 @@ def parse_edge_label_boxes(svg_path: Path):
                         "height": height,
                         "edge_id": edge_id or "",
                         "edge_id_norm": canonical_edge_id(edge_id),
+                        "label_kind": label_kind or "center",
                     }
                 )
 
         for child in list(elem):
-            visit(child, cur_tx, cur_ty, is_edge_label_group, edge_id)
+            visit(child, cur_tx, cur_ty, is_edge_label_group, edge_id, label_kind)
 
-    visit(root, 0.0, 0.0, False, "")
+    visit(root, 0.0, 0.0, False, "", "")
     return boxes
 
 
@@ -916,6 +927,63 @@ def point_polyline_distance(point, points):
     for a, b in zip(points, points[1:]):
         best = min(best, point_segment_distance(point, a, b))
     return best
+
+
+def polyline_length(points):
+    if len(points) < 2:
+        return 0.0
+    total = 0.0
+    for a, b in zip(points, points[1:]):
+        total += math.hypot(b[0] - a[0], b[1] - a[1])
+    return total
+
+
+def point_polyline_progress(point, points):
+    if len(points) < 2:
+        return None
+    total_len = polyline_length(points)
+    if total_len <= 1e-9:
+        return None
+    best_dist = float("inf")
+    best_progress = 0.0
+    prefix = 0.0
+    for a, b in zip(points, points[1:]):
+        dx = b[0] - a[0]
+        dy = b[1] - a[1]
+        seg_len_sq = dx * dx + dy * dy
+        seg_len = math.sqrt(seg_len_sq)
+        if seg_len <= 1e-9:
+            continue
+        t = ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / seg_len_sq
+        t = max(0.0, min(1.0, t))
+        proj_x = a[0] + dx * t
+        proj_y = a[1] + dy * t
+        dist = math.hypot(point[0] - proj_x, point[1] - proj_y)
+        if dist < best_dist:
+            best_dist = dist
+            best_progress = (prefix + t * seg_len) / total_len
+        prefix += seg_len
+    if not math.isfinite(best_dist):
+        return None
+    return max(0.0, min(1.0, best_progress))
+
+
+def point_at_polyline_progress(points, progress):
+    if len(points) < 2:
+        return None
+    total_len = polyline_length(points)
+    if total_len <= 1e-9:
+        return tuple(points[0])
+    remaining = total_len * max(0.0, min(1.0, progress))
+    for a, b in zip(points, points[1:]):
+        seg_len = math.hypot(b[0] - a[0], b[1] - a[1])
+        if seg_len <= 1e-9:
+            continue
+        if remaining <= seg_len:
+            t = remaining / seg_len
+            return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+        remaining -= seg_len
+    return tuple(points[-1])
 
 
 def point_rect_distance(point, rect):
@@ -1178,6 +1246,7 @@ def compute_label_metrics(
                 "owned_mapped": owned_mapped,
                 "owned_dist": owned_dist,
                 "owned_gap": owned_gap,
+                "owned_points": owned_points,
             }
         )
 
@@ -1217,6 +1286,10 @@ def compute_label_metrics(
     edge_label_owned_path_touch_count = 0
     edge_label_owned_clearance_scores = []
     edge_label_owned_in_band_count = 0
+    edge_label_owned_anchor_offset_ratios = []
+    edge_label_owned_anchor_offset_pixels = []
+    edge_label_owned_anchor_bad_count = 0
+    edge_label_owned_anchor_scores = []
     edge_label_owned_candidate_count = 0
     edge_label_owned_unmapped_count = 0
     for row in candidate_records:
@@ -1229,6 +1302,10 @@ def compute_label_metrics(
         owned_dist = row.get("owned_dist")
         owned_gap = row.get("owned_gap")
         if not isinstance(owned_dist, (int, float)) or not isinstance(owned_gap, (int, float)):
+            edge_label_owned_unmapped_count += 1
+            continue
+        owned_points = row.get("owned_points")
+        if not isinstance(owned_points, list) or len(owned_points) < 2:
             edge_label_owned_unmapped_count += 1
             continue
         bad_limit = row["bad_limit"]
@@ -1246,6 +1323,35 @@ def compute_label_metrics(
         edge_label_owned_clearance_scores.append(math.exp(-0.5 * z * z))
         if 0.0 <= owned_gap <= 2.0:
             edge_label_owned_in_band_count += 1
+        label = row.get("label", {})
+        center = (
+            float(label.get("x", 0.0)) + float(label.get("width", 0.0)) * 0.5,
+            float(label.get("y", 0.0)) + float(label.get("height", 0.0)) * 0.5,
+        )
+        owned_progress = point_polyline_progress(center, owned_points)
+        if owned_progress is not None:
+            label_kind = str(label.get("label_kind", "center")).strip().lower()
+            if label_kind == "start":
+                target_progress = 0.0
+            elif label_kind == "end":
+                target_progress = 1.0
+            else:
+                target_progress = 0.5
+            offset_ratio = abs(owned_progress - target_progress)
+            target_point = point_at_polyline_progress(owned_points, target_progress)
+            if target_point is None:
+                continue
+            offset_px = math.hypot(center[0] - target_point[0], center[1] - target_point[1])
+            edge_label_owned_anchor_offset_ratios.append(offset_ratio)
+            edge_label_owned_anchor_offset_pixels.append(offset_px)
+            bad_limit_px = max(
+                14.0,
+                float(label.get("width", 0.0)) * 0.9 + float(label.get("height", 0.0)) * 0.35,
+            )
+            if offset_px > bad_limit_px:
+                edge_label_owned_anchor_bad_count += 1
+            z_anchor = offset_px / max(bad_limit_px, 1.0)
+            edge_label_owned_anchor_scores.append(math.exp(-0.5 * z_anchor * z_anchor))
 
     edge_label_alignment_mean = (
         sum(edge_label_distances) / len(edge_label_distances)
@@ -1315,6 +1421,8 @@ def compute_label_metrics(
         "edge_label_owned_alignment_count": len(edge_label_owned_distances),
         "edge_label_owned_alignment_bad_count": edge_label_owned_bad_count,
         "edge_label_owned_path_gap_count": len(edge_label_owned_path_gaps),
+        "edge_label_owned_anchor_offset_count": len(edge_label_owned_anchor_offset_pixels),
+        "edge_label_owned_anchor_offset_bad_count": edge_label_owned_anchor_bad_count,
     }
     if edge_label_distances:
         metrics.update(
@@ -1398,6 +1506,30 @@ def compute_label_metrics(
                 "edge_label_owned_path_in_band_ratio": (
                     edge_label_owned_in_band_count / len(edge_label_owned_path_gaps)
                 ),
+            }
+        )
+    if edge_label_owned_anchor_offset_pixels:
+        anchor_score = (
+            sum(edge_label_owned_anchor_scores) / len(edge_label_owned_anchor_scores)
+            if edge_label_owned_anchor_scores
+            else 0.0
+        )
+        metrics.update(
+            {
+                "edge_label_owned_anchor_offset_ratio_mean": (
+                    sum(edge_label_owned_anchor_offset_ratios)
+                    / len(edge_label_owned_anchor_offset_ratios)
+                ),
+                "edge_label_owned_anchor_offset_px_mean": (
+                    sum(edge_label_owned_anchor_offset_pixels)
+                    / len(edge_label_owned_anchor_offset_pixels)
+                ),
+                "edge_label_owned_anchor_offset_bad_ratio": (
+                    edge_label_owned_anchor_bad_count
+                    / len(edge_label_owned_anchor_offset_pixels)
+                ),
+                "edge_label_owned_anchor_offset_score_mean": anchor_score,
+                "edge_label_owned_anchor_offset_penalty": (1.0 - anchor_score),
             }
         )
     return metrics
@@ -1777,6 +1909,7 @@ def metric_higher_is_better(metric: str) -> bool:
         "edge_label_owned_mapping_ratio",
         "edge_label_path_clearance_score_mean",
         "edge_label_owned_path_clearance_score_mean",
+        "edge_label_owned_anchor_offset_score_mean",
     }
 
 
@@ -1827,6 +1960,7 @@ def common_comparison_stats(left, right):
         "edge_label_path_touch_ratio",
         "edge_label_owned_path_clearance_penalty",
         "edge_label_owned_path_touch_ratio",
+        "edge_label_owned_anchor_offset_bad_ratio",
     ]
     metrics = {}
     for metric in core_metrics:
@@ -1855,6 +1989,7 @@ def common_comparison_stats(left, right):
         "label_out_of_bounds_count",
         "edge_label_owned_path_clearance_penalty",
         "edge_label_owned_path_touch_ratio",
+        "edge_label_owned_anchor_offset_bad_ratio",
     ]
     non_worse = 0
     strict = 0
@@ -1916,6 +2051,7 @@ def summarize_common_comparison(left, right):
         "edge_label_path_touch_ratio",
         "edge_label_owned_path_clearance_penalty",
         "edge_label_owned_path_touch_ratio",
+        "edge_label_owned_anchor_offset_bad_ratio",
     ]:
         metric_stats = stats["metrics"].get(metric, {})
         lines.append(
@@ -2379,6 +2515,18 @@ def main():
         mmdc_label_owned_clearance, mmdc_label_owned_clearance_count = summarize_metric(
             results.get("mermaid_cli", {}), "edge_label_owned_path_clearance_score_mean"
         )
+        mmdr_label_owned_anchor_bad, mmdr_label_owned_anchor_bad_count = summarize_metric(
+            results.get("mmdr", {}), "edge_label_owned_anchor_offset_bad_ratio"
+        )
+        mmdc_label_owned_anchor_bad, mmdc_label_owned_anchor_bad_count = summarize_metric(
+            results.get("mermaid_cli", {}), "edge_label_owned_anchor_offset_bad_ratio"
+        )
+        mmdr_label_owned_anchor_px, mmdr_label_owned_anchor_px_count = summarize_metric(
+            results.get("mmdr", {}), "edge_label_owned_anchor_offset_px_mean"
+        )
+        mmdc_label_owned_anchor_px, mmdc_label_owned_anchor_px_count = summarize_metric(
+            results.get("mermaid_cli", {}), "edge_label_owned_anchor_offset_px_mean"
+        )
         history_summary.update(
             {
                 "mmdr_avg_wasted_space_ratio": mmdr_waste,
@@ -2407,6 +2555,10 @@ def main():
                 "mermaid_cli_avg_edge_label_owned_mapping_ratio": mmdc_label_owned_map,
                 "mmdr_avg_edge_label_owned_clearance_score": mmdr_label_owned_clearance,
                 "mermaid_cli_avg_edge_label_owned_clearance_score": mmdc_label_owned_clearance,
+                "mmdr_avg_edge_label_owned_anchor_offset_bad_ratio": mmdr_label_owned_anchor_bad,
+                "mermaid_cli_avg_edge_label_owned_anchor_offset_bad_ratio": mmdc_label_owned_anchor_bad,
+                "mmdr_avg_edge_label_owned_anchor_offset_px": mmdr_label_owned_anchor_px,
+                "mermaid_cli_avg_edge_label_owned_anchor_offset_px": mmdc_label_owned_anchor_px,
             }
         )
         if mmdr_label_align_count:
@@ -2455,6 +2607,26 @@ def main():
             print(f"mmdr: avg owned edge-label mapping ratio: {mmdr_label_owned_map:.3f}")
         if mmdc_label_owned_map_count:
             print(f"mermaid-cli: avg owned edge-label mapping ratio: {mmdc_label_owned_map:.3f}")
+        if mmdr_label_owned_anchor_bad_count:
+            print(
+                "mmdr: avg owned edge-label anchor-offset bad ratio: "
+                f"{mmdr_label_owned_anchor_bad:.3f}"
+            )
+        if mmdc_label_owned_anchor_bad_count:
+            print(
+                "mermaid-cli: avg owned edge-label anchor-offset bad ratio: "
+                f"{mmdc_label_owned_anchor_bad:.3f}"
+            )
+        if mmdr_label_owned_anchor_px_count:
+            print(
+                "mmdr: avg owned edge-label anchor-offset (px): "
+                f"{mmdr_label_owned_anchor_px:.3f}"
+            )
+        if mmdc_label_owned_anchor_px_count:
+            print(
+                "mermaid-cli: avg owned edge-label anchor-offset (px): "
+                f"{mmdc_label_owned_anchor_px:.3f}"
+            )
         comparison_stats = common_comparison_stats(
             results.get("mmdr", {}), results.get("mermaid_cli", {})
         )
@@ -2562,7 +2734,7 @@ def main():
                 scored,
                 key=lambda kv: kv[1].get("edge_label_path_clearance_score_mean", 0.0),
             )[:5]
-            print("Worst 5 by edge-label clearance score (touch = 0):")
+            print("Worst 5 by edge-label clearance score (touch = 1):")
             for name, metrics in by_clearance_score:
                 print(
                     "  "

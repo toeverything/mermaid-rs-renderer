@@ -6,17 +6,17 @@ usage() {
 Run Cargo on a remote machine over SSH, syncing this repository with rsync first.
 
 Usage:
-  MMDR_REMOTE_HOST=<ssh-host> scripts/remote-cargo.sh <cargo-subcommand> [args...]
+  scripts/remote-cargo.sh <cargo-subcommand> [args...]
 
 Examples:
-  MMDR_REMOTE_HOST=buildbox scripts/remote-cargo.sh test
-  MMDR_REMOTE_HOST=buildbox scripts/remote-cargo.sh build --release
+  scripts/remote-cargo.sh test
+  scripts/remote-cargo.sh build --release
   MMDR_REMOTE_HOST=buildbox MMDR_REMOTE_DIR=/tmp/mmdr scripts/remote-cargo.sh clippy --all-targets
 
 Environment:
-  MMDR_REMOTE_HOST      Required. SSH host alias or user@host.
+  MMDR_REMOTE_HOST      Optional. SSH host alias or user@host. Default: desktop
   MMDR_REMOTE_DIR       Optional. Remote checkout dir.
-                        Default: /tmp/mmdr-remote/$USER/<repo-name>
+                        Default: .cache/remote-builds/mmdr/<repo-name>
   MMDR_REMOTE_SSH_BIN   Optional. SSH binary path (default: ssh)
   MMDR_REMOTE_RSYNC_BIN Optional. rsync binary path (default: rsync)
 
@@ -35,15 +35,10 @@ if [[ $# -eq 0 ]]; then
   set -- test
 fi
 
-if [[ -z "${MMDR_REMOTE_HOST:-}" ]]; then
-  echo "error: MMDR_REMOTE_HOST is not set." >&2
-  echo "hint: MMDR_REMOTE_HOST=<ssh-host> scripts/remote-cargo.sh test" >&2
-  exit 2
-fi
-
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_NAME="$(basename "$ROOT_DIR")"
-REMOTE_DIR="${MMDR_REMOTE_DIR:-/tmp/mmdr-remote/${USER:-user}/${REPO_NAME}}"
+MMDR_REMOTE_HOST="${MMDR_REMOTE_HOST:-desktop}"
+REMOTE_DIR="${MMDR_REMOTE_DIR:-.cache/remote-builds/mmdr/${REPO_NAME}}"
 SSH_BIN="${MMDR_REMOTE_SSH_BIN:-ssh}"
 RSYNC_BIN="${MMDR_REMOTE_RSYNC_BIN:-rsync}"
 

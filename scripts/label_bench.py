@@ -58,6 +58,9 @@ def summarize(results):
         "avg_owned_touch_ratio": avg("edge_label_owned_path_touch_ratio"),
         "avg_owned_clearance_score": avg("edge_label_owned_path_clearance_score_mean"),
         "avg_owned_mapping_ratio": avg("edge_label_owned_mapping_ratio"),
+        "avg_owned_anchor_offset_bad_ratio": avg("edge_label_owned_anchor_offset_bad_ratio"),
+        "avg_owned_anchor_offset_px": avg("edge_label_owned_anchor_offset_px_mean"),
+        "avg_owned_anchor_offset_score": avg("edge_label_owned_anchor_offset_score_mean"),
     }
 
 
@@ -96,7 +99,7 @@ def main():
     parser = argparse.ArgumentParser(
         description=(
             "Benchmark edge-label placement by path gap and clearance score "
-            "(touching path yields score 0)"
+            "(touching path yields score 1)"
         )
     )
     parser.add_argument(
@@ -235,7 +238,10 @@ def main():
                 f"avg_owned_gap_mean={summary['avg_owned_gap_mean']:.3f} "
                 f"avg_owned_touch_ratio={summary['avg_owned_touch_ratio']:.3f} "
                 f"avg_owned_clearance_score={summary['avg_owned_clearance_score']:.3f} "
-                f"avg_owned_mapping_ratio={summary['avg_owned_mapping_ratio']:.3f}"
+                f"avg_owned_mapping_ratio={summary['avg_owned_mapping_ratio']:.3f} "
+                f"avg_owned_anchor_offset_bad_ratio={summary['avg_owned_anchor_offset_bad_ratio']:.3f} "
+                f"avg_owned_anchor_offset_px={summary['avg_owned_anchor_offset_px']:.3f} "
+                f"avg_owned_anchor_offset_score={summary['avg_owned_anchor_offset_score']:.3f}"
             )
         mmdr_summary = summary
     else:
@@ -256,7 +262,10 @@ def main():
                 f"avg_owned_gap_mean={summary['avg_owned_gap_mean']:.3f} "
                 f"avg_owned_touch_ratio={summary['avg_owned_touch_ratio']:.3f} "
                 f"avg_owned_clearance_score={summary['avg_owned_clearance_score']:.3f} "
-                f"avg_owned_mapping_ratio={summary['avg_owned_mapping_ratio']:.3f}"
+                f"avg_owned_mapping_ratio={summary['avg_owned_mapping_ratio']:.3f} "
+                f"avg_owned_anchor_offset_bad_ratio={summary['avg_owned_anchor_offset_bad_ratio']:.3f} "
+                f"avg_owned_anchor_offset_px={summary['avg_owned_anchor_offset_px']:.3f} "
+                f"avg_owned_anchor_offset_score={summary['avg_owned_anchor_offset_score']:.3f}"
             )
         mmdc_summary = summary
     else:
@@ -278,6 +287,9 @@ def main():
             "edge_label_owned_path_touch_ratio",
             "edge_label_owned_path_clearance_score_mean",
             "edge_label_owned_mapping_ratio",
+            "edge_label_owned_anchor_offset_bad_ratio",
+            "edge_label_owned_anchor_offset_px_mean",
+            "edge_label_owned_anchor_offset_score_mean",
         ]:
             higher_is_better = metric in {
                 "edge_label_path_touch_ratio",
@@ -286,6 +298,7 @@ def main():
                 "edge_label_owned_path_touch_ratio",
                 "edge_label_owned_path_clearance_score_mean",
                 "edge_label_owned_mapping_ratio",
+                "edge_label_owned_anchor_offset_score_mean",
             }
             better, equal, worse, regressions = compare_metric(
                 results["mmdr"],

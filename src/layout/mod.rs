@@ -1235,15 +1235,17 @@ fn compute_flowchart_layout(
     // center labels stay attached to their owning edge paths.
     if !has_label_dummies {
         for idx in 0..routed_points.len() {
-            let Some(plan) = route_label_plans.get(idx).and_then(|plan| plan.as_ref()) else {
+            let Some(plan) = route_label_plans.get_mut(idx).and_then(|plan| plan.as_mut()) else {
                 continue;
             };
             let points = &mut routed_points[idx];
             if points.len() < 2 {
                 continue;
             }
-            insert_label_via_point(points, plan.center, graph.direction);
-            label_anchors[idx] = Some(plan.center);
+            let refreshed_center = edge_label_anchor_from_points(points).unwrap_or(plan.center);
+            plan.center = refreshed_center;
+            insert_label_via_point(points, refreshed_center, graph.direction);
+            label_anchors[idx] = Some(refreshed_center);
         }
     }
 

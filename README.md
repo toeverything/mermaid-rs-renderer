@@ -451,14 +451,18 @@ cargo run -- -i docs/diagrams/architecture.mmd -o /tmp/out.svg -e svg
 
 **Remote build/test over SSH (optional):**
 ```bash
-export MMDR_REMOTE_HOST=<your-ssh-host-alias>
 scripts/remote-cargo.sh test
 scripts/remote-cargo.sh build --release
 scripts/remote-cargo.sh bench --bench renderer
+
+# Optional override
+MMDR_REMOTE_HOST=my-builder scripts/remote-cargo.sh test
 ```
 
 The wrapper uses `rsync` + `ssh` and keeps host/IP details in your local environment
-or `~/.ssh/config`, not in this repository.
+or `~/.ssh/config`, not in this repository. By default it syncs into an isolated
+directory under remote `~/.cache` with `rsync --delete`, so it will not
+touch your normal remote working copy unless you set `MMDR_REMOTE_DIR` to that path.
 
 **Benchmarks:**
 ```bash

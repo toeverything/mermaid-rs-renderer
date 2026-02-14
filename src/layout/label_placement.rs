@@ -24,6 +24,8 @@ struct FlowchartCenterLabelEntry {
     label_w: f32,
     label_h: f32,
     initial_center: (f32, f32),
+    initial_s_norm: f32,
+    initial_d_signed: f32,
     current_center: (f32, f32),
     edge_points: Vec<(f32, f32)>,
     candidates: Vec<(f32, f32)>,
@@ -242,9 +244,9 @@ fn resolve_center_labels(
         } else {
             rect
         };
+        edge.label_anchor = Some(clamped);
         occupied_grid.insert(occupied.len(), &occupied_rect);
         occupied.push(occupied_rect);
-        edge.label_anchor = Some(clamped);
         fixed_center_indices.insert(idx);
     }
 
@@ -666,6 +668,8 @@ fn deoverlap_flowchart_center_labels(
                 let (x, y, _, _) = edge_label_anchor(edge);
                 (x, y)
             });
+        let (initial_s_norm, initial_d_signed) =
+            edge_relative_pose(&edge.points, initial_center).unwrap_or((0.5, 0.0));
         let candidates = flowchart_center_label_candidates(
             edge,
             current_center,
@@ -682,6 +686,8 @@ fn deoverlap_flowchart_center_labels(
             label_w: label.width,
             label_h: label.height,
             initial_center,
+            initial_s_norm,
+            initial_d_signed,
             current_center,
             edge_points: edge.points.clone(),
             candidates,
@@ -1628,8 +1634,10 @@ fn solve_flowchart_component_assignment(
                         primary += excess * excess * 0.75;
                     }
                 }
-                primary += (cand.s_norm - 0.5).abs() * 0.03;
-                primary += cand.d_signed.abs() * 0.012;
+                let s_shift = (cand.s_norm - entries[entry_idx].initial_s_norm).abs();
+                let d_shift = (cand.d_signed - entries[entry_idx].initial_d_signed).abs();
+                primary += s_shift * 0.26;
+                primary += d_shift * 0.02;
 
                 if !enforce_no_fixed_overlap && cand.fixed_overlap_count > 0 {
                     primary += cand.fixed_overlap_count as f32 * 2.0;
@@ -1763,7 +1771,9 @@ fn build_flowchart_candidate_set(
         cost.0 += fixed_overlap_count as f32 * 1.5 + fixed_overlap_area * 0.002;
         let (s_norm, d_signed) =
             edge_relative_pose(&entry.edge_points, center).unwrap_or((0.5, 0.0));
-        cost.0 += (s_norm - 0.5).abs() * 0.015 + d_signed.abs() * 0.01;
+        let s_shift = (s_norm - entry.initial_s_norm).abs();
+        let d_shift = (d_signed - entry.initial_d_signed).abs();
+        cost.0 += s_shift * 0.045 + d_shift * 0.012;
         scored.push(FlowchartCenterCandidate {
             center,
             rect: obstacle_rect,
@@ -2095,14 +2105,38 @@ fn flowchart_center_label_candidates(
     } else {
         push_anchor_unique(&mut anchors, edge_label_anchor(edge));
     }
+    if let Some((initial_s, _)) = edge_relative_pose(&edge.points, initial_center) {
+        let mut scored_anchors: Vec<((f32, f32, f32, f32), f32)> = anchors
+            .iter()
+            .copied()
+            .map(|anchor| {
+                let s = edge_relative_pose(&edge.points, (anchor.0, anchor.1))
+                    .map(|(value, _)| value)
+                    .unwrap_or(initial_s);
+                (anchor, (s - initial_s).abs())
+            })
+            .collect();
+        scored_anchors.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        let mut filtered = Vec::new();
+        for (anchor, s_delta) in scored_anchors {
+            if s_delta <= 0.18 || filtered.len() < 3 {
+                filtered.push(anchor);
+            }
+            if filtered.len() >= 6 {
+                break;
+            }
+        }
+        if !filtered.is_empty() {
+            anchors = filtered;
+        }
+    }
 
     let normal_steps: &[f32] = &[
         0.6, -0.6, 1.0, -1.0, 1.4, -1.4, 0.35, -0.35, 2.0, -2.0, 2.8, -2.8, 4.0, -4.0, 5.2, -5.2,
         6.5, -6.5, 8.2, -8.2, 10.0, -10.0, 0.0,
     ];
     let tangent_steps: &[f32] = &[
-        0.0, 0.3, -0.3, 0.8, -0.8, 1.4, -1.4, 2.2, -2.2, 3.2, -3.2, 4.6, -4.6, 6.0, -6.0, 8.0,
-        -8.0, 10.0, -10.0, 12.5, -12.5, 15.0, -15.0, 18.0, -18.0,
+        0.0, 0.3, -0.3, 0.8, -0.8, 1.4, -1.4, 2.2, -2.2, 3.2, -3.2,
     ];
     for (anchor_x, anchor_y, dir_x, dir_y) in anchors {
         let normal_x = -dir_y;
@@ -2253,6 +2287,24 @@ fn flowchart_center_label_refine_cost(
     if edge_center_dist > center_hard_max {
         let over = edge_center_dist - center_hard_max;
         edge_center_penalty += over * 20.0;
+    }
+    if let Some((s_norm, d_signed)) = edge_relative_pose(&entry.edge_points, center) {
+        let path_len = polyline_path_length(&entry.edge_points).max(1.0);
+        let tangent_shift_px = (s_norm - entry.initial_s_norm).abs() * path_len;
+        let tangent_soft_px = (entry.label_w * 0.95 + entry.label_h * 0.35 + 8.0)
+            .clamp(10.0, 28.0)
+            .min(path_len * 0.28 + 2.0);
+        let tangent_hard_px = (tangent_soft_px * 2.2).max(tangent_soft_px + 10.0);
+        if tangent_shift_px > tangent_soft_px {
+            let over = tangent_shift_px - tangent_soft_px;
+            edge_center_penalty += (over / tangent_soft_px.max(1.0)).powi(2) * 12.0;
+        }
+        if tangent_shift_px > tangent_hard_px {
+            let over = tangent_shift_px - tangent_hard_px;
+            edge_center_penalty += over * 0.45;
+        }
+        let d_shift = (d_signed - entry.initial_d_signed).abs();
+        edge_center_penalty += d_shift * 0.03;
     }
     let primary = fixed_overlap_count as f32 * 130.0
         + (fixed_overlap_area / area) * 48.0
@@ -2428,6 +2480,16 @@ fn resolve_endpoint_labels(
 fn edge_path_length(edge: &EdgeLayout) -> f32 {
     let mut total = 0.0f32;
     for pair in edge.points.windows(2) {
+        let dx = pair[1].0 - pair[0].0;
+        let dy = pair[1].1 - pair[0].1;
+        total += (dx * dx + dy * dy).sqrt();
+    }
+    total
+}
+
+fn polyline_path_length(points: &[(f32, f32)]) -> f32 {
+    let mut total = 0.0f32;
+    for pair in points.windows(2) {
         let dx = pair[1].0 - pair[0].0;
         let dy = pair[1].1 - pair[0].1;
         total += (dx * dx + dy * dy).sqrt();
@@ -3748,6 +3810,53 @@ mod tests {
         assert!(
             fractions[3].is_none(),
             "non-labeled edge should not get a fraction"
+        );
+    }
+
+    #[test]
+    fn flowchart_refine_cost_penalizes_along_edge_drift() {
+        let entry = FlowchartCenterLabelEntry {
+            edge_idx: 0,
+            label_w: 18.0,
+            label_h: 10.0,
+            initial_center: (50.0, 12.0),
+            initial_s_norm: 0.5,
+            initial_d_signed: 12.0,
+            current_center: (50.0, 12.0),
+            edge_points: vec![(0.0, 0.0), (100.0, 0.0)],
+            candidates: Vec::new(),
+        };
+        let edge_obstacles: Vec<EdgeObstacle> = Vec::new();
+        let edge_rects: Vec<Rect> = Vec::new();
+        let edge_grid = ObstacleGrid::new(20.0, &edge_rects);
+        let fixed: Vec<Rect> = Vec::new();
+
+        let near = flowchart_center_label_refine_cost(
+            &entry,
+            (54.0, 12.0),
+            2.0,
+            1.5,
+            &[],
+            &fixed,
+            &edge_obstacles,
+            &edge_grid,
+        );
+        let far = flowchart_center_label_refine_cost(
+            &entry,
+            (90.0, 12.0),
+            2.0,
+            1.5,
+            &[],
+            &fixed,
+            &edge_obstacles,
+            &edge_grid,
+        );
+
+        assert!(
+            far.0 > near.0,
+            "moving far along edge direction should cost more (near={}, far={})",
+            near.0,
+            far.0
         );
     }
 }

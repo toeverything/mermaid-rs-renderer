@@ -896,32 +896,43 @@ pub(super) fn cell_blocked(
 pub(super) fn insert_label_via_point(
     points: &mut Vec<(f32, f32)>,
     via: (f32, f32),
-    direction: Direction,
+    _direction: Direction,
 ) {
     if points.len() < 2 {
         return;
     }
-    let main = |p: (f32, f32)| -> f32 { if is_horizontal(direction) { p.0 } else { p.1 } };
-    let via_main = main(via);
-    // Find the first segment where the via-point's main-axis coordinate
-    // falls between the two endpoints.
+    if polyline_point_distance(points, via) <= 0.6 {
+        return;
+    }
+    // Insert on the segment that minimizes extra path length, which keeps
+    // the routed path stable and avoids large detours from axis-only matching.
+    let mut best_idx = None;
+    let mut best_delta = f32::INFINITY;
     for i in 1..points.len() {
-        let a_main = main(points[i - 1]);
-        let b_main = main(points[i]);
-        let lo = a_main.min(b_main);
-        let hi = a_main.max(b_main);
-        if via_main >= lo - 1.0 && via_main <= hi + 1.0 {
-            // Don't insert if very close to an existing point.
-            let dist_a =
-                ((via.0 - points[i - 1].0).powi(2) + (via.1 - points[i - 1].1).powi(2)).sqrt();
-            let dist_b = ((via.0 - points[i].0).powi(2) + (via.1 - points[i].1).powi(2)).sqrt();
-            if dist_a > 2.0 && dist_b > 2.0 {
-                points.insert(i, via);
-            }
-            return;
+        let a = points[i - 1];
+        let b = points[i];
+        let base_len = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
+        if base_len <= 1e-4 {
+            continue;
+        }
+        let via_len_a = ((via.0 - a.0).powi(2) + (via.1 - a.1).powi(2)).sqrt();
+        let via_len_b = ((via.0 - b.0).powi(2) + (via.1 - b.1).powi(2)).sqrt();
+        let delta = (via_len_a + via_len_b - base_len).max(0.0);
+        if delta < best_delta {
+            best_delta = delta;
+            best_idx = Some(i);
         }
     }
-    // Fallback: insert at the midpoint of the path (by index).
+
+    if let Some(i) = best_idx {
+        let dist_a = ((via.0 - points[i - 1].0).powi(2) + (via.1 - points[i - 1].1).powi(2)).sqrt();
+        let dist_b = ((via.0 - points[i].0).powi(2) + (via.1 - points[i].1).powi(2)).sqrt();
+        if dist_a > 2.0 && dist_b > 2.0 {
+            points.insert(i, via);
+        }
+        return;
+    }
+
     let mid = points.len() / 2;
     points.insert(mid, via);
 }

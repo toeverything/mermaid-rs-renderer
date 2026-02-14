@@ -29,6 +29,8 @@ WEIGHTS = {
     "edge_label_owned_alignment_bad_ratio": 120.0,
     "edge_label_owned_path_clearance_penalty": 140.0,
     "edge_label_owned_path_gap_mean": 4.0,
+    "edge_label_owned_anchor_offset_bad_ratio": 140.0,
+    "edge_label_owned_anchor_offset_px_mean": 2.2,
 }
 
 
