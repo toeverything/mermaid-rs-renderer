@@ -458,7 +458,15 @@ fn compute_flowchart_layout(
     }
 
     let mut layout_node_ids: Vec<String> = graph.nodes.keys().cloned().collect();
-    layout_node_ids.sort_by_key(|id| graph.node_order.get(id).copied().unwrap_or(usize::MAX));
+    layout_node_ids.sort_by(|a, b| {
+        graph
+            .node_order
+            .get(a)
+            .copied()
+            .unwrap_or(usize::MAX)
+            .cmp(&graph.node_order.get(b).copied().unwrap_or(usize::MAX))
+            .then_with(|| a.cmp(b))
+    });
     if !anchored_subgraph_nodes.is_empty() {
         layout_node_ids.retain(|id| !anchored_subgraph_nodes.contains(id));
     }
@@ -917,6 +925,16 @@ fn compute_flowchart_layout(
             } else {
                 1u8
             }
+        } else if graph.kind == crate::ir::DiagramKind::State {
+            // State machines often have long back-edges to earlier states.
+            // Route those first so later local transitions can avoid them.
+            if is_backward {
+                0u8
+            } else if has_label || is_dotted {
+                1u8
+            } else {
+                2u8
+            }
         } else if is_dotted {
             if dense_flowchart_routing { 1u8 } else { 2u8 }
         } else if has_label || is_backward {
@@ -1101,7 +1119,10 @@ fn compute_flowchart_layout(
             .get(*idx)
             .and_then(|plan| plan.as_ref())
             .map(|plan| plan.obstacle_id.as_str());
-        let preferred_label_center = if graph.kind == crate::ir::DiagramKind::Flowchart {
+        let preferred_label_center = if matches!(
+            graph.kind,
+            crate::ir::DiagramKind::Flowchart | crate::ir::DiagramKind::State
+        ) {
             None
         } else {
             route_label_plans
@@ -1257,7 +1278,9 @@ fn compute_flowchart_layout(
                 .or_else(|| edge_label_anchor_from_points(points))
                 .unwrap_or(plan.center);
             plan.center = refreshed_center;
-            insert_label_via_point(points, refreshed_center, graph.direction);
+            if graph.kind != crate::ir::DiagramKind::State {
+                insert_label_via_point(points, refreshed_center, graph.direction);
+            }
             label_anchors[idx] = Some(refreshed_center);
         }
     }
@@ -2908,7 +2931,39 @@ fn align_subgraphs_to_anchor_nodes(
     if anchor_info.is_empty() {
         return anchored_nodes;
     }
-    for (anchor_id, info) in anchor_info {
+    let tree = SubgraphTree::build(graph);
+    let sub_count = graph.subgraphs.len();
+    let mut subgraph_depth: Vec<usize> = vec![0; sub_count];
+    for idx in 0..sub_count {
+        let mut depth = 0usize;
+        let mut cur = idx;
+        while let Some(parent_idx) = tree.parent.get(cur).and_then(|parent| *parent) {
+            depth += 1;
+            cur = parent_idx;
+            if depth > sub_count {
+                break;
+            }
+        }
+        subgraph_depth[idx] = depth;
+    }
+
+    let mut ordered_anchors: Vec<(&String, &SubgraphAnchorInfo)> = anchor_info.iter().collect();
+    ordered_anchors.sort_by(|(a_id, a_info), (b_id, b_info)| {
+        let a_depth = subgraph_depth
+            .get(a_info.sub_idx)
+            .copied()
+            .unwrap_or(usize::MAX);
+        let b_depth = subgraph_depth
+            .get(b_info.sub_idx)
+            .copied()
+            .unwrap_or(usize::MAX);
+        a_depth
+            .cmp(&b_depth)
+            .then_with(|| a_info.sub_idx.cmp(&b_info.sub_idx))
+            .then_with(|| a_id.cmp(b_id))
+    });
+
+    for (anchor_id, info) in ordered_anchors {
         let (anchor_x, anchor_y) = {
             let Some(anchor) = nodes.get(anchor_id) else {
                 continue;
@@ -3667,7 +3722,10 @@ fn reduce_orthogonal_path_crossings(
     let outer_right = max_x + outer_pad;
     let outer_top = min_y - outer_pad;
     let outer_bottom = max_y + outer_pad;
-    let use_perimeter_candidates = graph.kind == crate::ir::DiagramKind::Er;
+    let use_perimeter_candidates = matches!(
+        graph.kind,
+        crate::ir::DiagramKind::Er | crate::ir::DiagramKind::State
+    );
     let forward: Vec<usize> = (0..routed_points.len()).collect();
     let reverse: Vec<usize> = (0..routed_points.len()).rev().collect();
 
