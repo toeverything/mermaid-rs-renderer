@@ -11,6 +11,10 @@ const SEQUENCE_ENDPOINT_LABEL_GAP_TARGET: f32 = 2.5;
 const SEQUENCE_ENDPOINT_LABEL_GAP_MIN: f32 = 1.0;
 const SEQUENCE_ENDPOINT_LABEL_GAP_MAX: f32 = 6.0;
 const SEQUENCE_ENDPOINT_LABEL_FAR_GAP: f32 = 10.0;
+const SEQUENCE_CENTER_LABEL_TANGENT_LINEAR_WEIGHT: f32 = 0.22;
+const SEQUENCE_CENTER_LABEL_TANGENT_QUAD_WEIGHT: f32 = 0.95;
+const SEQUENCE_CENTER_LABEL_TANGENT_SOFT_LIMIT: f32 = 1.2;
+const SEQUENCE_CENTER_LABEL_TANGENT_FAR_WEIGHT: f32 = 3.2;
 
 #[derive(Clone, Copy)]
 enum SequenceLabelPlacementMode {
@@ -977,6 +981,16 @@ fn choose_sequence_center_label_anchor(
                 score += sequence_edge_overlap_penalty(rect, edge_paths, edge_idx);
                 let own_dist = point_to_polyline_distance(center, points);
                 score += own_dist * 0.045;
+                // Keep center labels near message midpoint. We still allow drift
+                // when required to resolve overlaps, but large tangent shifts are
+                // strongly discouraged versus vertical escape.
+                let tangent_abs = t.abs();
+                score += tangent_abs * SEQUENCE_CENTER_LABEL_TANGENT_LINEAR_WEIGHT;
+                score += tangent_abs * tangent_abs * SEQUENCE_CENTER_LABEL_TANGENT_QUAD_WEIGHT;
+                if tangent_abs > SEQUENCE_CENTER_LABEL_TANGENT_SOFT_LIMIT {
+                    score += (tangent_abs - SEQUENCE_CENTER_LABEL_TANGENT_SOFT_LIMIT)
+                        * SEQUENCE_CENTER_LABEL_TANGENT_FAR_WEIGHT;
+                }
                 if dir.0.abs() > dir.1.abs() && center.1 > anchor.1 {
                     // Keep horizontal message labels out of the row below.
                     score += 0.3;
@@ -1423,6 +1437,11 @@ mod tests {
             anchor.1.abs() > 4.0,
             "expected off-path fallback for blocked corridor, got y={:.2}",
             anchor.1
+        );
+        assert!(
+            (anchor.0 - 70.0).abs() <= 8.0,
+            "expected blocked fallback to stay near midpoint, got x={:.2}",
+            anchor.0
         );
     }
 }

@@ -1223,7 +1223,7 @@ fn compute_flowchart_layout(
                 .unwrap_or(plan.center);
             plan.center = label_center;
             label_anchors[*idx] = Some(label_center);
-            if points.len() >= 2 {
+            if graph.kind != crate::ir::DiagramKind::State && points.len() >= 2 {
                 insert_label_via_point(&mut points, label_center, graph.direction);
             }
             if let Some(label) = edge_route_labels.get(*idx).and_then(|label| label.as_ref())
@@ -1300,7 +1300,7 @@ fn compute_flowchart_layout(
         label_anchors[idx] = Some((cx, cy));
 
         let points = &mut routed_points[idx];
-        if points.len() >= 2 {
+        if graph.kind != crate::ir::DiagramKind::State && points.len() >= 2 {
             insert_label_via_point(points, (cx, cy), graph.direction);
         }
     }
