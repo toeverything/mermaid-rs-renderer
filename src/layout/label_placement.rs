@@ -2348,12 +2348,17 @@ fn resolve_endpoint_labels(
     let endpoint_edge_grid = ObstacleGrid::new(48.0, &edge_obs_rects);
 
     // Start with node/subgraph obstacles + center label positions as obstacles.
+    let endpoint_node_obstacle_pad = match kind {
+        DiagramKind::Class => node_obstacle_pad * 0.4,
+        DiagramKind::State => node_obstacle_pad * 0.65,
+        _ => node_obstacle_pad,
+    };
     let mut endpoint_occupied = build_label_obstacles(
         nodes,
         subgraphs,
         kind,
         theme,
-        node_obstacle_pad,
+        endpoint_node_obstacle_pad,
         subgraph_label_pad,
     );
     let endpoint_node_obstacle_count = endpoint_occupied.len();
@@ -2375,7 +2380,7 @@ fn resolve_endpoint_labels(
     }
 
     let end_label_offset = match kind {
-        DiagramKind::Class => (theme.font_size * 0.30).max(4.0),
+        DiagramKind::Class => (theme.font_size * 0.18).max(2.8),
         DiagramKind::Flowchart => (theme.font_size * 0.75).max(9.0),
         _ => (theme.font_size * 0.6).max(8.0),
     };
@@ -3397,14 +3402,20 @@ fn edge_endpoint_label_position_with_avoid(
     let dir_y = dy / len;
     let perp_x = -dir_y;
     let perp_y = dir_x;
-    let anchor_x = p0.0 + dir_x * offset * 1.4;
-    let anchor_y = p0.1 + dir_y * offset * 1.4;
+    let anchor_along_factor = match kind {
+        DiagramKind::Class => 0.55,
+        DiagramKind::Flowchart => 1.4,
+        DiagramKind::Requirement => 1.1,
+        _ => 1.0,
+    };
+    let anchor_x = p0.0 + dir_x * offset * anchor_along_factor;
+    let anchor_y = p0.1 + dir_y * offset * anchor_along_factor;
     let along_steps: &[f32] = match kind {
-        DiagramKind::Class => &[0.0, 0.35, -0.35, 0.8, -0.8, 1.4, -1.4],
+        DiagramKind::Class => &[0.0, 0.15, -0.15, 0.35, -0.35, 0.55, -0.55],
         _ => &[0.0, 0.8, -0.8, 1.6, -1.6],
     };
     let perp_steps: &[f32] = match kind {
-        DiagramKind::Class => &[0.0, 0.55, -0.55, 1.1, -1.1, 1.8, -1.8, 2.6, -2.6],
+        DiagramKind::Class => &[0.0, 0.35, -0.35, 0.7, -0.7, 1.05, -1.05, 1.5, -1.5],
         _ => &[
             1.0, -1.0, 1.7, -1.7, 2.4, -2.4, 3.2, -3.2, 3.9, -3.9, 4.6, -4.6,
         ],
@@ -3423,7 +3434,7 @@ fn edge_endpoint_label_position_with_avoid(
                 label_w + pad_x * 2.0,
                 label_h + pad_y * 2.0,
             );
-            let penalty = label_penalties(
+            let mut penalty = label_penalties(
                 rect,
                 (anchor_x, anchor_y),
                 label_w,
@@ -3438,6 +3449,24 @@ fn edge_endpoint_label_position_with_avoid(
                 &edge.points,
                 bounds,
             );
+            // Keep endpoint labels near the endpoint along their carrying edge.
+            // This prevents class/state endpoint labels from drifting deep into
+            // the middle of long edges when nearby obstacles are sparse.
+            let along = (x - p0.0) * dir_x + (y - p0.1) * dir_y;
+            let (soft_max, under_weight, over_weight) = match kind {
+                DiagramKind::Class => (offset * 0.9, 0.45, 1.2),
+                DiagramKind::State => (offset * 1.3, 0.28, 0.7),
+                DiagramKind::Flowchart => (offset * 2.6, 0.14, 0.28),
+                _ => (offset * 1.7, 0.22, 0.45),
+            };
+            let under = (0.0 - along).max(0.0);
+            let over = (along - soft_max).max(0.0);
+            if under > 0.0 || over > 0.0 {
+                let endpoint_drift_penalty = (under * under * under_weight
+                    + over * over * over_weight)
+                    / (label_w + label_h + 1.0).max(1.0);
+                penalty.0 += endpoint_drift_penalty;
+            }
             if candidate_better(penalty, best_penalty) {
                 best_penalty = penalty;
                 best_pos = (x, y);
@@ -3766,6 +3795,62 @@ mod tests {
             dy > 0.9,
             "dy should be positive for vertical segment, got {}",
             dy
+        );
+    }
+
+    #[test]
+    fn class_endpoint_label_anchor_stays_near_endpoint() {
+        let edge = EdgeLayout {
+            from: "A".into(),
+            to: "B".into(),
+            label: None,
+            start_label: Some(crate::layout::TextBlock {
+                lines: vec!["1".into()],
+                width: 12.0,
+                height: 16.0,
+            }),
+            end_label: None,
+            label_anchor: None,
+            start_label_anchor: None,
+            end_label_anchor: None,
+            points: vec![(0.0, 0.0), (0.0, 120.0)],
+            directed: true,
+            arrow_start: false,
+            arrow_end: true,
+            arrow_start_kind: None,
+            arrow_end_kind: None,
+            start_decoration: None,
+            end_decoration: None,
+            style: crate::ir::EdgeStyle::Solid,
+            override_style: crate::ir::EdgeStyleOverride::default(),
+        };
+        let occupied: Vec<Rect> = Vec::new();
+        let occupied_grid = ObstacleGrid::new(48.0, &occupied);
+        let edge_obstacles: Vec<EdgeObstacle> = Vec::new();
+        let edge_grid = ObstacleGrid::new(48.0, &[]);
+        let offset = 3.8;
+        let pos = edge_endpoint_label_position_with_avoid(
+            &edge,
+            0,
+            true,
+            DiagramKind::Class,
+            offset,
+            12.0,
+            16.0,
+            3.2,
+            1.6,
+            &occupied,
+            &occupied_grid,
+            0,
+            &edge_obstacles,
+            &edge_grid,
+            None,
+        )
+        .expect("expected endpoint anchor");
+        assert!(
+            pos.1 <= offset * 1.4 + 0.25,
+            "expected class endpoint label near endpoint, got y={}",
+            pos.1
         );
     }
 
