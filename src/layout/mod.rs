@@ -4889,6 +4889,13 @@ fn relax_edge_span_constraints(
                 .as_deref()
                 .is_some_and(|label| !label.trim().is_empty());
             let has_endpoint_label = has_start_label || has_end_label;
+            // Flowchart dotted links are usually secondary annotations.
+            // Let routing/label placement handle them without re-ranking rows.
+            if graph.kind == crate::ir::DiagramKind::Flowchart
+                && edge.style == crate::ir::EdgeStyle::Dotted
+            {
+                continue;
+            }
             if !has_center_label && !has_endpoint_label {
                 continue;
             }
