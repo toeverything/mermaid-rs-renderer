@@ -6,11 +6,17 @@ const SEQUENCE_LABEL_PAD_X: f32 = 3.0;
 const SEQUENCE_LABEL_PAD_Y: f32 = 2.0;
 const SEQUENCE_ENDPOINT_LABEL_PAD_X: f32 = 2.5;
 const SEQUENCE_ENDPOINT_LABEL_PAD_Y: f32 = 1.5;
-const SEQUENCE_LABEL_GAP_TARGET: f32 = 2.5;
-const SEQUENCE_LABEL_GAP_MIN: f32 = 1.0;
-const SEQUENCE_LABEL_GAP_MAX: f32 = 6.0;
 const SEQUENCE_LABEL_TOUCH_EPS: f32 = 0.5;
-const SEQUENCE_LABEL_FAR_GAP: f32 = 10.0;
+const SEQUENCE_ENDPOINT_LABEL_GAP_TARGET: f32 = 2.5;
+const SEQUENCE_ENDPOINT_LABEL_GAP_MIN: f32 = 1.0;
+const SEQUENCE_ENDPOINT_LABEL_GAP_MAX: f32 = 6.0;
+const SEQUENCE_ENDPOINT_LABEL_FAR_GAP: f32 = 10.0;
+
+#[derive(Clone, Copy)]
+enum SequenceLabelPlacementMode {
+    Center,
+    Endpoint,
+}
 
 pub(super) fn compute_sequence_layout(
     graph: &Graph,
@@ -934,40 +940,58 @@ fn choose_sequence_center_label_anchor(
 ) -> (f32, f32) {
     let (anchor, dir) = edge_midpoint_with_direction(points);
     let normal = (-dir.1, dir.0);
-    let normal_step =
-        (label.height * 0.5 + SEQUENCE_LABEL_PAD_Y + SEQUENCE_LABEL_GAP_TARGET).max(6.0);
+    let normal_step = (label.height * 0.5 + SEQUENCE_LABEL_PAD_Y).max(6.0);
     let tangent_step = (label.width + theme.font_size * 0.35).max(10.0) * 0.24;
-    // First explore along the edge while keeping labels in a near-path clearance band.
-    let tangent_offsets = [
-        0.0, -0.25, 0.25, -0.5, 0.5, -0.9, 0.9, -1.4, 1.4, -2.0, 2.0, -2.8, 2.8, -3.6, 3.6,
+    // Path-first search: keep center labels on their own message path and slide
+    // along the path before moving off-path.
+    let tangent_offsets_primary = [
+        0.0, -0.25, 0.25, -0.55, 0.55, -0.95, 0.95, -1.45, 1.45, -2.1, 2.1, -2.9, 2.9, -3.8, 3.8,
+        -4.9, 4.9, -6.2, 6.2,
     ];
-    let normal_offsets = [
-        -1.0, 1.0, -0.9, 0.9, -1.12, 1.12, -1.28, 1.28, -1.45, 1.45, -1.7, 1.7,
+    let tangent_offsets_wide = [
+        0.0, -0.35, 0.35, -0.75, 0.75, -1.3, 1.3, -2.0, 2.0, -2.9, 2.9, -4.0, 4.0, -5.3, 5.3, -6.8,
+        6.8, -8.4, 8.4,
     ];
+    let normal_offsets_on_path = [0.0, -0.06, 0.06, -0.12, 0.12];
+    let normal_offsets_near_path = [-0.28, 0.28, -0.46, 0.46, -0.68, 0.68];
+    let normal_offsets_fallback = [-0.9, 0.9, -1.2, 1.2, -1.55, 1.55, -1.95, 1.95];
     let mut best = anchor;
     let mut best_score = f32::INFINITY;
 
-    for t in tangent_offsets {
-        for n in normal_offsets {
-            let center = (
-                anchor.0 + dir.0 * tangent_step * t + normal.0 * normal_step * n,
-                anchor.1 + dir.1 * tangent_step * t + normal.1 * normal_step * n,
-            );
-            let rect = label_rect(center, label, SEQUENCE_LABEL_PAD_X, SEQUENCE_LABEL_PAD_Y);
-            let mut score = sequence_label_penalty(rect, center, anchor, points, occupied);
-            score += sequence_edge_overlap_penalty(rect, edge_paths, edge_idx);
-            let own_dist = point_to_polyline_distance(center, points);
-            score += own_dist * 0.03;
-            if dir.0.abs() > dir.1.abs() && center.1 > anchor.1 {
-                // Prefer placing sequence message labels above horizontal edges.
-                score += 0.25;
-            }
-            if score < best_score {
-                best_score = score;
-                best = center;
+    let mut evaluate_band = |tangent_offsets: &[f32], normal_offsets: &[f32]| {
+        for t in tangent_offsets {
+            for n in normal_offsets {
+                let center = (
+                    anchor.0 + dir.0 * tangent_step * *t + normal.0 * normal_step * *n,
+                    anchor.1 + dir.1 * tangent_step * *t + normal.1 * normal_step * *n,
+                );
+                let rect = label_rect(center, label, SEQUENCE_LABEL_PAD_X, SEQUENCE_LABEL_PAD_Y);
+                let mut score = sequence_label_penalty(
+                    rect,
+                    center,
+                    anchor,
+                    points,
+                    occupied,
+                    SequenceLabelPlacementMode::Center,
+                );
+                score += sequence_edge_overlap_penalty(rect, edge_paths, edge_idx);
+                let own_dist = point_to_polyline_distance(center, points);
+                score += own_dist * 0.045;
+                if dir.0.abs() > dir.1.abs() && center.1 > anchor.1 {
+                    // Keep horizontal message labels out of the row below.
+                    score += 0.3;
+                }
+                if score < best_score {
+                    best_score = score;
+                    best = center;
+                }
             }
         }
-    }
+    };
+
+    evaluate_band(&tangent_offsets_primary, &normal_offsets_on_path);
+    evaluate_band(&tangent_offsets_primary, &normal_offsets_near_path);
+    evaluate_band(&tangent_offsets_wide, &normal_offsets_fallback);
 
     best
 }
@@ -1002,7 +1026,14 @@ fn choose_sequence_endpoint_label_anchor(
                 SEQUENCE_ENDPOINT_LABEL_PAD_X,
                 SEQUENCE_ENDPOINT_LABEL_PAD_Y,
             );
-            let mut score = sequence_label_penalty(rect, center, anchor, points, occupied);
+            let mut score = sequence_label_penalty(
+                rect,
+                center,
+                anchor,
+                points,
+                occupied,
+                SequenceLabelPlacementMode::Endpoint,
+            );
             score += sequence_edge_overlap_penalty(rect, edge_paths, edge_idx);
             score += distance(center, anchor) * 0.05;
             if score < best_score {
@@ -1089,29 +1120,55 @@ fn sequence_label_penalty(
     anchor: (f32, f32),
     own_points: &[(f32, f32)],
     occupied: &[Rect],
+    mode: SequenceLabelPlacementMode,
 ) -> f32 {
     let mut overlap_area_sum = 0.0f32;
     for obstacle in occupied {
         overlap_area_sum += rect_overlap_area(rect, *obstacle);
     }
     let own_gap = polyline_rect_gap(own_points, rect);
-    let mut gap_penalty = 0.0f32;
-    if own_gap <= SEQUENCE_LABEL_TOUCH_EPS {
-        gap_penalty += 120.0 + (SEQUENCE_LABEL_TOUCH_EPS - own_gap).max(0.0) * 30.0;
-    } else if own_gap < SEQUENCE_LABEL_GAP_MIN {
-        let delta = (SEQUENCE_LABEL_GAP_MIN - own_gap) / SEQUENCE_LABEL_GAP_MIN.max(1e-3);
-        gap_penalty += delta * delta * 14.0;
-    } else if own_gap <= SEQUENCE_LABEL_GAP_MAX {
-        let delta = (own_gap - SEQUENCE_LABEL_GAP_TARGET) / SEQUENCE_LABEL_GAP_TARGET.max(1e-3);
-        gap_penalty += delta * delta * 0.9;
-    } else {
-        let far = own_gap - SEQUENCE_LABEL_GAP_MAX;
-        gap_penalty += far * far * 2.4 + far * 0.4;
-        if own_gap > SEQUENCE_LABEL_FAR_GAP {
-            gap_penalty += (own_gap - SEQUENCE_LABEL_FAR_GAP) * 0.9;
+    let gap_penalty = match mode {
+        SequenceLabelPlacementMode::Center => {
+            if !own_gap.is_finite() {
+                140.0
+            } else if own_gap <= SEQUENCE_LABEL_TOUCH_EPS {
+                0.0
+            } else {
+                let over = own_gap - SEQUENCE_LABEL_TOUCH_EPS;
+                let mut penalty = over * over * 10.0 + over * 1.8;
+                if own_gap > 8.0 {
+                    penalty += (own_gap - 8.0) * 1.4;
+                }
+                penalty
+            }
         }
-    }
-    overlap_area_sum * 0.01 + gap_penalty + distance(center, anchor) * 0.025
+        SequenceLabelPlacementMode::Endpoint => {
+            let mut penalty = 0.0f32;
+            if own_gap <= SEQUENCE_LABEL_TOUCH_EPS {
+                penalty += 120.0 + (SEQUENCE_LABEL_TOUCH_EPS - own_gap).max(0.0) * 30.0;
+            } else if own_gap < SEQUENCE_ENDPOINT_LABEL_GAP_MIN {
+                let delta = (SEQUENCE_ENDPOINT_LABEL_GAP_MIN - own_gap)
+                    / SEQUENCE_ENDPOINT_LABEL_GAP_MIN.max(1e-3);
+                penalty += delta * delta * 14.0;
+            } else if own_gap <= SEQUENCE_ENDPOINT_LABEL_GAP_MAX {
+                let delta = (own_gap - SEQUENCE_ENDPOINT_LABEL_GAP_TARGET)
+                    / SEQUENCE_ENDPOINT_LABEL_GAP_TARGET.max(1e-3);
+                penalty += delta * delta * 0.9;
+            } else {
+                let far = own_gap - SEQUENCE_ENDPOINT_LABEL_GAP_MAX;
+                penalty += far * far * 2.4 + far * 0.4;
+                if own_gap > SEQUENCE_ENDPOINT_LABEL_FAR_GAP {
+                    penalty += (own_gap - SEQUENCE_ENDPOINT_LABEL_FAR_GAP) * 0.9;
+                }
+            }
+            penalty
+        }
+    };
+    let anchor_weight = match mode {
+        SequenceLabelPlacementMode::Center => 0.018,
+        SequenceLabelPlacementMode::Endpoint => 0.025,
+    };
+    overlap_area_sum * 0.01 + gap_penalty + distance(center, anchor) * anchor_weight
 }
 
 fn sequence_edge_overlap_penalty(
@@ -1312,4 +1369,60 @@ fn extend_bounds(
     *min_y = (*min_y).min(y);
     *max_x = (*max_x).max(x + w);
     *max_y = (*max_y).max(y + h);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sequence_center_label_prefers_touching_own_path() {
+        let points = vec![(0.0, 0.0), (140.0, 0.0)];
+        let label = TextBlock {
+            lines: vec!["msg".to_string()],
+            width: 36.0,
+            height: 14.0,
+        };
+        let theme = Theme::mermaid_default();
+        let anchor = choose_sequence_center_label_anchor(
+            &points,
+            &label,
+            &[],
+            std::slice::from_ref(&points),
+            0,
+            &theme,
+        );
+        let rect = label_rect(anchor, &label, SEQUENCE_LABEL_PAD_X, SEQUENCE_LABEL_PAD_Y);
+        let gap = polyline_rect_gap(&points, rect);
+        assert!(
+            gap <= SEQUENCE_LABEL_TOUCH_EPS + 1e-3,
+            "expected touching center label, got gap {:.3}",
+            gap
+        );
+    }
+
+    #[test]
+    fn sequence_center_label_moves_off_path_when_path_is_blocked() {
+        let points = vec![(0.0, 0.0), (140.0, 0.0)];
+        let label = TextBlock {
+            lines: vec!["msg".to_string()],
+            width: 36.0,
+            height: 14.0,
+        };
+        let theme = Theme::mermaid_default();
+        let occupied = vec![(-20.0, -10.0, 180.0, 20.0)];
+        let anchor = choose_sequence_center_label_anchor(
+            &points,
+            &label,
+            &occupied,
+            std::slice::from_ref(&points),
+            0,
+            &theme,
+        );
+        assert!(
+            anchor.1.abs() > 4.0,
+            "expected off-path fallback for blocked corridor, got y={:.2}",
+            anchor.1
+        );
+    }
 }
