@@ -1962,11 +1962,16 @@ def common_comparison_stats(left, right):
         "edge_crossings",
         "edge_node_crossings",
         "edge_node_crossing_length_per_edge",
+        "subgraph_boundary_intrusion_ratio",
         "svg_edge_crossings",
         "arrow_path_intersections",
         "port_target_side_mismatch_ratio",
         "port_direction_misalignment_ratio",
         "endpoint_off_boundary_ratio",
+        "parallel_edge_overlap_ratio_mean",
+        "parallel_edge_separation_bad_ratio",
+        "flow_backtrack_ratio",
+        "flow_backtracking_edge_ratio",
         "label_overlap_count",
         "label_out_of_bounds_count",
         "edge_label_path_clearance_penalty",
@@ -1998,10 +2003,14 @@ def common_comparison_stats(left, right):
         "score",
         "edge_crossings",
         "edge_node_crossings",
+        "subgraph_boundary_intrusion_ratio",
         "arrow_path_intersections",
         "port_target_side_mismatch_ratio",
         "port_direction_misalignment_ratio",
         "endpoint_off_boundary_ratio",
+        "parallel_edge_overlap_ratio_mean",
+        "parallel_edge_separation_bad_ratio",
+        "flow_backtrack_ratio",
         "label_overlap_count",
         "label_out_of_bounds_count",
         "edge_label_owned_path_clearance_penalty",
@@ -2062,11 +2071,16 @@ def summarize_common_comparison(left, right):
         "edge_crossings",
         "edge_node_crossings",
         "edge_node_crossing_length_per_edge",
+        "subgraph_boundary_intrusion_ratio",
         "svg_edge_crossings",
         "arrow_path_intersections",
         "port_target_side_mismatch_ratio",
         "port_direction_misalignment_ratio",
         "endpoint_off_boundary_ratio",
+        "parallel_edge_overlap_ratio_mean",
+        "parallel_edge_separation_bad_ratio",
+        "flow_backtrack_ratio",
+        "flow_backtracking_edge_ratio",
         "label_overlap_count",
         "label_out_of_bounds_count",
         "edge_label_path_clearance_penalty",
@@ -2529,6 +2543,56 @@ def main():
             print(f"mmdr: avg endpoint off-boundary ratio: {mmdr_off_boundary:.3f}")
         if mmdc_off_boundary_count:
             print(f"mermaid-cli: avg endpoint off-boundary ratio: {mmdc_off_boundary:.3f}")
+        mmdr_subgraph_intrusion, mmdr_subgraph_intrusion_count = summarize_metric(
+            results.get("mmdr", {}), "subgraph_boundary_intrusion_ratio"
+        )
+        mmdc_subgraph_intrusion, mmdc_subgraph_intrusion_count = summarize_metric(
+            results.get("mermaid_cli", {}), "subgraph_boundary_intrusion_ratio"
+        )
+        if mmdr_subgraph_intrusion_count:
+            print(f"mmdr: avg subgraph intrusion ratio: {mmdr_subgraph_intrusion:.3f}")
+        if mmdc_subgraph_intrusion_count:
+            print(f"mermaid-cli: avg subgraph intrusion ratio: {mmdc_subgraph_intrusion:.3f}")
+        mmdr_parallel_overlap, mmdr_parallel_overlap_count = summarize_metric(
+            results.get("mmdr", {}), "parallel_edge_overlap_ratio_mean"
+        )
+        mmdc_parallel_overlap, mmdc_parallel_overlap_count = summarize_metric(
+            results.get("mermaid_cli", {}), "parallel_edge_overlap_ratio_mean"
+        )
+        if mmdr_parallel_overlap_count:
+            print(f"mmdr: avg parallel-edge overlap ratio: {mmdr_parallel_overlap:.3f}")
+        if mmdc_parallel_overlap_count:
+            print(f"mermaid-cli: avg parallel-edge overlap ratio: {mmdc_parallel_overlap:.3f}")
+        mmdr_parallel_bad, mmdr_parallel_bad_count = summarize_metric(
+            results.get("mmdr", {}), "parallel_edge_separation_bad_ratio"
+        )
+        mmdc_parallel_bad, mmdc_parallel_bad_count = summarize_metric(
+            results.get("mermaid_cli", {}), "parallel_edge_separation_bad_ratio"
+        )
+        if mmdr_parallel_bad_count:
+            print(f"mmdr: avg parallel-edge separation bad ratio: {mmdr_parallel_bad:.3f}")
+        if mmdc_parallel_bad_count:
+            print(f"mermaid-cli: avg parallel-edge separation bad ratio: {mmdc_parallel_bad:.3f}")
+        mmdr_flow_backtrack, mmdr_flow_backtrack_count = summarize_metric(
+            results.get("mmdr", {}), "flow_backtrack_ratio"
+        )
+        mmdc_flow_backtrack, mmdc_flow_backtrack_count = summarize_metric(
+            results.get("mermaid_cli", {}), "flow_backtrack_ratio"
+        )
+        if mmdr_flow_backtrack_count:
+            print(f"mmdr: avg flow backtrack ratio: {mmdr_flow_backtrack:.3f}")
+        if mmdc_flow_backtrack_count:
+            print(f"mermaid-cli: avg flow backtrack ratio: {mmdc_flow_backtrack:.3f}")
+        mmdr_flow_backtrack_edge, mmdr_flow_backtrack_edge_count = summarize_metric(
+            results.get("mmdr", {}), "flow_backtracking_edge_ratio"
+        )
+        mmdc_flow_backtrack_edge, mmdc_flow_backtrack_edge_count = summarize_metric(
+            results.get("mermaid_cli", {}), "flow_backtracking_edge_ratio"
+        )
+        if mmdr_flow_backtrack_edge_count:
+            print(f"mmdr: avg flow backtracking-edge ratio: {mmdr_flow_backtrack_edge:.3f}")
+        if mmdc_flow_backtrack_edge_count:
+            print(f"mermaid-cli: avg flow backtracking-edge ratio: {mmdc_flow_backtrack_edge:.3f}")
         mmdr_label_align, mmdr_label_align_count = summarize_metric(
             results.get("mmdr", {}), "edge_label_alignment_mean"
         )
@@ -2609,6 +2673,16 @@ def main():
                 "mermaid_cli_avg_port_direction_misalignment_ratio": mmdc_port_dir_mismatch,
                 "mmdr_avg_endpoint_off_boundary_ratio": mmdr_off_boundary,
                 "mermaid_cli_avg_endpoint_off_boundary_ratio": mmdc_off_boundary,
+                "mmdr_avg_subgraph_boundary_intrusion_ratio": mmdr_subgraph_intrusion,
+                "mermaid_cli_avg_subgraph_boundary_intrusion_ratio": mmdc_subgraph_intrusion,
+                "mmdr_avg_parallel_edge_overlap_ratio": mmdr_parallel_overlap,
+                "mermaid_cli_avg_parallel_edge_overlap_ratio": mmdc_parallel_overlap,
+                "mmdr_avg_parallel_edge_separation_bad_ratio": mmdr_parallel_bad,
+                "mermaid_cli_avg_parallel_edge_separation_bad_ratio": mmdc_parallel_bad,
+                "mmdr_avg_flow_backtrack_ratio": mmdr_flow_backtrack,
+                "mermaid_cli_avg_flow_backtrack_ratio": mmdc_flow_backtrack,
+                "mmdr_avg_flow_backtracking_edge_ratio": mmdr_flow_backtrack_edge,
+                "mermaid_cli_avg_flow_backtracking_edge_ratio": mmdc_flow_backtrack_edge,
                 "mmdr_avg_edge_label_distance": mmdr_label_align,
                 "mermaid_cli_avg_edge_label_distance": mmdc_label_align,
                 "mmdr_avg_edge_label_path_gap": mmdr_label_gap,

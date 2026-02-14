@@ -18,9 +18,15 @@ WEIGHTS = {
     "node_spacing_violation_count": 2.0,
     "edge_node_near_miss_count": 1.5,
     "edge_node_crossing_length_per_edge": 0.6,
+    "subgraph_boundary_intrusion_ratio": 55.0,
+    "subgraph_boundary_intrusion_length_per_edge": 0.9,
     "port_target_side_mismatch_ratio": 45.0,
     "port_direction_misalignment_ratio": 35.0,
     "endpoint_off_boundary_ratio": 70.0,
+    "parallel_edge_overlap_ratio_mean": 60.0,
+    "parallel_edge_separation_bad_ratio": 48.0,
+    "flow_backtrack_ratio": 90.0,
+    "flow_backtracking_edge_ratio": 50.0,
     # Normalize geometric terms so large diagrams are comparable with small ones.
     "edge_length_per_node": 0.75,
     "edge_detour_penalty": 80.0,
@@ -247,6 +253,116 @@ def segment_rect_overlap_length(a, b, rect, eps=1e-9):
     return (t1 - t0) * seg_len
 
 
+def layout_direction_axis(direction):
+    token = str(direction or "").strip().lower()
+    token = token.replace("-", "").replace("_", "")
+    if token in {"leftright", "lr", "horizontal"}:
+        return "x", 1.0
+    if token in {"rightleft", "rl"}:
+        return "x", -1.0
+    if token in {"topdown", "tb", "td", "vertical", "topbottom"}:
+        return "y", 1.0
+    if token in {"bottomtop", "bt", "bu"}:
+        return "y", -1.0
+    return None, 0.0
+
+
+def polyline_length(points):
+    length = 0.0
+    for a, b in segments_from_points(points):
+        length += dist(a, b)
+    return length
+
+
+def point_on_polyline(points, fraction):
+    if not points:
+        return None
+    if len(points) == 1:
+        return points[0]
+    f = clamp(fraction, 0.0, 1.0)
+    total_len = polyline_length(points)
+    if total_len < 1e-9:
+        return points[0]
+    target = total_len * f
+    traversed = 0.0
+    for a, b in segments_from_points(points):
+        seg_len = dist(a, b)
+        if seg_len < 1e-9:
+            continue
+        if traversed + seg_len >= target:
+            t = (target - traversed) / seg_len
+            return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+        traversed += seg_len
+    return points[-1]
+
+
+def sample_polyline(points, count=7, trim_ratio=0.08):
+    if len(points) < 2:
+        return []
+    if count <= 0:
+        return []
+    start = clamp(trim_ratio, 0.0, 0.45)
+    end = 1.0 - start
+    if count == 1:
+        p = point_on_polyline(points, 0.5)
+        return [p] if p is not None else []
+    samples = []
+    for i in range(count):
+        f = start + (end - start) * (i / (count - 1))
+        p = point_on_polyline(points, f)
+        if p is not None:
+            samples.append(p)
+    return samples
+
+
+def point_segment_distance(point, a, b):
+    vx = b[0] - a[0]
+    vy = b[1] - a[1]
+    seg_len_sq = vx * vx + vy * vy
+    if seg_len_sq < 1e-12:
+        return dist(point, a)
+    t = ((point[0] - a[0]) * vx + (point[1] - a[1]) * vy) / seg_len_sq
+    t = clamp(t, 0.0, 1.0)
+    proj = (a[0] + vx * t, a[1] + vy * t)
+    return dist(point, proj)
+
+
+def point_polyline_distance(point, points):
+    segments = segments_from_points(points)
+    if not segments:
+        return 0.0
+    return min(point_segment_distance(point, a, b) for a, b in segments)
+
+
+def pair_polyline_separation(points_a, points_b):
+    samples_a = sample_polyline(points_a, count=7, trim_ratio=0.10)
+    samples_b = sample_polyline(points_b, count=7, trim_ratio=0.10)
+    if not samples_a or not samples_b:
+        return None
+    dist_a = sum(point_polyline_distance(point, points_b) for point in samples_a) / len(samples_a)
+    dist_b = sum(point_polyline_distance(point, points_a) for point in samples_b) / len(samples_b)
+    return 0.5 * (dist_a + dist_b)
+
+
+def extract_subgraph_rects(data):
+    rects = []
+    for subgraph in data.get("subgraphs", []) or []:
+        try:
+            x = float(subgraph.get("x", 0.0))
+            y = float(subgraph.get("y", 0.0))
+            w = float(subgraph.get("width", 0.0))
+            h = float(subgraph.get("height", 0.0))
+        except (TypeError, ValueError):
+            continue
+        if w <= 1e-6 or h <= 1e-6:
+            continue
+        node_ids = {str(node_id) for node_id in (subgraph.get("nodes") or [])}
+        if not node_ids:
+            continue
+        rects.append((node_ids, (x, y, w, h)))
+    return rects
+
+
 def rect_contains(a, b, eps=1e-6, min_margin=1.0):
     ax1, ay1 = a["x"], a["y"]
     ax2, ay2 = ax1 + a["width"], ay1 + a["height"]
@@ -423,6 +539,8 @@ def connected_components(nodes, edges):
 
 
 def compute_metrics(data, nodes, edges):
+    kind = str(data.get("kind", "")).strip().lower()
+    flow_axis, flow_sign = layout_direction_axis(data.get("direction", ""))
     total_edge_length = 0.0
     edge_bends = 0
     edge_crossings = 0
@@ -441,29 +559,65 @@ def compute_metrics(data, nodes, edges):
     port_target_side_comparable = 0
     port_direction_misalignment_count = 0
     port_direction_comparable = 0
+    flow_forward_length = 0.0
+    flow_backtrack_length = 0.0
+    flow_lateral_length = 0.0
+    flow_backtracking_edge_count = 0
+    flow_monotonic_edge_count = 0
 
     segments = []
     edge_points = []
+    edge_path_lengths = []
     edge_node_near_miss_pairs = set()
     node_dirs = {}
+    subgraph_rects = extract_subgraph_rects(data)
+    subgraph_boundary_intrusion_pairs = 0
+    subgraph_boundary_intrusion_length = 0.0
+    parallel_edge_pair_count = 0
+    parallel_edge_overlap_pair_count = 0
+    parallel_edge_overlap_ratios = []
+    parallel_edge_separations = []
 
     for idx, edge in enumerate(edges):
         points = [tuple(p) for p in edge.get("points", [])]
         edge_points.append(points)
         edge_bends += bend_count(points)
         path_len = 0.0
+        edge_forward = 0.0
+        edge_backtrack = 0.0
+        edge_lateral = 0.0
         for a, b in segments_from_points(points):
             seg_len = dist(a, b)
             path_len += seg_len
             total_edge_length += seg_len
             segments.append((idx, a, b))
+            if flow_axis:
+                primary_delta = (b[0] - a[0]) if flow_axis == "x" else (b[1] - a[1])
+                signed = primary_delta * flow_sign
+                edge_forward += max(0.0, signed)
+                edge_backtrack += max(0.0, -signed)
+                edge_lateral += max(0.0, seg_len - abs(primary_delta))
+        edge_path_lengths.append(path_len)
         if len(points) >= 2:
+            from_id = edge.get("from")
+            to_id = edge.get("to")
             direct_len = dist(points[0], points[-1])
             if direct_len > 1e-3:
                 edge_detour_sum += path_len / direct_len
                 edge_detour_count += 1
-            from_id = edge.get("from")
-            to_id = edge.get("to")
+            if flow_axis and from_id in nodes and to_id in nodes:
+                src_center = node_center(nodes[from_id])
+                dst_center = node_center(nodes[to_id])
+                desired_primary = (
+                    (dst_center[0] - src_center[0]) if flow_axis == "x" else (dst_center[1] - src_center[1])
+                ) * flow_sign
+                if desired_primary > 1e-6:
+                    flow_monotonic_edge_count += 1
+                    flow_forward_length += edge_forward
+                    flow_backtrack_length += edge_backtrack
+                    flow_lateral_length += edge_lateral
+                    if edge_backtrack > 1e-6:
+                        flow_backtracking_edge_count += 1
             start_dir = direction_from_points(points[0], points[1])
             end_dir = direction_from_points(points[-1], points[-2])
             if from_id and start_dir is not None:
@@ -565,6 +719,58 @@ def compute_metrics(data, nodes, edges):
             if count > 1:
                 port_congestion += count - 1
 
+    if subgraph_rects:
+        for edge, points in zip(edges, edge_points):
+            if len(points) < 2:
+                continue
+            from_id = edge.get("from")
+            to_id = edge.get("to")
+            from_key = str(from_id) if from_id is not None else ""
+            to_key = str(to_id) if to_id is not None else ""
+            for member_nodes, rect in subgraph_rects:
+                if from_key in member_nodes or to_key in member_nodes:
+                    continue
+                overlap_len = 0.0
+                for a, b in segments_from_points(points):
+                    overlap_len += segment_rect_overlap_length(a, b, rect)
+                if overlap_len > 1e-6:
+                    subgraph_boundary_intrusion_pairs += 1
+                    subgraph_boundary_intrusion_length += overlap_len
+
+    parallel_groups = {}
+    for idx, edge in enumerate(edges):
+        from_id = edge.get("from")
+        to_id = edge.get("to")
+        if from_id is None or to_id is None:
+            continue
+        key = tuple(sorted((str(from_id), str(to_id))))
+        parallel_groups.setdefault(key, []).append(idx)
+
+    for group_edges in parallel_groups.values():
+        if len(group_edges) < 2:
+            continue
+        for i in range(len(group_edges)):
+            for j in range(i + 1, len(group_edges)):
+                ia = group_edges[i]
+                ib = group_edges[j]
+                points_a = edge_points[ia]
+                points_b = edge_points[ib]
+                if len(points_a) < 2 or len(points_b) < 2:
+                    continue
+                parallel_edge_pair_count += 1
+                overlap_len = 0.0
+                for a1, a2 in segments_from_points(points_a):
+                    for b1, b2 in segments_from_points(points_b):
+                        overlap_len += collinear_overlap_length(a1, a2, b1, b2)
+                min_len = max(min(edge_path_lengths[ia], edge_path_lengths[ib]), 1e-6)
+                overlap_ratio = clamp(overlap_len / min_len, 0.0, 1.0)
+                parallel_edge_overlap_ratios.append(overlap_ratio)
+                if overlap_ratio > 0.25:
+                    parallel_edge_overlap_pair_count += 1
+                separation = pair_polyline_separation(points_a, points_b)
+                if separation is not None:
+                    parallel_edge_separations.append(separation)
+
     node_ids = list(nodes.keys())
     node_spacing_violation_count = 0
     node_spacing_violation_severity = 0.0
@@ -627,7 +833,6 @@ def compute_metrics(data, nodes, edges):
         if penalty > 0.0:
             low_angular_resolution_nodes += 1
 
-    kind = str(data.get("kind", "")).strip().lower()
     allow_containment = kind == "treemap"
     overlap_count, overlap_area = node_overlap_metrics(nodes, allow_containment=allow_containment)
     node_area_total = sum(
@@ -756,6 +961,57 @@ def compute_metrics(data, nodes, edges):
         max(edge_count, 1),
         default=0.0,
     )
+    subgraph_boundary_intrusion_ratio = safe_ratio(
+        subgraph_boundary_intrusion_pairs,
+        max(edge_count, 1),
+        default=0.0,
+    )
+    subgraph_boundary_intrusion_length_per_edge = safe_ratio(
+        subgraph_boundary_intrusion_length,
+        max(edge_count, 1),
+        default=0.0,
+    )
+    parallel_edge_overlap_ratio_mean = (
+        sum(parallel_edge_overlap_ratios) / len(parallel_edge_overlap_ratios)
+        if parallel_edge_overlap_ratios
+        else 0.0
+    )
+    parallel_edge_overlap_pair_ratio = safe_ratio(
+        parallel_edge_overlap_pair_count,
+        max(parallel_edge_pair_count, 1),
+        default=0.0,
+    )
+    parallel_edge_separation_mean = (
+        sum(parallel_edge_separations) / len(parallel_edge_separations)
+        if parallel_edge_separations
+        else 0.0
+    )
+    parallel_edge_separation_threshold = max(4.0, spacing_target * 0.6)
+    parallel_edge_separation_bad_count = sum(
+        1 for sep in parallel_edge_separations if sep < parallel_edge_separation_threshold
+    )
+    parallel_edge_separation_bad_ratio = safe_ratio(
+        parallel_edge_separation_bad_count,
+        max(len(parallel_edge_separations), 1),
+        default=0.0,
+    )
+    flow_primary_length = flow_forward_length + flow_backtrack_length
+    flow_backtrack_ratio = safe_ratio(
+        flow_backtrack_length,
+        max(flow_primary_length, 1e-6),
+        default=0.0,
+    )
+    flow_monotonicity_score = 1.0 - flow_backtrack_ratio
+    flow_backtracking_edge_ratio = safe_ratio(
+        flow_backtracking_edge_count,
+        max(flow_monotonic_edge_count, 1),
+        default=0.0,
+    )
+    flow_lateral_ratio = safe_ratio(
+        flow_lateral_length,
+        max(total_edge_length, 1e-6),
+        default=0.0,
+    )
 
     return {
         "node_count": node_count,
@@ -764,6 +1020,10 @@ def compute_metrics(data, nodes, edges):
         "edge_node_crossings": edge_node_crossings,
         "edge_node_crossing_length": edge_node_crossing_length,
         "edge_node_crossing_length_per_edge": edge_node_crossing_length_per_edge,
+        "subgraph_boundary_intrusion_pairs": subgraph_boundary_intrusion_pairs,
+        "subgraph_boundary_intrusion_ratio": subgraph_boundary_intrusion_ratio,
+        "subgraph_boundary_intrusion_length": subgraph_boundary_intrusion_length,
+        "subgraph_boundary_intrusion_length_per_edge": subgraph_boundary_intrusion_length_per_edge,
         "total_edge_length": total_edge_length,
         "edge_length_per_node": edge_length_per_node,
         "edge_bends": edge_bends,
@@ -775,6 +1035,23 @@ def compute_metrics(data, nodes, edges):
         "endpoint_boundary_error_mean": endpoint_boundary_error_mean,
         "endpoint_off_boundary_count": endpoint_off_boundary_count,
         "endpoint_off_boundary_ratio": endpoint_off_boundary_ratio,
+        "parallel_edge_pair_count": parallel_edge_pair_count,
+        "parallel_edge_overlap_pair_count": parallel_edge_overlap_pair_count,
+        "parallel_edge_overlap_pair_ratio": parallel_edge_overlap_pair_ratio,
+        "parallel_edge_overlap_ratio_mean": parallel_edge_overlap_ratio_mean,
+        "parallel_edge_separation_mean": parallel_edge_separation_mean,
+        "parallel_edge_separation_bad_count": parallel_edge_separation_bad_count,
+        "parallel_edge_separation_bad_ratio": parallel_edge_separation_bad_ratio,
+        "parallel_edge_separation_threshold": parallel_edge_separation_threshold,
+        "flow_forward_length": flow_forward_length,
+        "flow_backtrack_length": flow_backtrack_length,
+        "flow_lateral_length": flow_lateral_length,
+        "flow_backtrack_ratio": flow_backtrack_ratio,
+        "flow_monotonicity_score": flow_monotonicity_score,
+        "flow_monotonic_edge_count": flow_monotonic_edge_count,
+        "flow_backtracking_edge_count": flow_backtracking_edge_count,
+        "flow_backtracking_edge_ratio": flow_backtracking_edge_ratio,
+        "flow_lateral_ratio": flow_lateral_ratio,
         "edge_overlap_length": edge_overlap_length,
         "crossing_angle_penalty": crossing_angle_penalty,
         "crossing_count_with_angle": crossing_count_with_angle,

@@ -123,6 +123,18 @@ fn fixture(name: &str) -> &'static str {
             env!("CARGO_MANIFEST_DIR"),
             "/benches/fixtures/flowchart_path_occlusion_maze.mmd"
         )),
+        "flowchart_subgraph_boundary_intrusion" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_subgraph_boundary_intrusion.mmd"
+        )),
+        "flowchart_parallel_edges_bundle" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_parallel_edges_bundle.mmd"
+        )),
+        "flowchart_flow_direction_backtrack" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_flow_direction_backtrack.mmd"
+        )),
         "flowchart_mega_multihub_control" => include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/benches/fixtures/flowchart_mega_multihub_control.mmd"
@@ -272,6 +284,9 @@ fn bench_parse(c: &mut Criterion) {
         "flowchart_parallel_label_stack",
         "flowchart_port_alignment_matrix",
         "flowchart_path_occlusion_maze",
+        "flowchart_subgraph_boundary_intrusion",
+        "flowchart_parallel_edges_bundle",
+        "flowchart_flow_direction_backtrack",
         "flowchart_mega_multihub_control",
         "flowchart_mega_crosslane_subgraphs",
         "flowchart_mega_braid_feedback",
@@ -340,6 +355,9 @@ fn bench_layout(c: &mut Criterion) {
         "flowchart_parallel_label_stack",
         "flowchart_port_alignment_matrix",
         "flowchart_path_occlusion_maze",
+        "flowchart_subgraph_boundary_intrusion",
+        "flowchart_parallel_edges_bundle",
+        "flowchart_flow_direction_backtrack",
         "flowchart_mega_multihub_control",
         "flowchart_mega_crosslane_subgraphs",
         "flowchart_mega_braid_feedback",
@@ -470,6 +488,9 @@ fn bench_render(c: &mut Criterion) {
         "flowchart_parallel_label_stack",
         "flowchart_port_alignment_matrix",
         "flowchart_path_occlusion_maze",
+        "flowchart_subgraph_boundary_intrusion",
+        "flowchart_parallel_edges_bundle",
+        "flowchart_flow_direction_backtrack",
         "flowchart_mega_multihub_control",
         "flowchart_mega_crosslane_subgraphs",
         "flowchart_mega_braid_feedback",
@@ -539,6 +560,9 @@ fn bench_end_to_end(c: &mut Criterion) {
         "flowchart_parallel_label_stack",
         "flowchart_port_alignment_matrix",
         "flowchart_path_occlusion_maze",
+        "flowchart_subgraph_boundary_intrusion",
+        "flowchart_parallel_edges_bundle",
+        "flowchart_flow_direction_backtrack",
         "flowchart_mega_multihub_control",
         "flowchart_mega_crosslane_subgraphs",
         "flowchart_mega_braid_feedback",

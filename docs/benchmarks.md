@@ -94,6 +94,9 @@ Recent stress fixtures for visual quality include:
 - `benches/fixtures/flowchart_parallel_label_stack.mmd`
 - `benches/fixtures/flowchart_port_alignment_matrix.mmd`
 - `benches/fixtures/flowchart_path_occlusion_maze.mmd`
+- `benches/fixtures/flowchart_subgraph_boundary_intrusion.mmd`
+- `benches/fixtures/flowchart_parallel_edges_bundle.mmd`
+- `benches/fixtures/flowchart_flow_direction_backtrack.mmd`
 - `benches/fixtures/flowchart_mega_multihub_control.mmd`
 - `benches/fixtures/flowchart_mega_crosslane_subgraphs.mmd`
 - `benches/fixtures/flowchart_mega_braid_feedback.mmd`

@@ -9,6 +9,7 @@ This matrix tracks what visual-readability behaviors are explicitly benchmarked.
 | Edge crossing pressure | Dense edge intersections and backedges | `flowchart_weave.mmd`, `flowchart_grid_feedback.mmd`, `flowchart_backedges_subgraphs.mmd`, `tests/fixtures/flowchart/dense.mmd` |
 | Port congestion / fan patterns | Hub fan-out, fan-in, return links | `flowchart_ports_heavy.mmd`, `flowchart_fanout_returns.mmd`, `tests/fixtures/flowchart/ports.mmd` |
 | Port side correctness | Whether port exits/entries align with the target direction and edge tangent | `flowchart_port_alignment_matrix.mmd`, `flowchart_ports_heavy.mmd`, `flowchart_fanout_returns.mmd` |
+| Subgraph boundary hygiene | Edges should avoid cutting through unrelated subgraph interiors | `flowchart_subgraph_boundary_intrusion.mmd`, `flowchart_nested_clusters.mmd`, `tests/fixtures/flowchart/subgraph.mmd` |
 | Label readability | Label-label and label-edge collisions | `flowchart_label_collision.mmd`, `flowchart_lanes_crossfeed.mmd`, `flowchart_parallel_label_stack.mmd`, `tests/fixtures/flowchart/styles.mmd` |
 | Label clipping / viewport fit | Out-of-bounds edge labels at canvas edges | `flowchart_direction_conflict.mmd`, `flowchart_long_edge_labels.mmd`, `flowchart_selfloop_bidi.mmd` |
 | Endpoint multiplicity readability | Class endpoint labels and center labels competing for edge span | `tests/fixtures/class/multiplicity.mmd`, `docs/comparison_sources/class_multiplicity.mmd` |
@@ -19,6 +20,8 @@ This matrix tracks what visual-readability behaviors are explicitly benchmarked.
 | Loop/bidirectional readability | Self-loops and reciprocal routing clarity | `flowchart_selfloop_bidi.mmd`, `tests/fixtures/flowchart/cycles.mmd` |
 | Path directness | Detour-heavy routes and long orthogonal paths | `flowchart_grid_feedback.mmd`, `flowchart_parallel_merges.mmd`, `tests/fixtures/flowchart/cycles.mmd` |
 | Path occlusion severity | How much edge path length runs through non-endpoint nodes | `flowchart_path_occlusion_maze.mmd`, `flowchart_weave.mmd`, `flowchart_component_packing.mmd` |
+| Parallel-edge readability | Separation/overlap quality for multiple edges between the same node pair | `flowchart_parallel_edges_bundle.mmd`, `flowchart_parallel_label_stack.mmd`, `flowchart_ports_heavy.mmd` |
+| Flow-direction monotonicity | Amount of backwards travel against declared LR/TD direction | `flowchart_flow_direction_backtrack.mmd`, `flowchart_grid_feedback.mmd`, `flowchart_fanout_returns.mmd` |
 | Large-system stress | Multi-hub, nested regions, and heavy cross-lane traffic | `flowchart_mega_multihub_control.mmd`, `flowchart_mega_crosslane_subgraphs.mmd`, `flowchart_mega_braid_feedback.mmd`, `flowchart_mega_event_mesh.mmd`, `flowchart_mega_nested_regions.mmd` |
 | Speed under visual stress | Layout/render latency on readability-heavy cases | all `benches/fixtures/flowchart_*.mmd` stress fixtures |
 
@@ -28,6 +31,9 @@ The benchmark pipeline now tracks:
 - Structural readability: `edge_crossings`, `edge_node_crossings`, `node_overlap_count`, `edge_bends`, `port_congestion`, `edge_overlap_length`
 - Port correctness: `port_target_side_mismatch_count`, `port_target_side_mismatch_ratio`, `port_direction_misalignment_count`, `port_direction_misalignment_ratio`, `endpoint_off_boundary_count`, `endpoint_off_boundary_ratio`, `endpoint_boundary_error_mean`
 - Occlusion severity: `edge_node_crossing_length`, `edge_node_crossing_length_per_edge`
+- Subgraph boundary hygiene: `subgraph_boundary_intrusion_pairs`, `subgraph_boundary_intrusion_ratio`, `subgraph_boundary_intrusion_length`, `subgraph_boundary_intrusion_length_per_edge`
+- Parallel-edge readability: `parallel_edge_pair_count`, `parallel_edge_overlap_pair_count`, `parallel_edge_overlap_pair_ratio`, `parallel_edge_overlap_ratio_mean`, `parallel_edge_separation_mean`, `parallel_edge_separation_bad_ratio`
+- Flow-direction quality: `flow_backtrack_ratio`, `flow_backtracking_edge_ratio`, `flow_monotonicity_score`, `flow_lateral_ratio`
 - Geometry readability: `crossing_angle_penalty`, `angular_resolution_penalty`, `edge_node_near_miss_count`, `node_spacing_violation_count`, `node_spacing_violation_severity`
 - Space/composition: `content_fill_ratio`, `wasted_space_ratio`, `space_efficiency_penalty`, `margin_imbalance_ratio`, `component_gap_ratio`, `component_balance_penalty`, `content_center_offset_ratio`, `content_aspect_elongation`, `content_overflow_ratio`
 - Path quality: `avg_edge_detour_ratio`, `edge_detour_penalty`, `edge_length_per_node`
