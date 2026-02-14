@@ -2135,9 +2135,7 @@ fn flowchart_center_label_candidates(
         0.6, -0.6, 1.0, -1.0, 1.4, -1.4, 0.35, -0.35, 2.0, -2.0, 2.8, -2.8, 4.0, -4.0, 5.2, -5.2,
         6.5, -6.5, 8.2, -8.2, 10.0, -10.0, 0.0,
     ];
-    let tangent_steps: &[f32] = &[
-        0.0, 0.3, -0.3, 0.8, -0.8, 1.4, -1.4, 2.2, -2.2, 3.2, -3.2,
-    ];
+    let tangent_steps: &[f32] = &[0.0, 0.3, -0.3, 0.8, -0.8, 1.4, -1.4, 2.2, -2.2, 3.2, -3.2];
     for (anchor_x, anchor_y, dir_x, dir_y) in anchors {
         let normal_x = -dir_y;
         let normal_y = dir_x;
