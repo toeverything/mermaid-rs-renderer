@@ -280,9 +280,10 @@ def main():
             "edge_label_owned_mapping_ratio",
         ]:
             higher_is_better = metric in {
-                "edge_label_path_non_touch_ratio",
+                "edge_label_path_touch_ratio",
                 "edge_label_path_clearance_score_mean",
                 "edge_label_path_in_band_ratio",
+                "edge_label_owned_path_touch_ratio",
                 "edge_label_owned_path_clearance_score_mean",
                 "edge_label_owned_mapping_ratio",
             }

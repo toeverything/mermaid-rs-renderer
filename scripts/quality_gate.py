@@ -22,7 +22,7 @@ STRICT_METRICS = {
     "label_out_of_bounds_count",
     "edge_label_alignment_bad_count",
     "edge_label_path_gap_bad_count",
-    "edge_label_owned_path_touch_ratio",
+    "edge_label_owned_path_non_touch_ratio",
     "edge_label_owned_path_gap_bad_ratio",
 }
 

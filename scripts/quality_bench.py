@@ -1110,8 +1110,9 @@ def compute_label_metrics(
     edge_label_clearance_scores = []
     edge_label_in_band_count = 0
     edge_label_touch_eps = 0.5
-    edge_label_clearance_target = 2.0
-    edge_label_clearance_sigma = 2.0
+    # Label-path attachment score: 1.0 when touching (or within eps), then
+    # decays smoothly as labels drift away from their owning path.
+    edge_label_clearance_sigma = 1.6
     candidate_edge_labels = list(explicit_edge_label_boxes)
     use_fallback_candidate_filter = False
     if not candidate_edge_labels and allow_fallback_candidates:
@@ -1203,10 +1204,9 @@ def compute_label_metrics(
             edge_label_path_bad_count += 1
         if min_gap <= edge_label_touch_eps:
             edge_label_path_touch_count += 1
-            edge_label_clearance_scores.append(0.0)
-        else:
-            z = (min_gap - edge_label_clearance_target) / edge_label_clearance_sigma
-            edge_label_clearance_scores.append(math.exp(-0.5 * z * z))
+        gap_over = max(0.0, min_gap - edge_label_touch_eps)
+        z = gap_over / edge_label_clearance_sigma
+        edge_label_clearance_scores.append(math.exp(-0.5 * z * z))
         if 1.0 <= min_gap <= 6.0:
             edge_label_in_band_count += 1
 
@@ -1241,10 +1241,9 @@ def compute_label_metrics(
             edge_label_owned_path_bad_count += 1
         if owned_gap <= edge_label_touch_eps:
             edge_label_owned_path_touch_count += 1
-            edge_label_owned_clearance_scores.append(0.0)
-        else:
-            z = (owned_gap - edge_label_clearance_target) / edge_label_clearance_sigma
-            edge_label_owned_clearance_scores.append(math.exp(-0.5 * z * z))
+        owned_gap_over = max(0.0, owned_gap - edge_label_touch_eps)
+        z = owned_gap_over / edge_label_clearance_sigma
+        edge_label_owned_clearance_scores.append(math.exp(-0.5 * z * z))
         if 1.0 <= owned_gap <= 6.0:
             edge_label_owned_in_band_count += 1
 
@@ -1345,8 +1344,8 @@ def compute_label_metrics(
                 "edge_label_path_gap_bad_ratio": (
                     edge_label_path_bad_count / len(edge_label_path_gaps)
                 ),
-                # Score in [0,1]: 0 when touching path, highest near target
-                # clearance band (~2px), and decays when labels drift too far.
+                # Score in [0,1]: 1 when touching path, then decays as labels
+                # drift farther from the path.
                 "edge_label_path_clearance_score_mean": path_clearance_score,
                 "edge_label_path_clearance_penalty": (1.0 - path_clearance_score),
                 "edge_label_path_non_touch_ratio": (
@@ -1385,8 +1384,8 @@ def compute_label_metrics(
                 "edge_label_owned_path_gap_bad_ratio": (
                     edge_label_owned_path_bad_count / len(edge_label_owned_path_gaps)
                 ),
-                # Score in [0,1]: 0 when touching path, highest near target
-                # clearance band (~2px), and decays when labels drift too far.
+                # Score in [0,1]: 1 when touching path, then decays as labels
+                # drift farther from the path.
                 "edge_label_owned_path_clearance_score_mean": owned_clearance_score,
                 "edge_label_owned_path_clearance_penalty": (1.0 - owned_clearance_score),
                 "edge_label_owned_path_non_touch_ratio": (
@@ -1771,7 +1770,18 @@ def collect_common_scored(left, right):
     return common
 
 
+def metric_higher_is_better(metric: str) -> bool:
+    return metric in {
+        "edge_label_path_touch_ratio",
+        "edge_label_owned_path_touch_ratio",
+        "edge_label_owned_mapping_ratio",
+        "edge_label_path_clearance_score_mean",
+        "edge_label_owned_path_clearance_score_mean",
+    }
+
+
 def metric_compare_counts(left, right, keys, metric, eps=1e-9):
+    higher_is_better = metric_higher_is_better(metric)
     better = 0
     equal = 0
     worse = 0
@@ -1782,13 +1792,22 @@ def metric_compare_counts(left, right, keys, metric, eps=1e-9):
         if not isinstance(lval, (int, float)) or not isinstance(rval, (int, float)):
             continue
         delta = lval - rval
-        if delta < -eps:
-            better += 1
-        elif delta > eps:
-            worse += 1
-            regressions.append((delta, key, lval, rval))
+        if higher_is_better:
+            if delta > eps:
+                better += 1
+            elif delta < -eps:
+                worse += 1
+                regressions.append((abs(delta), key, lval, rval))
+            else:
+                equal += 1
         else:
-            equal += 1
+            if delta < -eps:
+                better += 1
+            elif delta > eps:
+                worse += 1
+                regressions.append((delta, key, lval, rval))
+            else:
+                equal += 1
     regressions.sort(reverse=True, key=lambda item: item[0])
     return better, equal, worse, regressions
 
@@ -1850,8 +1869,21 @@ def common_comparison_stats(left, right):
         if len(comparable_metrics) != len(dominance_metrics):
             continue
         comparable += 1
-        is_non_worse = all(l <= r + 1e-9 for l, r in comparable_metrics)
-        is_strict = is_non_worse and any(l < r - 1e-9 for l, r in comparable_metrics)
+        is_non_worse = True
+        is_strict = False
+        for metric, (l, r) in zip(dominance_metrics, comparable_metrics):
+            if metric_higher_is_better(metric):
+                if l + 1e-9 < r:
+                    is_non_worse = False
+                    break
+                if l > r + 1e-9:
+                    is_strict = True
+            else:
+                if l > r + 1e-9:
+                    is_non_worse = False
+                    break
+                if l + 1e-9 < r:
+                    is_strict = True
         if is_non_worse:
             non_worse += 1
         if is_strict:
@@ -1935,14 +1967,24 @@ def weighted_dominance_stats(left, right):
             if not isinstance(lval, (int, float)) or not isinstance(rval, (int, float)):
                 continue
             has_weighted_metric = True
-            delta = lval - rval
-            if delta > 1e-9:
-                fixture_worse = True
-                debt = delta * weight
-                fixture_debt += debt
-                by_metric_debt[metric] += debt
-            elif delta < -1e-9:
-                fixture_better = True
+            if metric_higher_is_better(metric):
+                delta = rval - lval
+                if delta > 1e-9:
+                    fixture_worse = True
+                    debt = delta * weight
+                    fixture_debt += debt
+                    by_metric_debt[metric] += debt
+                elif delta < -1e-9:
+                    fixture_better = True
+            else:
+                delta = lval - rval
+                if delta > 1e-9:
+                    fixture_worse = True
+                    debt = delta * weight
+                    fixture_debt += debt
+                    by_metric_debt[metric] += debt
+                elif delta < -1e-9:
+                    fixture_better = True
         if not has_weighted_metric:
             continue
         comparable += 1
@@ -2378,12 +2420,12 @@ def main():
         if mmdr_label_clearance_count:
             print(
                 "mmdr: avg edge-label clearance score "
-                f"(touch=0, best near ~2px): {mmdr_label_clearance:.3f}"
+                f"(touch=1, decays away from path): {mmdr_label_clearance:.3f}"
             )
         if mmdc_label_clearance_count:
             print(
                 "mermaid-cli: avg edge-label clearance score "
-                f"(touch=0, best near ~2px): {mmdc_label_clearance:.3f}"
+                f"(touch=1, decays away from path): {mmdc_label_clearance:.3f}"
             )
         if mmdr_label_nontouch_count:
             print(f"mmdr: avg edge-label non-touch ratio: {mmdr_label_nontouch:.3f}")
@@ -2402,12 +2444,12 @@ def main():
         if mmdr_label_owned_clearance_count:
             print(
                 "mmdr: avg owned edge-label clearance score "
-                f"(touch=0, best near ~2px): {mmdr_label_owned_clearance:.3f}"
+                f"(touch=1, decays away from path): {mmdr_label_owned_clearance:.3f}"
             )
         if mmdc_label_owned_clearance_count:
             print(
                 "mermaid-cli: avg owned edge-label clearance score "
-                f"(touch=0, best near ~2px): {mmdc_label_owned_clearance:.3f}"
+                f"(touch=1, decays away from path): {mmdc_label_owned_clearance:.3f}"
             )
         if mmdr_label_owned_map_count:
             print(f"mmdr: avg owned edge-label mapping ratio: {mmdr_label_owned_map:.3f}")

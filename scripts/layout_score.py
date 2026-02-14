@@ -23,8 +23,8 @@ WEIGHTS = {
     # Explicit whitespace and composition quality.
     "space_efficiency_penalty": 320.0,
     "margin_imbalance_ratio": 160.0,
-    # Ownership-aware edge-label quality (0 touch gap is worst).
-    "edge_label_owned_path_touch_ratio": 180.0,
+    # Ownership-aware edge-label quality (touching the own path is best).
+    "edge_label_owned_path_non_touch_ratio": 180.0,
     "edge_label_owned_path_gap_bad_ratio": 160.0,
     "edge_label_owned_alignment_bad_ratio": 120.0,
     "edge_label_owned_path_clearance_penalty": 140.0,
