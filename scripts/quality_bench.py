@@ -1207,7 +1207,7 @@ def compute_label_metrics(
         gap_over = max(0.0, min_gap - edge_label_touch_eps)
         z = gap_over / edge_label_clearance_sigma
         edge_label_clearance_scores.append(math.exp(-0.5 * z * z))
-        if 1.0 <= min_gap <= 6.0:
+        if 0.0 <= min_gap <= 2.0:
             edge_label_in_band_count += 1
 
     edge_label_owned_distances = []
@@ -1244,7 +1244,7 @@ def compute_label_metrics(
         owned_gap_over = max(0.0, owned_gap - edge_label_touch_eps)
         z = owned_gap_over / edge_label_clearance_sigma
         edge_label_owned_clearance_scores.append(math.exp(-0.5 * z * z))
-        if 1.0 <= owned_gap <= 6.0:
+        if 0.0 <= owned_gap <= 2.0:
             edge_label_owned_in_band_count += 1
 
     edge_label_alignment_mean = (
@@ -1310,7 +1310,7 @@ def compute_label_metrics(
             (edge_label_owned_candidate_count - edge_label_owned_unmapped_count)
             / edge_label_owned_candidate_count
             if edge_label_owned_candidate_count > 0
-            else 0.0
+            else 1.0
         ),
         "edge_label_owned_alignment_count": len(edge_label_owned_distances),
         "edge_label_owned_alignment_bad_count": edge_label_owned_bad_count,
