@@ -17,6 +17,10 @@ WEIGHTS = {
     "angular_resolution_penalty": 2.5,
     "node_spacing_violation_count": 2.0,
     "edge_node_near_miss_count": 1.5,
+    "edge_node_crossing_length_per_edge": 0.6,
+    "port_target_side_mismatch_ratio": 45.0,
+    "port_direction_misalignment_ratio": 35.0,
+    "endpoint_off_boundary_ratio": 70.0,
     # Normalize geometric terms so large diagrams are comparable with small ones.
     "edge_length_per_node": 0.75,
     "edge_detour_penalty": 80.0,
@@ -161,6 +165,86 @@ def infer_side(node, point, tol=1.0):
     if delta <= tol:
         return side
     return "unknown"
+
+
+def opposite_side(side):
+    return {
+        "left": "right",
+        "right": "left",
+        "top": "bottom",
+        "bottom": "top",
+    }.get(side)
+
+
+def dominant_axis_side(dx, dy, eps=1e-9):
+    if abs(dx) < eps and abs(dy) < eps:
+        return None
+    if abs(dx) >= abs(dy):
+        return "right" if dx >= 0.0 else "left"
+    return "bottom" if dy >= 0.0 else "top"
+
+
+def node_center(node):
+    return (
+        node["x"] + node["width"] * 0.5,
+        node["y"] + node["height"] * 0.5,
+    )
+
+
+def expected_side_towards(src_node, dst_node):
+    sx, sy = node_center(src_node)
+    dx, dy = node_center(dst_node)
+    return dominant_axis_side(dx - sx, dy - sy)
+
+
+def point_rect_boundary_distance(point, node):
+    x1 = node["x"]
+    y1 = node["y"]
+    x2 = x1 + node["width"]
+    y2 = y1 + node["height"]
+    px, py = point
+    if x1 <= px <= x2 and y1 <= py <= y2:
+        return min(px - x1, x2 - px, py - y1, y2 - py)
+    cx = clamp(px, x1, x2)
+    cy = clamp(py, y1, y2)
+    return math.hypot(px - cx, py - cy)
+
+
+def segment_rect_overlap_length(a, b, rect, eps=1e-9):
+    x, y, w, h = rect
+    x1, y1 = a
+    x2, y2 = b
+    dx = x2 - x1
+    dy = y2 - y1
+    seg_len = math.hypot(dx, dy)
+    if seg_len < eps:
+        return 0.0
+
+    t0 = 0.0
+    t1 = 1.0
+    for p, q in (
+        (-dx, x1 - x),
+        (dx, (x + w) - x1),
+        (-dy, y1 - y),
+        (dy, (y + h) - y1),
+    ):
+        if abs(p) < eps:
+            if q < 0.0:
+                return 0.0
+            continue
+        t = q / p
+        if p < 0.0:
+            if t > t1:
+                return 0.0
+            t0 = max(t0, t)
+        else:
+            if t < t0:
+                return 0.0
+            t1 = min(t1, t)
+
+    if t1 <= t0:
+        return 0.0
+    return (t1 - t0) * seg_len
 
 
 def rect_contains(a, b, eps=1e-6, min_margin=1.0):
@@ -345,10 +429,18 @@ def compute_metrics(data, nodes, edges):
     edge_overlap_length = 0.0
     port_congestion = 0
     edge_node_crossings = 0
+    edge_node_crossing_length = 0.0
     edge_detour_sum = 0.0
     edge_detour_count = 0
     crossing_angle_penalty = 0.0
     crossing_count_with_angle = 0
+    endpoint_boundary_error_sum = 0.0
+    endpoint_boundary_error_count = 0
+    endpoint_off_boundary_count = 0
+    port_target_side_mismatch_count = 0
+    port_target_side_comparable = 0
+    port_direction_misalignment_count = 0
+    port_direction_comparable = 0
 
     segments = []
     edge_points = []
@@ -390,6 +482,7 @@ def compute_metrics(data, nodes, edges):
             rect = (node["x"], node["y"], node["width"], node["height"])
             if segment_intersects_rect(a1, a2, rect):
                 edge_node_crossings += 1
+                edge_node_crossing_length += segment_rect_overlap_length(a1, a2, rect)
         for j in range(i + 1, len(segments)):
             ej, b1, b2 = segments[j]
             if ei == ej:
@@ -409,14 +502,63 @@ def compute_metrics(data, nodes, edges):
             continue
         from_id = edge.get("from")
         to_id = edge.get("to")
+        from_side_eval = "unknown"
+        to_side_eval = "unknown"
         if from_id in nodes:
-            side = infer_side(nodes[from_id], points[0])
+            from_node = nodes[from_id]
+            side = infer_side(from_node, points[0])
             if side in port_counts[from_id]:
                 port_counts[from_id][side] += 1
+            tol = max(1.0, min(from_node["width"], from_node["height"]) * 0.04)
+            from_side_eval = infer_side(from_node, points[0], tol=tol)
+            boundary_error = point_rect_boundary_distance(points[0], from_node)
+            endpoint_boundary_error_sum += boundary_error
+            endpoint_boundary_error_count += 1
+            if boundary_error > 1.5:
+                endpoint_off_boundary_count += 1
+
+            exit_side = dominant_axis_side(
+                points[1][0] - points[0][0],
+                points[1][1] - points[0][1],
+            )
+            if from_side_eval != "unknown" and exit_side is not None:
+                port_direction_comparable += 1
+                if exit_side != from_side_eval:
+                    port_direction_misalignment_count += 1
         if to_id in nodes:
-            side = infer_side(nodes[to_id], points[-1])
+            to_node = nodes[to_id]
+            side = infer_side(to_node, points[-1])
             if side in port_counts[to_id]:
                 port_counts[to_id][side] += 1
+            tol = max(1.0, min(to_node["width"], to_node["height"]) * 0.04)
+            to_side_eval = infer_side(to_node, points[-1], tol=tol)
+            boundary_error = point_rect_boundary_distance(points[-1], to_node)
+            endpoint_boundary_error_sum += boundary_error
+            endpoint_boundary_error_count += 1
+            if boundary_error > 1.5:
+                endpoint_off_boundary_count += 1
+
+            enter_side = dominant_axis_side(
+                points[-1][0] - points[-2][0],
+                points[-1][1] - points[-2][1],
+            )
+            expected_enter_side = opposite_side(to_side_eval)
+            if expected_enter_side is not None and enter_side is not None:
+                port_direction_comparable += 1
+                if enter_side != expected_enter_side:
+                    port_direction_misalignment_count += 1
+
+        if from_id in nodes and to_id in nodes:
+            expected_from_side = expected_side_towards(nodes[from_id], nodes[to_id])
+            if expected_from_side is not None:
+                port_target_side_comparable += 1
+                if from_side_eval != expected_from_side:
+                    port_target_side_mismatch_count += 1
+            expected_to_side = expected_side_towards(nodes[to_id], nodes[from_id])
+            if expected_to_side is not None:
+                port_target_side_comparable += 1
+                if to_side_eval != expected_to_side:
+                    port_target_side_mismatch_count += 1
 
     for counts in port_counts.values():
         for count in counts.values():
@@ -589,16 +731,50 @@ def compute_metrics(data, nodes, edges):
     layout_area_per_node = safe_ratio(layout_area, max(node_count, 1), default=0.0)
     layout_area_per_edge = safe_ratio(layout_area, max(edge_count, 1), default=0.0)
     node_fill_ratio = safe_ratio(node_area_total, content_bbox_area, default=0.0)
+    endpoint_boundary_error_mean = safe_ratio(
+        endpoint_boundary_error_sum,
+        max(endpoint_boundary_error_count, 1),
+        default=0.0,
+    )
+    endpoint_off_boundary_ratio = safe_ratio(
+        endpoint_off_boundary_count,
+        max(endpoint_boundary_error_count, 1),
+        default=0.0,
+    )
+    port_target_side_mismatch_ratio = safe_ratio(
+        port_target_side_mismatch_count,
+        max(port_target_side_comparable, 1),
+        default=0.0,
+    )
+    port_direction_misalignment_ratio = safe_ratio(
+        port_direction_misalignment_count,
+        max(port_direction_comparable, 1),
+        default=0.0,
+    )
+    edge_node_crossing_length_per_edge = safe_ratio(
+        edge_node_crossing_length,
+        max(edge_count, 1),
+        default=0.0,
+    )
 
     return {
         "node_count": node_count,
         "edge_count": edge_count,
         "edge_crossings": edge_crossings,
         "edge_node_crossings": edge_node_crossings,
+        "edge_node_crossing_length": edge_node_crossing_length,
+        "edge_node_crossing_length_per_edge": edge_node_crossing_length_per_edge,
         "total_edge_length": total_edge_length,
         "edge_length_per_node": edge_length_per_node,
         "edge_bends": edge_bends,
         "port_congestion": port_congestion,
+        "port_target_side_mismatch_count": port_target_side_mismatch_count,
+        "port_target_side_mismatch_ratio": port_target_side_mismatch_ratio,
+        "port_direction_misalignment_count": port_direction_misalignment_count,
+        "port_direction_misalignment_ratio": port_direction_misalignment_ratio,
+        "endpoint_boundary_error_mean": endpoint_boundary_error_mean,
+        "endpoint_off_boundary_count": endpoint_off_boundary_count,
+        "endpoint_off_boundary_ratio": endpoint_off_boundary_ratio,
         "edge_overlap_length": edge_overlap_length,
         "crossing_angle_penalty": crossing_angle_penalty,
         "crossing_count_with_angle": crossing_count_with_angle,

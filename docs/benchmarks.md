@@ -92,6 +92,13 @@ Recent stress fixtures for visual quality include:
 - `benches/fixtures/flowchart_component_packing.mmd`
 - `benches/fixtures/flowchart_direction_conflict.mmd`
 - `benches/fixtures/flowchart_parallel_label_stack.mmd`
+- `benches/fixtures/flowchart_port_alignment_matrix.mmd`
+- `benches/fixtures/flowchart_path_occlusion_maze.mmd`
+- `benches/fixtures/flowchart_mega_multihub_control.mmd`
+- `benches/fixtures/flowchart_mega_crosslane_subgraphs.mmd`
+- `benches/fixtures/flowchart_mega_braid_feedback.mmd`
+- `benches/fixtures/flowchart_mega_event_mesh.mmd`
+- `benches/fixtures/flowchart_mega_nested_regions.mmd`
 
 Latest flowchart quality compare (`scripts/quality_bench.py --engine both --pattern flowchart`, February 6, 2026):
 - `mmdr`: 30 fixtures, average weighted score `435.06`

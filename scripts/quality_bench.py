@@ -1960,8 +1960,13 @@ def common_comparison_stats(left, right):
     core_metrics = [
         "score",
         "edge_crossings",
+        "edge_node_crossings",
+        "edge_node_crossing_length_per_edge",
         "svg_edge_crossings",
         "arrow_path_intersections",
+        "port_target_side_mismatch_ratio",
+        "port_direction_misalignment_ratio",
+        "endpoint_off_boundary_ratio",
         "label_overlap_count",
         "label_out_of_bounds_count",
         "edge_label_path_clearance_penalty",
@@ -1992,7 +1997,11 @@ def common_comparison_stats(left, right):
     dominance_metrics = [
         "score",
         "edge_crossings",
+        "edge_node_crossings",
         "arrow_path_intersections",
+        "port_target_side_mismatch_ratio",
+        "port_direction_misalignment_ratio",
+        "endpoint_off_boundary_ratio",
         "label_overlap_count",
         "label_out_of_bounds_count",
         "edge_label_owned_path_clearance_penalty",
@@ -2051,8 +2060,13 @@ def summarize_common_comparison(left, right):
     for metric in [
         "score",
         "edge_crossings",
+        "edge_node_crossings",
+        "edge_node_crossing_length_per_edge",
         "svg_edge_crossings",
         "arrow_path_intersections",
+        "port_target_side_mismatch_ratio",
+        "port_direction_misalignment_ratio",
+        "endpoint_off_boundary_ratio",
         "label_overlap_count",
         "label_out_of_bounds_count",
         "edge_label_path_clearance_penalty",
@@ -2475,6 +2489,46 @@ def main():
             print(f"mmdr: avg arrow-path intersections: {mmdr_intersections:.3f}")
         if mmdc_intersections_count:
             print(f"mermaid-cli: avg arrow-path intersections: {mmdc_intersections:.3f}")
+        mmdr_node_cross_len, mmdr_node_cross_len_count = summarize_metric(
+            results.get("mmdr", {}), "edge_node_crossing_length_per_edge"
+        )
+        mmdc_node_cross_len, mmdc_node_cross_len_count = summarize_metric(
+            results.get("mermaid_cli", {}), "edge_node_crossing_length_per_edge"
+        )
+        if mmdr_node_cross_len_count:
+            print(f"mmdr: avg edge-node crossing length/edge: {mmdr_node_cross_len:.3f}")
+        if mmdc_node_cross_len_count:
+            print(f"mermaid-cli: avg edge-node crossing length/edge: {mmdc_node_cross_len:.3f}")
+        mmdr_port_target_mismatch, mmdr_port_target_mismatch_count = summarize_metric(
+            results.get("mmdr", {}), "port_target_side_mismatch_ratio"
+        )
+        mmdc_port_target_mismatch, mmdc_port_target_mismatch_count = summarize_metric(
+            results.get("mermaid_cli", {}), "port_target_side_mismatch_ratio"
+        )
+        if mmdr_port_target_mismatch_count:
+            print(f"mmdr: avg port target-side mismatch ratio: {mmdr_port_target_mismatch:.3f}")
+        if mmdc_port_target_mismatch_count:
+            print(f"mermaid-cli: avg port target-side mismatch ratio: {mmdc_port_target_mismatch:.3f}")
+        mmdr_port_dir_mismatch, mmdr_port_dir_mismatch_count = summarize_metric(
+            results.get("mmdr", {}), "port_direction_misalignment_ratio"
+        )
+        mmdc_port_dir_mismatch, mmdc_port_dir_mismatch_count = summarize_metric(
+            results.get("mermaid_cli", {}), "port_direction_misalignment_ratio"
+        )
+        if mmdr_port_dir_mismatch_count:
+            print(f"mmdr: avg port direction-misalignment ratio: {mmdr_port_dir_mismatch:.3f}")
+        if mmdc_port_dir_mismatch_count:
+            print(f"mermaid-cli: avg port direction-misalignment ratio: {mmdc_port_dir_mismatch:.3f}")
+        mmdr_off_boundary, mmdr_off_boundary_count = summarize_metric(
+            results.get("mmdr", {}), "endpoint_off_boundary_ratio"
+        )
+        mmdc_off_boundary, mmdc_off_boundary_count = summarize_metric(
+            results.get("mermaid_cli", {}), "endpoint_off_boundary_ratio"
+        )
+        if mmdr_off_boundary_count:
+            print(f"mmdr: avg endpoint off-boundary ratio: {mmdr_off_boundary:.3f}")
+        if mmdc_off_boundary_count:
+            print(f"mermaid-cli: avg endpoint off-boundary ratio: {mmdc_off_boundary:.3f}")
         mmdr_label_align, mmdr_label_align_count = summarize_metric(
             results.get("mmdr", {}), "edge_label_alignment_mean"
         )
@@ -2547,6 +2601,14 @@ def main():
                 "mermaid_cli_avg_label_oob_count": mmdc_label_oob,
                 "mmdr_avg_arrow_path_intersections": mmdr_intersections,
                 "mermaid_cli_avg_arrow_path_intersections": mmdc_intersections,
+                "mmdr_avg_edge_node_crossing_length_per_edge": mmdr_node_cross_len,
+                "mermaid_cli_avg_edge_node_crossing_length_per_edge": mmdc_node_cross_len,
+                "mmdr_avg_port_target_side_mismatch_ratio": mmdr_port_target_mismatch,
+                "mermaid_cli_avg_port_target_side_mismatch_ratio": mmdc_port_target_mismatch,
+                "mmdr_avg_port_direction_misalignment_ratio": mmdr_port_dir_mismatch,
+                "mermaid_cli_avg_port_direction_misalignment_ratio": mmdc_port_dir_mismatch,
+                "mmdr_avg_endpoint_off_boundary_ratio": mmdr_off_boundary,
+                "mermaid_cli_avg_endpoint_off_boundary_ratio": mmdc_off_boundary,
                 "mmdr_avg_edge_label_distance": mmdr_label_align,
                 "mermaid_cli_avg_edge_label_distance": mmdc_label_align,
                 "mmdr_avg_edge_label_path_gap": mmdr_label_gap,

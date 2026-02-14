@@ -115,6 +115,34 @@ fn fixture(name: &str) -> &'static str {
             env!("CARGO_MANIFEST_DIR"),
             "/benches/fixtures/flowchart_parallel_label_stack.mmd"
         )),
+        "flowchart_port_alignment_matrix" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_port_alignment_matrix.mmd"
+        )),
+        "flowchart_path_occlusion_maze" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_path_occlusion_maze.mmd"
+        )),
+        "flowchart_mega_multihub_control" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_mega_multihub_control.mmd"
+        )),
+        "flowchart_mega_crosslane_subgraphs" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_mega_crosslane_subgraphs.mmd"
+        )),
+        "flowchart_mega_braid_feedback" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_mega_braid_feedback.mmd"
+        )),
+        "flowchart_mega_event_mesh" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_mega_event_mesh.mmd"
+        )),
+        "flowchart_mega_nested_regions" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/benches/fixtures/flowchart_mega_nested_regions.mmd"
+        )),
         "class_tiny" => include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/benches/fixtures/class_tiny.mmd"
@@ -242,6 +270,13 @@ fn bench_parse(c: &mut Criterion) {
         "flowchart_component_packing",
         "flowchart_direction_conflict",
         "flowchart_parallel_label_stack",
+        "flowchart_port_alignment_matrix",
+        "flowchart_path_occlusion_maze",
+        "flowchart_mega_multihub_control",
+        "flowchart_mega_crosslane_subgraphs",
+        "flowchart_mega_braid_feedback",
+        "flowchart_mega_event_mesh",
+        "flowchart_mega_nested_regions",
         "class_tiny",
         "state_tiny",
         "sequence_tiny",
@@ -303,6 +338,13 @@ fn bench_layout(c: &mut Criterion) {
         "flowchart_component_packing",
         "flowchart_direction_conflict",
         "flowchart_parallel_label_stack",
+        "flowchart_port_alignment_matrix",
+        "flowchart_path_occlusion_maze",
+        "flowchart_mega_multihub_control",
+        "flowchart_mega_crosslane_subgraphs",
+        "flowchart_mega_braid_feedback",
+        "flowchart_mega_event_mesh",
+        "flowchart_mega_nested_regions",
         "class_tiny",
         "class_medium",
         "state_tiny",
@@ -426,6 +468,13 @@ fn bench_render(c: &mut Criterion) {
         "flowchart_component_packing",
         "flowchart_direction_conflict",
         "flowchart_parallel_label_stack",
+        "flowchart_port_alignment_matrix",
+        "flowchart_path_occlusion_maze",
+        "flowchart_mega_multihub_control",
+        "flowchart_mega_crosslane_subgraphs",
+        "flowchart_mega_braid_feedback",
+        "flowchart_mega_event_mesh",
+        "flowchart_mega_nested_regions",
         "class_tiny",
         "class_medium",
         "state_tiny",
@@ -488,6 +537,13 @@ fn bench_end_to_end(c: &mut Criterion) {
         "flowchart_component_packing",
         "flowchart_direction_conflict",
         "flowchart_parallel_label_stack",
+        "flowchart_port_alignment_matrix",
+        "flowchart_path_occlusion_maze",
+        "flowchart_mega_multihub_control",
+        "flowchart_mega_crosslane_subgraphs",
+        "flowchart_mega_braid_feedback",
+        "flowchart_mega_event_mesh",
+        "flowchart_mega_nested_regions",
         "class_tiny",
         "class_medium",
         "state_tiny",
