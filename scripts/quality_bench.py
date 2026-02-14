@@ -727,6 +727,14 @@ def parse_edge_label_boxes(svg_path: Path):
     boxes = []
 
     def looks_like_edge_label_rect(elem, in_edge_label_group):
+        has_explicit_edge_id = bool(
+            (elem.attrib.get("data-edge-id") or elem.attrib.get("data-id") or "").strip()
+        )
+        has_label_kind = bool((elem.attrib.get("data-label-kind") or "").strip())
+        # mmdr emits explicit metadata on edge-label rects; trust those attrs
+        # even when visual background opacity is suppressed.
+        if has_explicit_edge_id and has_label_kind:
+            return True
         if in_edge_label_group:
             return True
         h = parse_svg_number(elem.attrib.get("height", ""))

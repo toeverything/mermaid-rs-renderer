@@ -756,13 +756,32 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     .as_deref()
                     .unwrap_or(theme.primary_text_color.as_str());
                 if edge_label_fill != "none" {
-                    let rect_x = mid_x - label.width / 2.0 - center_pad_x;
-                    let rect_y = label_y - label.height / 2.0 - center_pad_y;
-                    let rect_w = label.width + center_pad_x * 2.0;
-                    let rect_h = label.height + center_pad_y * 2.0;
+                    let rect = LabelRect::from_center(
+                        mid_x,
+                        label_y,
+                        label.width,
+                        label.height,
+                        center_pad_x,
+                        center_pad_y,
+                    );
+                    let visible = edge_label_background_visible(
+                        layout.kind,
+                        EdgeLabelKind::Center,
+                        &edge.points,
+                        rect,
+                    );
+                    let fill_opacity = if visible { 0.90 } else { 0.0 };
+                    let stroke_opacity = if visible { 0.30 } else { 0.0 };
                     svg.push_str(&format!(
-                        "<rect class=\"edgeLabel sequenceEdgeLabel\" data-edge-id=\"{edge_id}\" data-label-kind=\"center\" x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"0.90\" stroke=\"{}\" stroke-opacity=\"0.30\" stroke-width=\"0.8\"/>",
-                        edge_label_fill, edge_label_stroke
+                        "<rect class=\"edgeLabel sequenceEdgeLabel\" data-edge-id=\"{edge_id}\" data-label-kind=\"center\" x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"{:.2}\" stroke=\"{}\" stroke-opacity=\"{:.2}\" stroke-width=\"0.8\"/>",
+                        rect.x,
+                        rect.y,
+                        rect.width,
+                        rect.height,
+                        edge_label_fill,
+                        fill_opacity,
+                        edge_label_stroke,
+                        stroke_opacity
                     ));
                 }
                 svg.push_str(&format!(
@@ -792,13 +811,32 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     .or_else(|| edge_endpoint_label_position(edge, true, end_label_offset))
             {
                 if edge_label_fill != "none" {
-                    let rect_x = x - label.width / 2.0 - endpoint_pad_x;
-                    let rect_y = y - label.height / 2.0 - endpoint_pad_y;
-                    let rect_w = label.width + endpoint_pad_x * 2.0;
-                    let rect_h = label.height + endpoint_pad_y * 2.0;
+                    let rect = LabelRect::from_center(
+                        x,
+                        y,
+                        label.width,
+                        label.height,
+                        endpoint_pad_x,
+                        endpoint_pad_y,
+                    );
+                    let visible = edge_label_background_visible(
+                        layout.kind,
+                        EdgeLabelKind::Start,
+                        &edge.points,
+                        rect,
+                    );
+                    let fill_opacity = if visible { 0.88 } else { 0.0 };
+                    let stroke_opacity = if visible { 0.28 } else { 0.0 };
                     svg.push_str(&format!(
-                        "<rect class=\"edgeLabel sequenceEndpointLabel\" data-edge-id=\"{edge_id}\" data-label-kind=\"start\" x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"0.88\" stroke=\"{}\" stroke-opacity=\"0.28\" stroke-width=\"0.75\"/>",
-                        edge_label_fill, edge_label_stroke
+                        "<rect class=\"edgeLabel sequenceEndpointLabel\" data-edge-id=\"{edge_id}\" data-label-kind=\"start\" x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"{:.2}\" stroke=\"{}\" stroke-opacity=\"{:.2}\" stroke-width=\"0.75\"/>",
+                        rect.x,
+                        rect.y,
+                        rect.width,
+                        rect.height,
+                        edge_label_fill,
+                        fill_opacity,
+                        edge_label_stroke,
+                        stroke_opacity
                     ));
                 }
                 svg.push_str(&format!(
@@ -821,13 +859,32 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                     .or_else(|| edge_endpoint_label_position(edge, false, end_label_offset))
             {
                 if edge_label_fill != "none" {
-                    let rect_x = x - label.width / 2.0 - endpoint_pad_x;
-                    let rect_y = y - label.height / 2.0 - endpoint_pad_y;
-                    let rect_w = label.width + endpoint_pad_x * 2.0;
-                    let rect_h = label.height + endpoint_pad_y * 2.0;
+                    let rect = LabelRect::from_center(
+                        x,
+                        y,
+                        label.width,
+                        label.height,
+                        endpoint_pad_x,
+                        endpoint_pad_y,
+                    );
+                    let visible = edge_label_background_visible(
+                        layout.kind,
+                        EdgeLabelKind::End,
+                        &edge.points,
+                        rect,
+                    );
+                    let fill_opacity = if visible { 0.88 } else { 0.0 };
+                    let stroke_opacity = if visible { 0.28 } else { 0.0 };
                     svg.push_str(&format!(
-                        "<rect class=\"edgeLabel sequenceEndpointLabel\" data-edge-id=\"{edge_id}\" data-label-kind=\"end\" x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"0.88\" stroke=\"{}\" stroke-opacity=\"0.28\" stroke-width=\"0.75\"/>",
-                        edge_label_fill, edge_label_stroke
+                        "<rect class=\"edgeLabel sequenceEndpointLabel\" data-edge-id=\"{edge_id}\" data-label-kind=\"end\" x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"{:.2}\" stroke=\"{}\" stroke-opacity=\"{:.2}\" stroke-width=\"0.75\"/>",
+                        rect.x,
+                        rect.y,
+                        rect.width,
+                        rect.height,
+                        edge_label_fill,
+                        fill_opacity,
+                        edge_label_stroke,
+                        stroke_opacity
                     ));
                 }
                 svg.push_str(&format!(
@@ -996,14 +1053,23 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
                 };
                 let label_w = label.width * label_scale;
                 let label_h = label.height * label_scale;
-                let rect_x = x - label_w / 2.0 - pad_x;
-                let rect_y = y - label_h / 2.0 - pad_y;
-                let rect_w = label_w + pad_x * 2.0;
-                let rect_h = label_h + pad_y * 2.0;
+                let rect = LabelRect::from_center(x, y, label_w, label_h, pad_x, pad_y);
                 let label_fill = theme.edge_label_background.as_str();
                 if label_fill != "none" {
+                    let visible = edge_label_background_visible(
+                        layout.kind,
+                        EdgeLabelKind::Center,
+                        &edge.points,
+                        rect,
+                    );
+                    let fill_opacity = if visible { fill_opacity } else { 0.0 };
+                    let stroke_opacity = if visible { stroke_opacity } else { 0.0 };
                     svg.push_str(&format!(
-                        "<rect data-edge-id=\"{edge_id}\" data-label-kind=\"center\" x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"{:.2}\" stroke=\"{}\" stroke-opacity=\"{:.2}\" stroke-width=\"0.8\"/>",
+                        "<rect data-edge-id=\"{edge_id}\" data-label-kind=\"center\" x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"{:.2}\" stroke=\"{}\" stroke-opacity=\"{:.2}\" stroke-width=\"0.8\"/>",
+                        rect.x,
+                        rect.y,
+                        rect.width,
+                        rect.height,
                         label_fill,
                         fill_opacity,
                         theme.primary_border_color,
@@ -1066,17 +1132,31 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             {
                 let label_w = label.width * endpoint_label_scale;
                 let label_h = label.height * endpoint_label_scale;
+                let rect =
+                    LabelRect::from_center(x, y, label_w, label_h, endpoint_pad_x, endpoint_pad_y);
                 if endpoint_label_fill != "none" {
-                    let rect_x = x - label_w / 2.0 - endpoint_pad_x;
-                    let rect_y = y - label_h / 2.0 - endpoint_pad_y;
-                    let rect_w = label_w + endpoint_pad_x * 2.0;
-                    let rect_h = label_h + endpoint_pad_y * 2.0;
-                    svg.push_str(&format!(
-                        "<rect data-edge-id=\"{edge_id}\" data-label-kind=\"start\" x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"{:.2}\" stroke=\"{}\" stroke-opacity=\"{:.2}\" stroke-width=\"0.8\"/>",
-                        endpoint_label_fill,
-                        endpoint_fill_opacity,
-                        theme.primary_border_color,
+                    let visible = edge_label_background_visible(
+                        layout.kind,
+                        EdgeLabelKind::Start,
+                        &edge.points,
+                        rect,
+                    );
+                    let fill_opacity = if visible { endpoint_fill_opacity } else { 0.0 };
+                    let stroke_opacity = if visible {
                         endpoint_stroke_opacity
+                    } else {
+                        0.0
+                    };
+                    svg.push_str(&format!(
+                        "<rect data-edge-id=\"{edge_id}\" data-label-kind=\"start\" x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"{:.2}\" stroke=\"{}\" stroke-opacity=\"{:.2}\" stroke-width=\"0.8\"/>",
+                        rect.x,
+                        rect.y,
+                        rect.width,
+                        rect.height,
+                        endpoint_label_fill,
+                        fill_opacity,
+                        theme.primary_border_color,
+                        stroke_opacity
                     ));
                 }
                 if layout.kind == crate::ir::DiagramKind::State {
@@ -1116,17 +1196,31 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             {
                 let label_w = label.width * endpoint_label_scale;
                 let label_h = label.height * endpoint_label_scale;
+                let rect =
+                    LabelRect::from_center(x, y, label_w, label_h, endpoint_pad_x, endpoint_pad_y);
                 if endpoint_label_fill != "none" {
-                    let rect_x = x - label_w / 2.0 - endpoint_pad_x;
-                    let rect_y = y - label_h / 2.0 - endpoint_pad_y;
-                    let rect_w = label_w + endpoint_pad_x * 2.0;
-                    let rect_h = label_h + endpoint_pad_y * 2.0;
-                    svg.push_str(&format!(
-                        "<rect data-edge-id=\"{edge_id}\" data-label-kind=\"end\" x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"{:.2}\" stroke=\"{}\" stroke-opacity=\"{:.2}\" stroke-width=\"0.8\"/>",
-                        endpoint_label_fill,
-                        endpoint_fill_opacity,
-                        theme.primary_border_color,
+                    let visible = edge_label_background_visible(
+                        layout.kind,
+                        EdgeLabelKind::End,
+                        &edge.points,
+                        rect,
+                    );
+                    let fill_opacity = if visible { endpoint_fill_opacity } else { 0.0 };
+                    let stroke_opacity = if visible {
                         endpoint_stroke_opacity
+                    } else {
+                        0.0
+                    };
+                    svg.push_str(&format!(
+                        "<rect data-edge-id=\"{edge_id}\" data-label-kind=\"end\" x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"{:.2}\" stroke=\"{}\" stroke-opacity=\"{:.2}\" stroke-width=\"0.8\"/>",
+                        rect.x,
+                        rect.y,
+                        rect.width,
+                        rect.height,
+                        endpoint_label_fill,
+                        fill_opacity,
+                        theme.primary_border_color,
+                        stroke_opacity
                     ));
                 }
                 if layout.kind == crate::ir::DiagramKind::State {
@@ -1453,6 +1547,204 @@ fn dedupe_points(points: &[(f32, f32)]) -> Vec<(f32, f32)> {
         out.push(point);
     }
     out
+}
+
+#[derive(Debug, Clone, Copy)]
+struct LabelRect {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+}
+
+impl LabelRect {
+    fn from_center(
+        center_x: f32,
+        center_y: f32,
+        label_w: f32,
+        label_h: f32,
+        pad_x: f32,
+        pad_y: f32,
+    ) -> Self {
+        let width = (label_w + pad_x * 2.0).max(0.0);
+        let height = (label_h + pad_y * 2.0).max(0.0);
+        Self {
+            x: center_x - width * 0.5,
+            y: center_y - height * 0.5,
+            width,
+            height,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EdgeLabelKind {
+    Center,
+    Start,
+    End,
+}
+
+fn edge_label_background_visible(
+    diagram_kind: crate::ir::DiagramKind,
+    label_kind: EdgeLabelKind,
+    edge_points: &[(f32, f32)],
+    rect: LabelRect,
+) -> bool {
+    if edge_points.len() < 2 || rect.width <= 0.0 || rect.height <= 0.0 {
+        return true;
+    }
+    let gap = polyline_rect_gap(edge_points, &rect);
+    match label_kind {
+        EdgeLabelKind::Center => {
+            let gap_limit = match diagram_kind {
+                crate::ir::DiagramKind::Flowchart => 1.2,
+                crate::ir::DiagramKind::Sequence => 1.0,
+                crate::ir::DiagramKind::Requirement => 1.0,
+                _ => 0.9,
+            };
+            gap <= gap_limit
+        }
+        EdgeLabelKind::Start | EdgeLabelKind::End => match diagram_kind {
+            crate::ir::DiagramKind::Sequence => gap <= 0.4,
+            crate::ir::DiagramKind::Flowchart | crate::ir::DiagramKind::Requirement => gap <= 0.35,
+            _ => false,
+        },
+    }
+}
+
+fn polyline_rect_gap(points: &[(f32, f32)], rect: &LabelRect) -> f32 {
+    if points.len() < 2 {
+        return f32::INFINITY;
+    }
+    let mut best = f32::INFINITY;
+    for segment in points.windows(2) {
+        let dist = segment_rect_gap(segment[0], segment[1], rect);
+        best = best.min(dist);
+        if best <= 1e-6 {
+            return 0.0;
+        }
+    }
+    best
+}
+
+fn segment_rect_gap(a: (f32, f32), b: (f32, f32), rect: &LabelRect) -> f32 {
+    if segment_intersects_rect(a, b, rect) {
+        return 0.0;
+    }
+    let mut best = point_rect_distance(a, rect).min(point_rect_distance(b, rect));
+    let corners = [
+        (rect.x, rect.y),
+        (rect.x + rect.width, rect.y),
+        (rect.x + rect.width, rect.y + rect.height),
+        (rect.x, rect.y + rect.height),
+    ];
+    for corner in corners {
+        best = best.min(point_segment_distance(corner, a, b));
+    }
+    best
+}
+
+fn point_rect_distance(point: (f32, f32), rect: &LabelRect) -> f32 {
+    let (px, py) = point;
+    let x1 = rect.x;
+    let y1 = rect.y;
+    let x2 = rect.x + rect.width;
+    let y2 = rect.y + rect.height;
+    let dx = if px < x1 {
+        x1 - px
+    } else if px > x2 {
+        px - x2
+    } else {
+        0.0
+    };
+    let dy = if py < y1 {
+        y1 - py
+    } else if py > y2 {
+        py - y2
+    } else {
+        0.0
+    };
+    (dx * dx + dy * dy).sqrt()
+}
+
+fn point_segment_distance(point: (f32, f32), a: (f32, f32), b: (f32, f32)) -> f32 {
+    let ab_x = b.0 - a.0;
+    let ab_y = b.1 - a.1;
+    let len_sq = ab_x * ab_x + ab_y * ab_y;
+    if len_sq <= 1e-9 {
+        let dx = point.0 - a.0;
+        let dy = point.1 - a.1;
+        return (dx * dx + dy * dy).sqrt();
+    }
+    let t = ((point.0 - a.0) * ab_x + (point.1 - a.1) * ab_y) / len_sq;
+    let t = t.clamp(0.0, 1.0);
+    let proj_x = a.0 + ab_x * t;
+    let proj_y = a.1 + ab_y * t;
+    let dx = point.0 - proj_x;
+    let dy = point.1 - proj_y;
+    (dx * dx + dy * dy).sqrt()
+}
+
+fn segment_intersects_rect(a: (f32, f32), b: (f32, f32), rect: &LabelRect) -> bool {
+    if point_in_rect(a, rect) || point_in_rect(b, rect) {
+        return true;
+    }
+    let corners = [
+        (rect.x, rect.y),
+        (rect.x + rect.width, rect.y),
+        (rect.x + rect.width, rect.y + rect.height),
+        (rect.x, rect.y + rect.height),
+    ];
+    let edges = [
+        (corners[0], corners[1]),
+        (corners[1], corners[2]),
+        (corners[2], corners[3]),
+        (corners[3], corners[0]),
+    ];
+    edges
+        .iter()
+        .any(|(c0, c1)| segments_intersect(a, b, *c0, *c1))
+}
+
+fn point_in_rect(point: (f32, f32), rect: &LabelRect) -> bool {
+    point.0 >= rect.x
+        && point.0 <= rect.x + rect.width
+        && point.1 >= rect.y
+        && point.1 <= rect.y + rect.height
+}
+
+fn segments_intersect(a: (f32, f32), b: (f32, f32), c: (f32, f32), d: (f32, f32)) -> bool {
+    let eps = 1e-6;
+    let o1 = orient(a, b, c);
+    let o2 = orient(a, b, d);
+    let o3 = orient(c, d, a);
+    let o4 = orient(c, d, b);
+
+    if o1.abs() < eps && on_segment(a, b, c, eps) {
+        return true;
+    }
+    if o2.abs() < eps && on_segment(a, b, d, eps) {
+        return true;
+    }
+    if o3.abs() < eps && on_segment(c, d, a, eps) {
+        return true;
+    }
+    if o4.abs() < eps && on_segment(c, d, b, eps) {
+        return true;
+    }
+
+    (o1 > 0.0) != (o2 > 0.0) && (o3 > 0.0) != (o4 > 0.0)
+}
+
+fn orient(a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> f32 {
+    (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0)
+}
+
+fn on_segment(a: (f32, f32), b: (f32, f32), c: (f32, f32), eps: f32) -> bool {
+    c.0 >= a.0.min(b.0) - eps
+        && c.0 <= a.0.max(b.0) + eps
+        && c.1 >= a.1.min(b.1) - eps
+        && c.1 <= a.1.max(b.1) + eps
 }
 
 fn format_sankey_value(value: f32) -> String {
@@ -1791,14 +2083,23 @@ fn render_requirement(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> 
             && let Some((x, y)) = edge.label_anchor
         {
             let (pad_x, pad_y) = edge_label_padding(layout.kind, config);
-            let rect_x = x - label.width / 2.0 - pad_x;
-            let rect_y = y - label.height / 2.0 - pad_y;
-            let rect_w = label.width + pad_x * 2.0;
-            let rect_h = label.height + pad_y * 2.0;
+            let rect = LabelRect::from_center(x, y, label.width, label.height, pad_x, pad_y);
             if req.edge_label_background != "none" {
+                let visible = edge_label_background_visible(
+                    layout.kind,
+                    EdgeLabelKind::Center,
+                    &edge.points,
+                    rect,
+                );
+                let fill_opacity = if visible { 0.5 } else { 0.0 };
                 svg.push_str(&format!(
-                    "<rect data-edge-id=\"{edge_id}\" data-label-kind=\"center\" x=\"{rect_x:.2}\" y=\"{rect_y:.2}\" width=\"{rect_w:.2}\" height=\"{rect_h:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"0.5\" stroke=\"none\"/>",
-                    req.edge_label_background
+                    "<rect data-edge-id=\"{edge_id}\" data-label-kind=\"center\" x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"2\" ry=\"2\" fill=\"{}\" fill-opacity=\"{:.2}\" stroke=\"none\"/>",
+                    rect.x,
+                    rect.y,
+                    rect.width,
+                    rect.height,
+                    req.edge_label_background,
+                    fill_opacity
                 ));
             }
             let label_color = edge
@@ -5690,5 +5991,71 @@ mod tests {
         assert!(svg.contains("id=\"edge-0\""));
         assert!(svg.contains("data-edge-id=\"edge-0\""));
         assert!(svg.contains("data-label-kind=\"center\""));
+    }
+
+    #[test]
+    fn center_label_background_hidden_when_path_is_clear() {
+        let points = vec![(0.0, 0.0), (120.0, 0.0)];
+        let touching = LabelRect {
+            x: 40.0,
+            y: -5.0,
+            width: 24.0,
+            height: 10.0,
+        };
+        assert!(edge_label_background_visible(
+            crate::ir::DiagramKind::Flowchart,
+            EdgeLabelKind::Center,
+            &points,
+            touching
+        ));
+
+        let detached = LabelRect {
+            x: 40.0,
+            y: -30.0,
+            width: 24.0,
+            height: 10.0,
+        };
+        assert!(!edge_label_background_visible(
+            crate::ir::DiagramKind::Flowchart,
+            EdgeLabelKind::Center,
+            &points,
+            detached
+        ));
+    }
+
+    #[test]
+    fn endpoint_label_background_prefers_no_box_when_not_touching() {
+        let points = vec![(0.0, 0.0), (120.0, 0.0)];
+        let detached = LabelRect {
+            x: 8.0,
+            y: -14.0,
+            width: 16.0,
+            height: 8.0,
+        };
+        assert!(!edge_label_background_visible(
+            crate::ir::DiagramKind::Class,
+            EdgeLabelKind::Start,
+            &points,
+            detached
+        ));
+
+        let touching = LabelRect {
+            x: 8.0,
+            y: -4.0,
+            width: 16.0,
+            height: 8.0,
+        };
+        assert!(!edge_label_background_visible(
+            crate::ir::DiagramKind::Class,
+            EdgeLabelKind::Start,
+            &points,
+            touching
+        ));
+        assert!(edge_label_background_visible(
+            crate::ir::DiagramKind::Sequence,
+            EdgeLabelKind::Start,
+            &points,
+            touching
+        ));
     }
 }
