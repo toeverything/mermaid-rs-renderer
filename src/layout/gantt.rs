@@ -97,9 +97,7 @@ fn parse_gantt_date(value: &str) -> Option<i32> {
     if value.is_empty() {
         return None;
     }
-    let parts: Vec<&str> = value
-        .split(|ch| ch == '-' || ch == '/' || ch == '.')
-        .collect();
+    let parts: Vec<&str> = value.split(['-', '/', '.']).collect();
     if parts.len() != 3 {
         return None;
     }
@@ -210,12 +208,11 @@ pub(super) fn compute_gantt_layout(graph: &Graph, theme: &Theme, config: &Layout
             .unwrap_or(default_duration)
             .max(0.1);
         let mut start = parsed_starts.get(&task.id).copied();
-        if start.is_none() {
-            if let Some(after_id) = task.after.as_deref() {
-                if let Some((_, end)) = timing.get(after_id) {
-                    start = Some(*end);
-                }
-            }
+        if start.is_none()
+            && let Some(after_id) = task.after.as_deref()
+            && let Some((_, end)) = timing.get(after_id)
+        {
+            start = Some(*end);
         }
         let fallback_base = origin.unwrap_or(0.0);
         let start = start.unwrap_or(fallback_base + cursor);

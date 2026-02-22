@@ -1,6 +1,6 @@
 {
 	"name": "@toeverything/mermaid-wasm",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"type": "module",
 	"description": "WASM wrapper for mermaid-rs-renderer",
 	"license": "MIT",

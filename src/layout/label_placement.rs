@@ -216,6 +216,7 @@ fn resolve_center_labels(
     } else {
         vec![None; edges.len()]
     };
+    let lock_preseeded_centers = kind != DiagramKind::Flowchart;
     let mut fixed_center_indices: HashSet<usize> = HashSet::new();
     for (idx, edge) in edges.iter_mut().enumerate() {
         let (Some(label), Some(anchor)) = (&edge.label, edge.label_anchor) else {
@@ -226,8 +227,8 @@ fn resolve_center_labels(
                 anchor,
                 label.width,
                 label.height,
-                label_pad_x,
-                label_pad_y,
+                label_pad_x + super::LAYOUT_BOUNDARY_PAD,
+                label_pad_y + super::LAYOUT_BOUNDARY_PAD,
                 bound,
             )
         } else {
@@ -245,9 +246,11 @@ fn resolve_center_labels(
             rect
         };
         edge.label_anchor = Some(clamped);
-        occupied_grid.insert(occupied.len(), &occupied_rect);
-        occupied.push(occupied_rect);
-        fixed_center_indices.insert(idx);
+        if lock_preseeded_centers {
+            occupied_grid.insert(occupied.len(), &occupied_rect);
+            occupied.push(occupied_rect);
+            fixed_center_indices.insert(idx);
+        }
     }
 
     // Sort movable edges by constraint level: larger labels and shorter edges
@@ -299,10 +302,10 @@ fn resolve_center_labels(
         let edge = &edges[idx];
         let mut anchors: Vec<(f32, f32, f32, f32)> = Vec::new();
 
-        if let Some((ax, ay)) = edges[idx].label_anchor {
-            if let Some(candidate) = edge_label_anchor_from_point(edge, (ax, ay)) {
-                push_anchor_unique(&mut anchors, candidate);
-            }
+        if let Some((ax, ay)) = edges[idx].label_anchor
+            && let Some(candidate) = edge_label_anchor_from_point(edge, (ax, ay))
+        {
+            push_anchor_unique(&mut anchors, candidate);
         }
         if let Some(bundle_fraction) = bundle_fractions.get(idx).and_then(|fraction| *fraction) {
             let side_bias = [0.0, -0.08, 0.08];
@@ -393,8 +396,8 @@ fn resolve_center_labels(
                         (x, y),
                         label.width,
                         label.height,
-                        label_pad_x,
-                        label_pad_y,
+                        label_pad_x + super::LAYOUT_BOUNDARY_PAD,
+                        label_pad_y + super::LAYOUT_BOUNDARY_PAD,
                         bound,
                     )
                 } else {
@@ -497,8 +500,8 @@ fn resolve_center_labels(
         for anchor in &anchors {
             if evaluate_candidates(
                 *anchor,
-                &tangent_steps,
-                &normal_steps,
+                tangent_steps,
+                normal_steps,
                 center_max_gap,
                 &mut best_penalty,
                 &mut best_pos,
@@ -510,8 +513,8 @@ fn resolve_center_labels(
             for anchor in &anchors {
                 evaluate_candidates(
                     *anchor,
-                    &tangent_steps,
-                    &normal_steps,
+                    tangent_steps,
+                    normal_steps,
                     None,
                     &mut best_penalty,
                     &mut best_pos,
@@ -554,8 +557,8 @@ fn resolve_center_labels(
             for anchor in &anchors {
                 if evaluate_candidates(
                     *anchor,
-                    &tangent_steps_wide,
-                    &normal_steps_wide,
+                    tangent_steps_wide,
+                    normal_steps_wide,
                     center_max_gap,
                     &mut best_penalty,
                     &mut best_pos,
@@ -567,8 +570,8 @@ fn resolve_center_labels(
                 for anchor in &anchors {
                     evaluate_candidates(
                         *anchor,
-                        &tangent_steps_wide,
-                        &normal_steps_wide,
+                        tangent_steps_wide,
+                        normal_steps_wide,
                         None,
                         &mut best_penalty,
                         &mut best_pos,
@@ -581,8 +584,8 @@ fn resolve_center_labels(
                 best_pos,
                 label.width,
                 label.height,
-                label_pad_x,
-                label_pad_y,
+                label_pad_x + super::LAYOUT_BOUNDARY_PAD,
+                label_pad_y + super::LAYOUT_BOUNDARY_PAD,
                 bound,
             )
         } else {
@@ -655,8 +658,8 @@ fn deoverlap_flowchart_center_labels(
                 anchor,
                 label.width,
                 label.height,
-                label_pad_x,
-                label_pad_y,
+                label_pad_x + super::LAYOUT_BOUNDARY_PAD,
+                label_pad_y + super::LAYOUT_BOUNDARY_PAD,
                 bound,
             )
         } else {
@@ -1105,8 +1108,8 @@ fn center_label_tighten_candidates(
                 center,
                 label_w,
                 label_h,
-                label_pad_x,
-                label_pad_y,
+                label_pad_x + super::LAYOUT_BOUNDARY_PAD,
+                label_pad_y + super::LAYOUT_BOUNDARY_PAD,
                 bound,
             );
         }
@@ -2076,8 +2079,8 @@ fn flowchart_center_label_candidates(
                 center,
                 label_w,
                 label_h,
-                label_pad_x,
-                label_pad_y,
+                label_pad_x + super::LAYOUT_BOUNDARY_PAD,
+                label_pad_y + super::LAYOUT_BOUNDARY_PAD,
                 bound,
             );
         }
@@ -3474,7 +3477,14 @@ fn edge_endpoint_label_position_with_avoid(
         }
     }
     if let Some(bound) = bounds {
-        let clamped = clamp_label_center_to_bounds(best_pos, label_w, label_h, pad_x, pad_y, bound);
+        let clamped = clamp_label_center_to_bounds(
+            best_pos,
+            label_w,
+            label_h,
+            pad_x + super::LAYOUT_BOUNDARY_PAD,
+            pad_y + super::LAYOUT_BOUNDARY_PAD,
+            bound,
+        );
         return Some(clamped);
     }
     Some(best_pos)

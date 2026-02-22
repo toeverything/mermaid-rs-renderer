@@ -70,7 +70,7 @@ const LABEL_RANK_FONT_SCALE: f32 = 0.5;
 const LABEL_RANK_MIN_GAP: f32 = 8.0;
 
 // Minimum padding around the entire layout bounding box.
-const LAYOUT_BOUNDARY_PAD: f32 = 8.0;
+const LAYOUT_BOUNDARY_PAD: f32 = 16.0;
 const PREFERRED_ASPECT_TOLERANCE: f32 = 0.02;
 const PREFERRED_ASPECT_MAX_EXPANSION: f32 = 6.0;
 
@@ -587,8 +587,13 @@ fn compute_flowchart_layout(
     align_disconnected_components(graph, &mut nodes, config);
     apply_visual_objectives(graph, &layout_edges, &mut nodes, theme, &effective_config);
 
-    // For state diagrams, push non-member nodes outside subgraph bounds
-    if graph.kind == crate::ir::DiagramKind::State && !graph.subgraphs.is_empty() {
+    // Keep non-member nodes outside subgraph bounds for diagram kinds where
+    // subgraphs are visual containers.
+    if matches!(
+        graph.kind,
+        crate::ir::DiagramKind::State | crate::ir::DiagramKind::Flowchart
+    ) && !graph.subgraphs.is_empty()
+    {
         push_non_members_out_of_subgraphs(graph, &mut nodes, theme, config);
     }
 
@@ -1274,6 +1279,54 @@ fn compute_flowchart_layout(
         }
     }
 
+    // Post-process flowchart edges after global crossing/deoverlap sweeps. These sweeps can
+    // introduce tiny endpoint "hooks" (e.g. a short stub followed by a turn). Clean up the
+    // endpoints while preserving obstacle/label avoidance.
+    if graph.kind == crate::ir::DiagramKind::Flowchart {
+        for idx in 0..routed_points.len() {
+            if route_label_plans
+                .get(idx)
+                .and_then(|plan| plan.as_ref())
+                .is_some()
+            {
+                continue;
+            }
+            let points = &mut routed_points[idx];
+            if points.len() < 3 {
+                continue;
+            }
+            let edge = &graph.edges[idx];
+            let from = nodes.get(&edge.from).expect("from node missing");
+            let to = nodes.get(&edge.to).expect("to node missing");
+            let port_info = edge_ports
+                .get(idx)
+                .copied()
+                .expect("edge port info missing");
+            let ctx = RouteContext {
+                from_id: &edge.from,
+                to_id: &edge.to,
+                from,
+                to,
+                direction: graph.direction,
+                config,
+                obstacles: &obstacles,
+                label_obstacles: &route_label_obstacles,
+                fast_route: false,
+                base_offset: 0.0,
+                start_side: port_info.start_side,
+                end_side: port_info.end_side,
+                start_offset: port_info.start_offset,
+                end_offset: port_info.end_offset,
+                stub_len: port_stub_length(config, from, to),
+                prefer_shorter_ties: true,
+                preferred_label_id: None,
+                preferred_label_center: None,
+            };
+            simplify_endpoint_stubs(points, &ctx);
+            *points = compress_path(points);
+        }
+    }
+
     // Global post-routing passes (crossing reduction/deoverlap) can move paths
     // after we seeded label anchors. Re-apply the reserved label via-points so
     // center labels stay attached to their owning edge paths.
@@ -1319,7 +1372,7 @@ fn compute_flowchart_layout(
             insert_label_via_point(points, (cx, cy), graph.direction);
         }
     }
-    if let Some(metrics) = stage_metrics.as_deref_mut() {
+    if let Some(metrics) = stage_metrics {
         metrics.edge_routing_us = metrics
             .edge_routing_us
             .saturating_add(edge_routing_start.elapsed().as_micros());
@@ -1653,10 +1706,10 @@ fn assign_positions_manual(
             );
 
             // Record original edge index → dummy node ID mapping.
-            if let Some(&orig_idx) = original_edge_indices.get(idx) {
-                if orig_idx < label_dummy_ids.len() {
-                    label_dummy_ids[orig_idx] = Some(dummy_id.clone());
-                }
+            if let Some(&orig_idx) = original_edge_indices.get(idx)
+                && orig_idx < label_dummy_ids.len()
+            {
+                label_dummy_ids[orig_idx] = Some(dummy_id.clone());
             }
 
             if let Some(bucket) = rank_nodes.get_mut(label_rank) {
@@ -1682,10 +1735,10 @@ fn assign_positions_manual(
         }
         let mid_gap = lo + (hi - lo - 1) / 2;
         let label_rank = mid_gap + rank_shift[mid_gap] + 1;
-        if let Some(&orig_idx) = original_edge_indices.get(idx) {
-            if let Some(Some(dummy_id)) = label_dummy_ids.get(orig_idx) {
-                label_dummy_at_rank.insert(idx, (label_rank, dummy_id.clone()));
-            }
+        if let Some(&orig_idx) = original_edge_indices.get(idx)
+            && let Some(Some(dummy_id)) = label_dummy_ids.get(orig_idx)
+        {
+            label_dummy_at_rank.insert(idx, (label_rank, dummy_id.clone()));
         }
     }
 
@@ -1987,10 +2040,10 @@ fn apply_subgraph_bands(
                 node_group.insert(node_id.clone(), group_idx);
             }
         }
-        if let Some(anchor_id) = subgraph_anchor_id(sub, nodes) {
-            if nodes.contains_key(anchor_id) {
-                node_group.insert(anchor_id.to_string(), group_idx);
-            }
+        if let Some(anchor_id) = subgraph_anchor_id(sub, nodes)
+            && nodes.contains_key(anchor_id)
+        {
+            node_group.insert(anchor_id.to_string(), group_idx);
         }
     }
 
@@ -2035,14 +2088,14 @@ fn apply_subgraph_bands(
     for edge in &graph.edges {
         let from_group = node_group.get(&edge.from);
         let to_group = node_group.get(&edge.to);
-        if let (Some(a), Some(b)) = (from_group, to_group) {
-            if a != b {
-                inter_group_edges += 1;
-                let (min_g, max_g) = if a < b { (*a, *b) } else { (*b, *a) };
-                group_links.insert((min_g, max_g));
-                *group_degree.entry(*a).or_insert(0) += 1;
-                *group_degree.entry(*b).or_insert(0) += 1;
-            }
+        if let (Some(a), Some(b)) = (from_group, to_group)
+            && a != b
+        {
+            inter_group_edges += 1;
+            let (min_g, max_g) = if a < b { (*a, *b) } else { (*b, *a) };
+            group_links.insert((min_g, max_g));
+            *group_degree.entry(*a).or_insert(0) += 1;
+            *group_degree.entry(*b).or_insert(0) += 1;
         }
     }
     let max_degree = group_degree.values().copied().max().unwrap_or(0);
@@ -2199,7 +2252,7 @@ fn apply_subgraph_bands(
             let mut best_rows = Vec::new();
             let mut best_area = f32::MAX;
             for rows in 1..=groups.len() {
-                let cols = (groups.len() + rows - 1) / rows;
+                let cols = groups.len().div_ceil(rows);
                 let mut grid: Vec<Vec<usize>> = Vec::new();
                 let mut idx = 0usize;
                 for _ in 0..rows {
@@ -2363,14 +2416,27 @@ fn compress_linear_subgraphs(
             .filter_map(|id| nodes.get(id))
             .map(|node| if horizontal { node.x } else { node.y })
             .fold(f32::MAX, f32::min);
+        let target_cross_center = order.first().and_then(|id| nodes.get(id)).map(|node| {
+            if horizontal {
+                node.y + node.height / 2.0
+            } else {
+                node.x + node.width / 2.0
+            }
+        });
         let mut cursor = min_main;
         for node_id in order {
             if let Some(node) = nodes.get_mut(&node_id) {
                 if horizontal {
                     node.x = cursor;
+                    if let Some(target_center) = target_cross_center {
+                        node.y = target_center - node.height / 2.0;
+                    }
                     cursor += node.width + gap;
                 } else {
                     node.y = cursor;
+                    if let Some(target_center) = target_cross_center {
+                        node.x = target_center - node.width / 2.0;
+                    }
                     cursor += node.height + gap;
                 }
             }
@@ -2537,22 +2603,13 @@ impl SubgraphTree {
         }
     }
 
-    /// Returns `true` if subgraph `ancestor` contains subgraph `descendant`
-    /// (i.e. `descendant`'s node set is a subset of `ancestor`'s).
-    fn is_ancestor(&self, ancestor: usize, descendant: usize) -> bool {
-        let mut cur = descendant;
-        loop {
-            match self.parent[cur] {
-                Some(p) if p == ancestor => return true,
-                Some(p) => cur = p,
-                None => return false,
-            }
-        }
-    }
-
-    /// Two subgraphs are siblings if neither is an ancestor of the other.
+    /// Two subgraphs are siblings if they share the same immediate parent.
+    ///
+    /// This excludes cross-level pairs (for example, a top-level subgraph and
+    /// one nested inside another top-level subgraph), which prevents
+    /// `separate_sibling_subgraphs` from double-shifting nested content.
     fn are_siblings(&self, a: usize, b: usize) -> bool {
-        a != b && !self.is_ancestor(a, b) && !self.is_ancestor(b, a)
+        a != b && self.parent[a] == self.parent[b]
     }
 }
 
@@ -3026,12 +3083,11 @@ fn apply_state_subgraph_layouts(
                 continue;
             }
             let b_id = sub_b.id.as_deref().unwrap_or("");
-            if sub_a.nodes.iter().any(|n| n == b_id)
-                || sub_a.nodes.iter().any(|n| n == &sub_b.label)
+            if (sub_a.nodes.iter().any(|n| n == b_id)
+                || sub_a.nodes.iter().any(|n| n == &sub_b.label))
+                && parent_of[j].is_none()
             {
-                if parent_of[j].is_none() {
-                    parent_of[j] = Some(i);
-                }
+                parent_of[j] = Some(i);
             }
         }
     }
@@ -3573,6 +3629,7 @@ fn reduce_crossing_sweep(
     const MAX_LEN_RATIO_NO_GAIN: f32 = 1.12;
     const MAX_LEN_RATIO_ONE_GAIN: f32 = 1.8;
     const MAX_LEN_RATIO_MULTI_GAIN: f32 = 2.6;
+    const MAX_REVERSE_GROWTH: f32 = 0.5;
     for &idx in order {
         if routed_points[idx].len() < 2 {
             append_path_segments(&routed_points[idx], &mut existing_segments);
@@ -3589,6 +3646,8 @@ fn reduce_crossing_sweep(
         let mut best_cross = baseline_cross;
         let mut best_overlap = baseline_overlap;
         let baseline_len = path_length(&routed_points[idx]);
+        let baseline_reverse =
+            path_main_axis_reverse_distance(&routed_points[idx], graph.direction);
         let mut best_len = baseline_len;
         let mut best_points = routed_points[idx].clone();
         let segment_count = routed_points[idx].len().saturating_sub(1);
@@ -3599,6 +3658,11 @@ fn reduce_crossing_sweep(
                     continue;
                 };
                 if flowchart_path_hits_non_endpoint_nodes(&candidate, from_id, to_id, nodes) {
+                    continue;
+                }
+                if path_main_axis_reverse_distance(&candidate, graph.direction)
+                    > baseline_reverse + MAX_REVERSE_GROWTH
+                {
                     continue;
                 }
                 let (crossings, overlap) =
@@ -3634,6 +3698,11 @@ fn reduce_crossing_sweep(
             ) {
                 let candidate = compress_path(&candidate);
                 if flowchart_path_hits_non_endpoint_nodes(&candidate, from_id, to_id, nodes) {
+                    continue;
+                }
+                if path_main_axis_reverse_distance(&candidate, graph.direction)
+                    > baseline_reverse + MAX_REVERSE_GROWTH
+                {
                     continue;
                 }
                 let (crossings, overlap) =
@@ -3849,6 +3918,7 @@ fn deoverlap_flowchart_paths(
     }
     let overlap_threshold = 0.75f32;
     let base_delta = (config.node_spacing * 0.25).max(8.0);
+    const MAX_REVERSE_GROWTH: f32 = 0.5;
     let deltas = [
         base_delta,
         -base_delta,
@@ -3871,6 +3941,8 @@ fn deoverlap_flowchart_paths(
             if baseline < overlap_threshold {
                 continue;
             }
+            let baseline_reverse =
+                path_main_axis_reverse_distance(&routed_points[idx], graph.direction);
             let mut best_overlap = baseline;
             let mut best_points = routed_points[idx].clone();
             let segment_count = routed_points[idx].len().saturating_sub(1);
@@ -3882,6 +3954,11 @@ fn deoverlap_flowchart_paths(
                         continue;
                     };
                     if flowchart_path_hits_non_endpoint_nodes(&candidate, from_id, to_id, nodes) {
+                        continue;
+                    }
+                    if path_main_axis_reverse_distance(&candidate, graph.direction)
+                        > baseline_reverse + MAX_REVERSE_GROWTH
+                    {
                         continue;
                     }
                     let overlap =
@@ -4250,8 +4327,8 @@ fn enforce_top_level_subgraph_gap(
     }
 }
 
-/// For state diagrams, push nodes that are not members of any subgraph
-/// outside the subgraph bounds so they don't visually appear inside composites.
+/// Push nodes that are not members of any subgraph outside subgraph bounds so
+/// they don't visually appear inside container blocks.
 fn push_non_members_out_of_subgraphs(
     graph: &Graph,
     nodes: &mut BTreeMap<String, NodeLayout>,
@@ -4329,10 +4406,37 @@ fn push_non_members_out_of_subgraphs(
         for (sx, sy, sx2, sy2) in &sub_bounds {
             // Check if node rectangle overlaps with subgraph rectangle
             if nx + nw > *sx && nx < *sx2 && ny + nh > *sy && ny < *sy2 {
-                // Push node below the subgraph
-                let new_y = *sy2 + gap;
                 if let Some(node_mut) = nodes.get_mut(node_id) {
-                    node_mut.y = new_y;
+                    match graph.kind {
+                        crate::ir::DiagramKind::Flowchart => {
+                            if is_horizontal(graph.direction) {
+                                let above_y = *sy - nh - gap;
+                                let below_y = *sy2 + gap;
+                                let move_above = (above_y - ny).abs();
+                                let move_below = (below_y - ny).abs();
+                                node_mut.y = if move_above <= move_below {
+                                    above_y
+                                } else {
+                                    below_y
+                                };
+                            } else {
+                                let left_x = *sx - nw - gap;
+                                let right_x = *sx2 + gap;
+                                let move_left = (left_x - nx).abs();
+                                let move_right = (right_x - nx).abs();
+                                node_mut.x = if move_left <= move_right {
+                                    left_x
+                                } else {
+                                    right_x
+                                };
+                            }
+                        }
+                        _ => {
+                            // For state diagrams, keep the previous strategy:
+                            // push node below the container.
+                            node_mut.y = *sy2 + gap;
+                        }
+                    }
                 }
                 break;
             }
@@ -4602,10 +4706,10 @@ fn align_disconnected_top_level_subgraphs(graph: &Graph, nodes: &mut BTreeMap<St
     for bound in &bounds {
         let min_main = if horizontal { bound.min_x } else { bound.min_y };
         let max_main = if horizontal { bound.max_x } else { bound.max_y };
-        if let Some(prev) = prev_max {
-            if min_main < prev {
-                return;
-            }
+        if let Some(prev) = prev_max
+            && min_main < prev
+        {
+            return;
         }
         prev_max = Some(max_main);
     }
@@ -4631,13 +4735,13 @@ fn align_disconnected_top_level_subgraphs(graph: &Graph, nodes: &mut BTreeMap<St
                 }
             }
         }
-        if let Some(anchor_id) = bound.anchor_id.as_deref() {
-            if let Some(node) = nodes.get_mut(anchor_id) {
-                if horizontal {
-                    node.y += delta;
-                } else {
-                    node.x += delta;
-                }
+        if let Some(anchor_id) = bound.anchor_id.as_deref()
+            && let Some(node) = nodes.get_mut(anchor_id)
+        {
+            if horizontal {
+                node.y += delta;
+            } else {
+                node.x += delta;
             }
         }
     }
@@ -4699,7 +4803,7 @@ fn align_disconnected_components(
                 }
             }
         }
-        if comp.len() > 0 {
+        if !comp.is_empty() {
             components.push(comp);
         }
     }
@@ -5734,6 +5838,152 @@ mod tests {
     }
 
     #[test]
+    fn compress_path_keeps_regular_terminal_stub() {
+        let points = vec![(0.0, 0.0), (0.0, 10.0), (24.0, 10.0), (24.0, 30.0)];
+        let compressed = compress_path(&points);
+        assert_eq!(compressed, points);
+    }
+
+    #[test]
+    fn simplify_endpoint_stubs_drops_axis_hook_before_diagonal_run() {
+        let config = LayoutConfig::default();
+        let from = make_node("A", 0.0, 0.0, 40.0, 40.0);
+        let to = make_node("B", 200.0, 0.0, 40.0, 40.0);
+        let obstacles: Vec<Obstacle> = Vec::new();
+        let label_obstacles: Vec<Obstacle> = Vec::new();
+        let ctx = RouteContext {
+            from_id: &from.id,
+            to_id: &to.id,
+            from: &from,
+            to: &to,
+            direction: Direction::LeftRight,
+            config: &config,
+            obstacles: &obstacles,
+            label_obstacles: &label_obstacles,
+            base_offset: 0.0,
+            start_side: EdgeSide::Right,
+            end_side: EdgeSide::Left,
+            start_offset: 0.0,
+            end_offset: 0.0,
+            fast_route: false,
+            stub_len: 0.0,
+            prefer_shorter_ties: true,
+            preferred_label_id: None,
+            preferred_label_center: None,
+        };
+
+        let mut points = vec![(0.0, 0.0), (0.0, 10.0), (10.0, 20.0)];
+        simplify_endpoint_stubs(&mut points, &ctx);
+        assert_eq!(points, vec![(0.0, 0.0), (10.0, 20.0)]);
+    }
+
+    #[test]
+    fn simplify_endpoint_stubs_drops_axis_hook_before_orthogonal_turn() {
+        let config = LayoutConfig::default();
+        let from = make_node("A", 0.0, 0.0, 40.0, 40.0);
+        let to = make_node("B", 200.0, 0.0, 40.0, 40.0);
+        let obstacles: Vec<Obstacle> = Vec::new();
+        let label_obstacles: Vec<Obstacle> = Vec::new();
+        let ctx = RouteContext {
+            from_id: &from.id,
+            to_id: &to.id,
+            from: &from,
+            to: &to,
+            direction: Direction::LeftRight,
+            config: &config,
+            obstacles: &obstacles,
+            label_obstacles: &label_obstacles,
+            base_offset: 0.0,
+            start_side: EdgeSide::Right,
+            end_side: EdgeSide::Left,
+            start_offset: 0.0,
+            end_offset: 0.0,
+            fast_route: false,
+            stub_len: 0.0,
+            prefer_shorter_ties: true,
+            preferred_label_id: None,
+            preferred_label_center: None,
+        };
+
+        let mut points = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 20.0)];
+        simplify_endpoint_stubs(&mut points, &ctx);
+        assert_eq!(points, vec![(0.0, 0.0), (10.0, 20.0)]);
+    }
+
+    #[test]
+    fn simplify_endpoint_stubs_keeps_axis_hook_when_diagonal_shortcut_hits_obstacle() {
+        let config = LayoutConfig::default();
+        let from = make_node("A", 0.0, 0.0, 40.0, 40.0);
+        let to = make_node("B", 200.0, 0.0, 40.0, 40.0);
+        let obstacles = vec![Obstacle {
+            id: "blocker".to_string(),
+            x: 3.0,
+            y: 7.0,
+            width: 4.0,
+            height: 4.0,
+            members: None,
+        }];
+        let label_obstacles: Vec<Obstacle> = Vec::new();
+        let ctx = RouteContext {
+            from_id: &from.id,
+            to_id: &to.id,
+            from: &from,
+            to: &to,
+            direction: Direction::LeftRight,
+            config: &config,
+            obstacles: &obstacles,
+            label_obstacles: &label_obstacles,
+            base_offset: 0.0,
+            start_side: EdgeSide::Right,
+            end_side: EdgeSide::Left,
+            start_offset: 0.0,
+            end_offset: 0.0,
+            fast_route: false,
+            stub_len: 0.0,
+            prefer_shorter_ties: true,
+            preferred_label_id: None,
+            preferred_label_center: None,
+        };
+
+        let mut points = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 20.0)];
+        simplify_endpoint_stubs(&mut points, &ctx);
+        assert_eq!(points, vec![(0.0, 0.0), (10.0, 0.0), (10.0, 20.0)]);
+    }
+
+    #[test]
+    fn simplify_endpoint_stubs_drops_axis_hook_after_diagonal_run() {
+        let config = LayoutConfig::default();
+        let from = make_node("A", 0.0, 0.0, 40.0, 40.0);
+        let to = make_node("B", 200.0, 0.0, 40.0, 40.0);
+        let obstacles: Vec<Obstacle> = Vec::new();
+        let label_obstacles: Vec<Obstacle> = Vec::new();
+        let ctx = RouteContext {
+            from_id: &from.id,
+            to_id: &to.id,
+            from: &from,
+            to: &to,
+            direction: Direction::LeftRight,
+            config: &config,
+            obstacles: &obstacles,
+            label_obstacles: &label_obstacles,
+            base_offset: 0.0,
+            start_side: EdgeSide::Right,
+            end_side: EdgeSide::Left,
+            start_offset: 0.0,
+            end_offset: 0.0,
+            fast_route: false,
+            stub_len: 0.0,
+            prefer_shorter_ties: true,
+            preferred_label_id: None,
+            preferred_label_center: None,
+        };
+
+        let mut points = vec![(0.0, 0.0), (10.0, 10.0), (10.0, 20.0)];
+        simplify_endpoint_stubs(&mut points, &ctx);
+        assert_eq!(points, vec![(0.0, 0.0), (10.0, 20.0)]);
+    }
+
+    #[test]
     fn edge_label_anchor_uses_path_progress_midpoint() {
         let points = vec![(0.0, 0.0), (20.0, 0.0), (20.0, 100.0)];
         let center = edge_label_anchor_from_points(&points).expect("anchor");
@@ -5855,6 +6105,210 @@ mod tests {
         };
         let points = route_edge_with_avoidance(&ctx, None, None, None);
         assert!(!points.is_empty());
+    }
+
+    #[test]
+    fn routing_prefers_single_bend_manhattan_when_diagonal_is_blocked() {
+        let config = LayoutConfig::default();
+        let from = make_node("A", -10.0, -5.0, 10.0, 10.0);
+        let to = make_node("B", 10.0, 5.0, 10.0, 10.0);
+        let obstacles = vec![Obstacle {
+            id: "blocker".to_string(),
+            x: 4.0,
+            y: 4.0,
+            width: 2.0,
+            height: 2.0,
+            members: None,
+        }];
+        let label_obstacles: Vec<Obstacle> = Vec::new();
+        let ctx = RouteContext {
+            from_id: &from.id,
+            to_id: &to.id,
+            from: &from,
+            to: &to,
+            direction: Direction::TopDown,
+            config: &config,
+            obstacles: &obstacles,
+            label_obstacles: &label_obstacles,
+            base_offset: 0.0,
+            start_side: EdgeSide::Right,
+            end_side: EdgeSide::Left,
+            start_offset: 0.0,
+            end_offset: 0.0,
+            fast_route: false,
+            stub_len: 0.0,
+            prefer_shorter_ties: true,
+            preferred_label_id: None,
+            preferred_label_center: None,
+        };
+        let points = route_edge_with_avoidance(&ctx, None, None, None);
+        assert_eq!(points, vec![(0.0, 0.0), (0.0, 10.0), (10.0, 10.0)]);
+    }
+
+    #[test]
+    fn routing_avoids_stub_foldback_on_close_vertical_edge() {
+        let config = LayoutConfig::default();
+        let from = make_node("A", 900.0, 366.0, 190.0, 54.0);
+        let to = make_node("B", 916.0, 444.0, 190.0, 54.0);
+        let obstacles: Vec<Obstacle> = Vec::new();
+        let label_obstacles: Vec<Obstacle> = Vec::new();
+        let ctx = RouteContext {
+            from_id: &from.id,
+            to_id: &to.id,
+            from: &from,
+            to: &to,
+            direction: Direction::TopDown,
+            config: &config,
+            obstacles: &obstacles,
+            label_obstacles: &label_obstacles,
+            base_offset: 0.0,
+            start_side: EdgeSide::Bottom,
+            end_side: EdgeSide::Top,
+            start_offset: 0.0,
+            end_offset: 0.0,
+            fast_route: false,
+            stub_len: port_stub_length(&config, &from, &to),
+            prefer_shorter_ties: true,
+            preferred_label_id: None,
+            preferred_label_center: None,
+        };
+
+        let points = route_edge_with_avoidance(&ctx, None, None, None);
+        assert!(points.len() >= 2);
+        for segment in points.windows(2) {
+            assert!(
+                segment[1].1 + 0.1 >= segment[0].1,
+                "route should not fold back upward for a downward edge: {:?}",
+                points
+            );
+        }
+    }
+
+    #[test]
+    fn routing_prefers_straight_path_for_short_close_vertical_edge() {
+        let config = LayoutConfig::default();
+        let from = make_node("A", 900.0, 366.0, 190.0, 54.0);
+        let to = make_node("B", 916.0, 444.0, 190.0, 54.0);
+        let obstacles: Vec<Obstacle> = Vec::new();
+        let label_obstacles: Vec<Obstacle> = Vec::new();
+        let ctx = RouteContext {
+            from_id: &from.id,
+            to_id: &to.id,
+            from: &from,
+            to: &to,
+            direction: Direction::TopDown,
+            config: &config,
+            obstacles: &obstacles,
+            label_obstacles: &label_obstacles,
+            base_offset: 0.0,
+            start_side: EdgeSide::Bottom,
+            end_side: EdgeSide::Top,
+            start_offset: 0.0,
+            end_offset: 0.0,
+            fast_route: false,
+            stub_len: port_stub_length(&config, &from, &to),
+            prefer_shorter_ties: true,
+            preferred_label_id: None,
+            preferred_label_center: None,
+        };
+
+        let points = route_edge_with_avoidance(&ctx, None, None, None);
+        assert!(
+            path_bend_count(&points) == 0,
+            "short close edge should use a straight (possibly diagonal) path: {:?}",
+            points
+        );
+    }
+
+    #[test]
+    fn linear_processors_chain_stays_aligned_and_clear_of_thread_profiler() {
+        let source =
+            include_str!("../../tests/fixtures/flowchart/linear_processors_chain.mmd");
+
+        let parsed = parse_mermaid(source).expect("parse flowchart");
+        let layout = compute_layout(&parsed.graph, &Theme::modern(), &LayoutConfig::default());
+
+        let mem = layout.nodes.get("StageA").expect("StageA");
+        let filter = layout.nodes.get("StageB").expect("StageB");
+        let tail = layout.nodes.get("StageC").expect("StageC");
+        let batch = layout.nodes.get("StageD").expect("StageD");
+        let target_x = mem.x + mem.width / 2.0;
+        for node in [filter, tail, batch] {
+            let node_center = node.x + node.width / 2.0;
+            assert!(
+                (node_center - target_x).abs() <= 0.1,
+                "processors chain should stay center-aligned for vertical edges"
+            );
+        }
+
+        let thread_profiler = layout.nodes.get("Monitor").expect("Monitor");
+        let processors = layout
+            .subgraphs
+            .iter()
+            .find(|subgraph| subgraph.label == "Processors")
+            .expect("Processors subgraph");
+        let overlap_x = (thread_profiler.x + thread_profiler.width)
+            .min(processors.x + processors.width)
+            - thread_profiler.x.max(processors.x);
+        let overlap_y = (thread_profiler.y + thread_profiler.height)
+            .min(processors.y + processors.height)
+            - thread_profiler.y.max(processors.y);
+        assert!(
+            overlap_x <= 0.0 || overlap_y <= 0.0,
+            "monitor node should not overlap Processors subgraph bounds"
+        );
+
+        let export_edge = layout
+            .edges
+            .iter()
+            .find(|edge| edge.from == "Exporter" && edge.to == "Sink")
+            .expect("Exporter->Sink edge");
+        let label = export_edge.label.as_ref().expect("export edge label");
+        let anchor = export_edge.label_anchor.expect("export edge label anchor");
+        let (_, label_pad_y) =
+            label_placement::edge_label_padding(layout.kind, &LayoutConfig::default());
+        let label_bottom = anchor.1 + label.height * 0.5 + label_pad_y;
+        assert!(
+            label_bottom <= layout.height - LAYOUT_BOUNDARY_PAD + 0.1,
+            "export edge label should stay inside outer boundary padding"
+        );
+    }
+
+    #[test]
+    fn flowchart_non_member_node_stays_outside_subgraph_and_loop_edge_no_foldback() {
+        let source =
+            include_str!("../../tests/fixtures/flowchart/iteration_cycle.mmd");
+
+        let parsed = parse_mermaid(source).expect("parse flowchart");
+        let layout = compute_layout(&parsed.graph, &Theme::modern(), &LayoutConfig::default());
+
+        let subgraph = layout
+            .subgraphs
+            .iter()
+            .find(|subgraph| subgraph.label == "Iteration Loop")
+            .expect("Iteration Loop subgraph");
+        let node_l = layout.nodes.get("L").expect("node L");
+        let overlap_x =
+            (node_l.x + node_l.width).min(subgraph.x + subgraph.width) - node_l.x.max(subgraph.x);
+        let overlap_y =
+            (node_l.y + node_l.height).min(subgraph.y + subgraph.height) - node_l.y.max(subgraph.y);
+        assert!(
+            overlap_x <= 0.0 || overlap_y <= 0.0,
+            "non-member node L should stay outside iteration loop subgraph bounds"
+        );
+
+        let loop_edge = layout
+            .edges
+            .iter()
+            .find(|edge| edge.from == "J" && edge.to == "F")
+            .expect("loop edge J->F");
+        for segment in loop_edge.points.windows(2) {
+            assert!(
+                segment[1].1 <= segment[0].1 + 0.1,
+                "J->F loop edge should not fold downward before reaching F: {:?}",
+                loop_edge.points
+            );
+        }
     }
 
     #[test]

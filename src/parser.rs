@@ -339,7 +339,7 @@ fn parse_flowchart(input: &str) -> Result<ParseOutput> {
             if let Some((node_id, node_label, node_shape, node_classes)) = parse_node_only(&line) {
                 graph.ensure_node(&node_id, node_label, node_shape);
                 apply_node_classes(&mut graph, &node_id, &node_classes);
-                add_node_to_subgraphs(&mut graph, &subgraph_stack, &node_id);
+                update_node_subgraph_membership(&mut graph, &subgraph_stack, &node_id, true);
             }
         }
     }
@@ -366,18 +366,20 @@ fn add_flowchart_edge(line: &str, graph: &mut Graph, subgraph_stack: &[usize]) -
     let mut source_ids = Vec::new();
     for source in sources {
         let (left_id, left_label, left_shape, left_classes) = parse_node_token(source);
+        let left_explicit = left_label.is_some() || left_shape.is_some();
         graph.ensure_node(&left_id, left_label, left_shape);
         apply_node_classes(graph, &left_id, &left_classes);
-        add_node_to_subgraphs(graph, subgraph_stack, &left_id);
+        update_node_subgraph_membership(graph, subgraph_stack, &left_id, left_explicit);
         source_ids.push(left_id);
     }
 
     let mut target_ids = Vec::new();
     for target in targets {
         let (right_id, right_label, right_shape, right_classes) = parse_node_token(target);
+        let right_explicit = right_label.is_some() || right_shape.is_some();
         graph.ensure_node(&right_id, right_label, right_shape);
         apply_node_classes(graph, &right_id, &right_classes);
-        add_node_to_subgraphs(graph, subgraph_stack, &right_id);
+        update_node_subgraph_membership(graph, subgraph_stack, &right_id, right_explicit);
         target_ids.push(right_id);
     }
 
@@ -1861,10 +1863,10 @@ fn parse_journey_diagram(input: &str) -> Result<ParseOutput> {
                 Some(node_label),
                 Some(crate::ir::NodeShape::Rectangle),
             );
-            if let Some(score) = score {
-                if let Some(node) = graph.nodes.get_mut(&node_id) {
-                    node.value = Some(score);
-                }
+            if let Some(score) = score
+                && let Some(node) = graph.nodes.get_mut(&node_id)
+            {
+                node.value = Some(score);
             }
             if let Some(idx) = current_section
                 && let Some(subgraph) = graph.subgraphs.get_mut(idx)
@@ -3757,15 +3759,15 @@ fn parse_architecture_diagram(input: &str) -> Result<ParseOutput> {
                         label: label.clone(),
                         nodes: Vec::new(),
                         direction: None,
-                        icon: icon,
+                        icon,
                     });
                     groups.insert(id, graph.subgraphs.len() - 1);
                 } else {
                     graph.ensure_node(&id, Some(label), Some(crate::ir::NodeShape::Rectangle));
-                    if let Some(icon_type) = icon {
-                        if let Some(node) = graph.nodes.get_mut(&id) {
-                            node.icon = Some(icon_type);
-                        }
+                    if let Some(icon_type) = icon
+                        && let Some(node) = graph.nodes.get_mut(&id)
+                    {
+                        node.icon = Some(icon_type);
                     }
                     if let Some(parent_id) = parent
                         && let Some(idx) = groups.get(&parent_id).copied()
@@ -3823,11 +3825,9 @@ fn parse_architecture_node(
     };
     let id_part = node_part.split('[').next().unwrap_or(node_part).trim();
     let icon = if let Some(paren_start) = id_part.find('(') {
-        if let Some(paren_end) = id_part.find(')') {
-            Some(id_part[paren_start + 1..paren_end].trim().to_string())
-        } else {
-            None
-        }
+        id_part
+            .find(')')
+            .map(|paren_end| id_part[paren_start + 1..paren_end].trim().to_string())
     } else {
         None
     };
@@ -4827,6 +4827,56 @@ fn add_node_to_subgraphs(graph: &mut Graph, subgraph_stack: &[usize], node_id: &
     for idx in subgraph_stack {
         add_node_to_subgraph(graph, *idx, node_id);
     }
+}
+
+fn remove_node_from_subgraph(graph: &mut Graph, idx: usize, node_id: &str) {
+    if let Some(subgraph) = graph.subgraphs.get_mut(idx) {
+        subgraph.nodes.retain(|candidate| candidate != node_id);
+    }
+}
+
+fn update_node_subgraph_membership(
+    graph: &mut Graph,
+    subgraph_stack: &[usize],
+    node_id: &str,
+    explicit_definition: bool,
+) {
+    if graph.subgraphs.is_empty() {
+        return;
+    }
+
+    let existing: Vec<usize> = graph
+        .subgraphs
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, subgraph)| {
+            if subgraph.nodes.iter().any(|candidate| candidate == node_id) {
+                Some(idx)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if explicit_definition {
+        for idx in existing
+            .iter()
+            .copied()
+            .filter(|idx| !subgraph_stack.contains(idx))
+        {
+            remove_node_from_subgraph(graph, idx, node_id);
+        }
+
+        add_node_to_subgraphs(graph, subgraph_stack, node_id);
+        return;
+    }
+
+    let belongs_to_external_scope = existing.iter().any(|idx| !subgraph_stack.contains(idx));
+    if belongs_to_external_scope {
+        return;
+    }
+
+    add_node_to_subgraphs(graph, subgraph_stack, node_id);
 }
 
 fn split_statements(line: &str) -> Vec<String> {
@@ -5851,6 +5901,35 @@ mod tests {
         assert!(outer.nodes.contains(&"B".to_string()));
         assert!(inner.nodes.contains(&"A".to_string()));
         assert!(inner.nodes.contains(&"B".to_string()));
+    }
+
+    #[test]
+    fn parse_cross_subgraph_reference_keeps_explicit_owner() {
+        let input =
+            include_str!("../tests/fixtures/flowchart/cross_subgraph_reference.mmd");
+
+        let parsed = parse_mermaid(input).unwrap();
+        let guest = parsed
+            .graph
+            .subgraphs
+            .iter()
+            .find(|subgraph| subgraph.id.as_deref() == Some("ZoneA"))
+            .expect("ZoneA subgraph");
+        let host = parsed
+            .graph
+            .subgraphs
+            .iter()
+            .find(|subgraph| subgraph.id.as_deref() == Some("ZoneB"))
+            .expect("ZoneB subgraph");
+
+        assert!(
+            !guest.nodes.contains(&"SharedNode".to_string()),
+            "ZoneA should not keep externally-defined node"
+        );
+        assert!(
+            host.nodes.contains(&"SharedNode".to_string()),
+            "ZoneB should own explicitly-defined node"
+        );
     }
 
     #[test]

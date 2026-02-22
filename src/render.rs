@@ -996,17 +996,17 @@ pub fn render_svg(layout: &Layout, theme: &Theme, config: &LayoutConfig) -> Stri
             ));
 
             if overlay_flowchart {
-                if edge.arrow_start {
-                    if let Some(point) = edge.points.first().copied() {
-                        let angle = edge_endpoint_angle(&edge.points, true);
-                        overlay_arrows.push((true, point, angle, stroke.clone(), stroke_width));
-                    }
+                if edge.arrow_start
+                    && let Some(point) = edge.points.first().copied()
+                {
+                    let angle = edge_endpoint_angle(&edge.points, true);
+                    overlay_arrows.push((true, point, angle, stroke.clone(), stroke_width));
                 }
-                if edge.arrow_end {
-                    if let Some(point) = edge.points.last().copied() {
-                        let angle = edge_endpoint_angle(&edge.points, false);
-                        overlay_arrows.push((false, point, angle, stroke.clone(), stroke_width));
-                    }
+                if edge.arrow_end
+                    && let Some(point) = edge.points.last().copied()
+                {
+                    let angle = edge_endpoint_angle(&edge.points, false);
+                    overlay_arrows.push((false, point, angle, stroke.clone(), stroke_width));
                 }
             }
 
@@ -1595,15 +1595,12 @@ fn edge_label_background_visible(
     }
     let gap = polyline_rect_gap(edge_points, &rect);
     match label_kind {
-        EdgeLabelKind::Center => {
-            let gap_limit = match diagram_kind {
-                crate::ir::DiagramKind::Flowchart => 1.2,
-                crate::ir::DiagramKind::Sequence => 1.0,
-                crate::ir::DiagramKind::Requirement => 1.0,
-                _ => 0.9,
-            };
-            gap <= gap_limit
-        }
+        EdgeLabelKind::Center => match diagram_kind {
+            crate::ir::DiagramKind::Flowchart => true,
+            crate::ir::DiagramKind::Sequence => gap <= 1.0,
+            crate::ir::DiagramKind::Requirement => gap <= 1.0,
+            _ => gap <= 0.9,
+        },
         EdgeLabelKind::Start | EdgeLabelKind::End => match diagram_kind {
             crate::ir::DiagramKind::Sequence => gap <= 0.4,
             crate::ir::DiagramKind::Flowchart | crate::ir::DiagramKind::Requirement => gap <= 0.35,
@@ -5236,12 +5233,11 @@ fn render_er_node(
     let mut max_name_width = 0.0f32;
     let mut max_badge_width = 0.0f32;
     for attr in &attrs {
-        if !attr.data_type.is_empty() {
-            if let Some(width) =
+        if !attr.data_type.is_empty()
+            && let Some(width) =
                 text_metrics::measure_text_width(&attr.data_type, font_size, &theme.font_family)
-            {
-                max_type_width = max_type_width.max(width);
-            }
+        {
+            max_type_width = max_type_width.max(width);
         }
         if let Some(width) =
             text_metrics::measure_text_width(&attr.name, font_size, &theme.font_family)
@@ -5994,7 +5990,7 @@ mod tests {
     }
 
     #[test]
-    fn center_label_background_hidden_when_path_is_clear() {
+    fn center_label_background_visibility_matches_diagram_kind() {
         let points = vec![(0.0, 0.0), (120.0, 0.0)];
         let touching = LabelRect {
             x: 40.0,
@@ -6015,8 +6011,14 @@ mod tests {
             width: 24.0,
             height: 10.0,
         };
-        assert!(!edge_label_background_visible(
+        assert!(edge_label_background_visible(
             crate::ir::DiagramKind::Flowchart,
+            EdgeLabelKind::Center,
+            &points,
+            detached
+        ));
+        assert!(!edge_label_background_visible(
+            crate::ir::DiagramKind::Class,
             EdgeLabelKind::Center,
             &points,
             detached

@@ -1,0 +1,32 @@
+flowchart TD
+    subgraph ZoneA[Input Boundary]
+        style ZoneA fill:#f9f,stroke:#333,stroke-width:2px
+        P1[Input] -->|Stats| Relay[Relay]
+        K[Agent] -->|Metrics| Relay
+        Producer[Producer] -->|Events| Relay
+        Relay -- "Forward" --> Channel[Connection]
+    end
+
+    subgraph ZoneB[Collector Boundary]
+        style ZoneB fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+        Channel -->|Stream| Adapter[Adapter]
+        Controller[Controller] -->|Direct Call| Queue
+        Monitor[Monitor] -->|Snapshots| Queue
+
+        subgraph WorkerPool [Worker Pool]
+            style WorkerPool fill:#fff,stroke:#666,stroke-dasharray: 5 5
+            Adapter --> Pipeline
+            Queue --> Pipeline
+            Pipeline[Processors]
+
+            subgraph Processors
+                StageA[Limiter] --> StageB[Cleaner]
+                StageB --> StageC[Sampler]
+                StageC --> StageD[Batcher]
+            end
+
+            StageD --> Exporter[Exporter]
+        end
+    end
+
+    Exporter -->|Push| Sink[Sink]

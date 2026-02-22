@@ -294,7 +294,7 @@ pub(super) fn compute_ranks_subset(
         for id in &set {
             if !processed.contains(id) {
                 let key = order_key(id.as_str());
-                if best.as_ref().map_or(true, |(bk, _)| key < *bk) {
+                if best.as_ref().is_none_or(|(bk, _)| key < *bk) {
                     best = Some((key, id.clone()));
                 }
             }

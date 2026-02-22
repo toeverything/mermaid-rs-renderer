@@ -1,0 +1,24 @@
+flowchart TD
+    A[Start] --> B{Decision}
+    B -->|yes| C[Do work]
+    C --> D{More?}
+    D -->|yes| B
+    D -->|no| E[Done]
+
+    subgraph Iteration Loop
+        E --> F[Step]
+        F --> G{Issue?}
+        G -- yes --> H[Review]
+        H --> I[Plan]
+        I --> J[Edit]
+        J --> F
+        G -- no --> K[Module done]
+    end
+
+    K --> L[Module complete]
+    L --> M[QA review]
+    M --> N{Need refine?}
+    N -- yes --> O[Refactor]
+    O --> L
+    N -- no --> P[Next]
+    P --> A
