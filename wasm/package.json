@@ -1,0 +1,35 @@
+{
+	"name": "@toeverything/mermaid-wasm",
+	"version": "0.1.0",
+	"type": "module",
+	"description": "WASM wrapper for mermaid-rs-renderer",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/toeverything/mermaid-rs-renderer.git",
+		"directory": "wasm"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"main": "./pkg/affine_mermaid_renderer_wasm.js",
+	"types": "./pkg/affine_mermaid_renderer_wasm.d.ts",
+	"exports": {
+		".": "./pkg/affine_mermaid_renderer_wasm.js",
+		"./pkg/*": "./pkg/*"
+	},
+	"files": [
+		"pkg",
+		"README.md",
+		"LICENSE"
+	],
+	"scripts": {
+		"build": "wasm-pack build --target web --release --out-dir pkg && node scripts/postbuild.mjs",
+		"build:dev": "wasm-pack build --target web --dev --out-dir pkg && node scripts/postbuild.mjs",
+		"check:rust": "cargo test",
+		"prepack": "npm run build"
+	},
+	"devDependencies": {
+		"wasm-pack": "0.14.0"
+	}
+}

@@ -1,0 +1,25 @@
+[package]
+edition = "2024"
+name = "affine_mermaid_renderer_wasm"
+version = "0.2.0"
+description = "WASM wrapper for mermaid-rs-renderer"
+license = "MIT"
+repository = "https://github.com/toeverything/mermaid-rs-renderer"
+readme = "README.md"
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = [
+  "-O",
+  "--enable-bulk-memory",
+  "--enable-bulk-memory-opt",
+  "--enable-nontrapping-float-to-int",
+]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+mermaid-rs-renderer = { path = "..", default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+wasm-bindgen = "0.2"
