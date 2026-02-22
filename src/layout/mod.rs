@@ -48,7 +48,22 @@ use crate::text_metrics;
 use crate::theme::{Theme, adjust_color, parse_color_to_hsl};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
+
+#[cfg(target_arch = "wasm32")]
+struct Instant;
+
+#[cfg(target_arch = "wasm32")]
+impl Instant {
+    fn now() -> Self {
+        Self
+    }
+
+    fn elapsed(&self) -> std::time::Duration {
+        std::time::Duration::ZERO
+    }
+}
 
 // Label placement padding (resolved per diagram kind).
 const LABEL_RANK_FONT_SCALE: f32 = 0.5;

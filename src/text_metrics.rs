@@ -13,18 +13,34 @@ pub fn measure_text_width(text: &str, font_size: f32, font_family: &str) -> Opti
     if text.is_empty() || font_size <= 0.0 {
         return Some(0.0);
     }
-    let mut guard = TEXT_MEASURER.lock().ok()?;
-    guard.measure(text, font_size, font_family)
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = font_family;
+        return None;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut guard = TEXT_MEASURER.lock().ok()?;
+        guard.measure(text, font_size, font_family)
+    }
 }
 
 pub fn average_char_width(font_family: &str, font_size: f32) -> Option<f32> {
     if font_size <= 0.0 {
         return None;
     }
-    let sample = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    let width = measure_text_width(sample, font_size, font_family)?;
-    let count = sample.chars().count().max(1) as f32;
-    Some(width / count)
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = font_family;
+        return None;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let sample = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        let width = measure_text_width(sample, font_size, font_family)?;
+        let count = sample.chars().count().max(1) as f32;
+        Some(width / count)
+    }
 }
 
 struct TextMeasurer {
