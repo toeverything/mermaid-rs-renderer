@@ -352,16 +352,8 @@ fn add_flowchart_edge(line: &str, graph: &mut Graph, subgraph_stack: &[usize]) -
         return false;
     };
 
-    let sources: Vec<&str> = left
-        .split('&')
-        .map(|part| part.trim())
-        .filter(|part| !part.is_empty())
-        .collect();
-    let targets: Vec<&str> = right
-        .split('&')
-        .map(|part| part.trim())
-        .filter(|part| !part.is_empty())
-        .collect();
+    let sources = split_on_ampersand(&left);
+    let targets = split_on_ampersand(&right);
 
     let mut source_ids = Vec::new();
     for source in sources {
@@ -825,16 +817,19 @@ fn edge_meta_from_state_token(token: &str) -> EdgeMeta {
 fn normalize_state_token(
     token: &str,
     is_start: bool,
-    start_counter: &mut usize,
+    start_states: &mut HashMap<String, String>,
     end_states: &mut HashMap<String, String>,
     scope: &str,
 ) -> (String, crate::ir::NodeShape, Option<String>) {
     let trimmed = token.trim();
     if trimmed == "[*]" || trimmed == "*" {
         let (id, shape) = if is_start {
-            // Start states are unique - each [*] --> X creates a new start node
-            let id = format!("__start_{}__", *start_counter);
-            *start_counter += 1;
+            // Start states are shared per scope. This lets fan-out/fan-in
+            // patterns be recognized and rendered as fork/join bars.
+            let id = start_states
+                .entry(scope.to_string())
+                .or_insert_with(|| format!("__start_{}__", scope))
+                .clone();
             (id, crate::ir::NodeShape::Circle)
         } else {
             // End states are shared per scope - all X --> [*] in same scope go to same node
@@ -3515,16 +3510,8 @@ fn parse_block_diagram(input: &str) -> Result<ParseOutput> {
             continue;
         }
         if let Some((left, label, right, edge_meta)) = parse_edge_line(line) {
-            let sources: Vec<&str> = left
-                .split('&')
-                .map(|part| part.trim())
-                .filter(|part| !part.is_empty())
-                .collect();
-            let targets: Vec<&str> = right
-                .split('&')
-                .map(|part| part.trim())
-                .filter(|part| !part.is_empty())
-                .collect();
+            let sources = split_on_ampersand(&left);
+            let targets = split_on_ampersand(&right);
 
             for source in &sources {
                 let (source_id, source_label, source_shape, source_classes) =
@@ -4217,7 +4204,7 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
     let (lines, init_config) = preprocess_input(input)?;
 
     let mut labels: HashMap<String, String> = HashMap::new();
-    let mut start_counter: usize = 0;
+    let mut start_states: HashMap<String, String> = HashMap::new();
     let mut end_states: HashMap<String, String> = HashMap::new();
     let mut subgraph_stack: Vec<usize> = Vec::new();
     let mut region_counter: usize = 0;
@@ -4403,14 +4390,14 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
                 let (left_id, left_shape, left_label_override) = normalize_state_token(
                     &left_token,
                     true,
-                    &mut start_counter,
+                    &mut start_states,
                     &mut end_states,
                     &scope,
                 );
                 let (right_id, right_shape, right_label_override) = normalize_state_token(
                     &right_token,
                     false,
-                    &mut start_counter,
+                    &mut start_states,
                     &mut end_states,
                     &scope,
                 );
@@ -4507,6 +4494,46 @@ fn parse_state_diagram(input: &str) -> Result<ParseOutput> {
                 record_region_node(&mut composite_stack, &id);
                 continue;
             }
+        }
+    }
+
+    // Convert scoped [*] fan-out/fan-in nodes into fork/join bars.
+    let mut outgoing_counts: HashMap<&str, usize> = HashMap::new();
+    let mut incoming_counts: HashMap<&str, usize> = HashMap::new();
+    for edge in &graph.edges {
+        *outgoing_counts.entry(edge.from.as_str()).or_insert(0) += 1;
+        *incoming_counts.entry(edge.to.as_str()).or_insert(0) += 1;
+    }
+    let fork_ids: Vec<String> = start_states
+        .iter()
+        .filter_map(|(scope, id)| {
+            if scope == "root" {
+                return None;
+            }
+            if outgoing_counts.get(id.as_str()).copied().unwrap_or(0) > 1 {
+                Some(id.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+    let join_ids: Vec<String> = end_states
+        .iter()
+        .filter_map(|(scope, id)| {
+            if scope == "root" {
+                return None;
+            }
+            if incoming_counts.get(id.as_str()).copied().unwrap_or(0) > 1 {
+                Some(id.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+    for id in fork_ids.into_iter().chain(join_ids.into_iter()) {
+        if let Some(node) = graph.nodes.get_mut(&id) {
+            node.shape = crate::ir::NodeShape::ForkJoin;
+            node.label.clear();
         }
     }
 
@@ -5077,6 +5104,31 @@ fn mask_bracket_content(line: &str) -> String {
         prev_char = ch;
     }
     result
+}
+
+/// Split `input` on `&` that appear outside brackets, parentheses, braces, and quotes.
+///
+/// Uses [`mask_bracket_content`] to blank out quoted/bracketed content while
+/// preserving byte positions, then splits on `&` positions found in the masked
+/// string but slices from the original — so `A["foo & bar"]` is never split.
+fn split_on_ampersand<'a>(input: &'a str) -> Vec<&'a str> {
+    let masked = mask_bracket_content(input);
+    let mut parts = Vec::new();
+    let mut start = 0usize;
+    for (i, ch) in masked.char_indices() {
+        if ch == '&' {
+            let part = input[start..i].trim();
+            if !part.is_empty() {
+                parts.push(part);
+            }
+            start = i + ch.len_utf8();
+        }
+    }
+    let last = input[start..].trim();
+    if !last.is_empty() {
+        parts.push(last);
+    }
+    parts
 }
 
 fn split_edge_chain(line: &str) -> Option<Vec<String>> {
@@ -5815,6 +5867,45 @@ fn count_indent(line: &str) -> usize {
 mod tests {
     use super::*;
     use crate::ir::DiagramKind;
+
+    #[test]
+    fn split_on_ampersand_plain() {
+        assert_eq!(split_on_ampersand("A & B & C"), vec!["A", "B", "C"]);
+    }
+
+    #[test]
+    fn split_on_ampersand_preserves_label_ampersand() {
+        let parts = split_on_ampersand(r#"A["foo & bar"]"#);
+        assert_eq!(parts, vec![r#"A["foo & bar"]"#]);
+    }
+
+    #[test]
+    fn split_on_ampersand_mixed() {
+        let parts = split_on_ampersand(r#"A["foo & bar"] & B"#);
+        assert_eq!(parts, vec![r#"A["foo & bar"]"#, "B"]);
+    }
+
+    #[test]
+    fn parse_ampersand_in_node_label_not_split() {
+        let input = r#"flowchart LR
+A["reads artifacts & computes deps"] --> B"#;
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.nodes.len(), 2, "ampersand in label must not create extra nodes");
+        assert_eq!(parsed.graph.edges.len(), 1);
+        assert!(parsed.graph.nodes.contains_key("A"));
+        assert!(parsed.graph.nodes.contains_key("B"));
+        assert_eq!(parsed.graph.nodes["A"].label, "reads artifacts & computes deps");
+    }
+
+    #[test]
+    fn parse_parallel_ampersand_with_label_ampersand() {
+        let input = r#"flowchart LR
+A["foo & bar"] & B --> C"#;
+        let parsed = parse_mermaid(input).unwrap();
+        assert_eq!(parsed.graph.edges.len(), 2, "two parallel edges expected");
+        assert_eq!(parsed.graph.nodes.len(), 3);
+        assert_eq!(parsed.graph.nodes["A"].label, "foo & bar");
+    }
 
     #[test]
     fn parse_simple_flowchart() {
