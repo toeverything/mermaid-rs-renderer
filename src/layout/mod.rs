@@ -6222,8 +6222,7 @@ mod tests {
 
     #[test]
     fn linear_processors_chain_stays_aligned_and_clear_of_thread_profiler() {
-        let source =
-            include_str!("../../tests/fixtures/flowchart/linear_processors_chain.mmd");
+        let source = include_str!("../../tests/fixtures/flowchart/linear_processors_chain.mmd");
 
         let parsed = parse_mermaid(source).expect("parse flowchart");
         let layout = compute_layout(&parsed.graph, &Theme::modern(), &LayoutConfig::default());
@@ -6276,8 +6275,7 @@ mod tests {
 
     #[test]
     fn flowchart_non_member_node_stays_outside_subgraph_and_loop_edge_no_foldback() {
-        let source =
-            include_str!("../../tests/fixtures/flowchart/iteration_cycle.mmd");
+        let source = include_str!("../../tests/fixtures/flowchart/iteration_cycle.mmd");
 
         let parsed = parse_mermaid(source).expect("parse flowchart");
         let layout = compute_layout(&parsed.graph, &Theme::modern(), &LayoutConfig::default());

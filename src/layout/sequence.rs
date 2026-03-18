@@ -22,6 +22,17 @@ enum SequenceLabelPlacementMode {
     Endpoint,
 }
 
+fn clamp_f32_with_degenerate_bounds(value: f32, min: f32, max: f32) -> f32 {
+    if !min.is_finite() || !max.is_finite() {
+        return value;
+    }
+    if min <= max {
+        value.clamp(min, max)
+    } else {
+        (min + max) * 0.5
+    }
+}
+
 pub(super) fn compute_sequence_layout(
     graph: &Graph,
     theme: &Theme,
@@ -297,7 +308,7 @@ pub(super) fn compute_sequence_layout(
             }
             let frame_pad_x = theme.font_size * 0.7;
             let frame_x = min_x - frame_pad_x;
-            let frame_width = (max_x - min_x) + frame_pad_x * 2.0;
+            let mut frame_width = (max_x - min_x) + frame_pad_x * 2.0;
 
             let first_y = message_ys
                 .get(frame.start_idx)
@@ -374,17 +385,21 @@ pub(super) fn compute_sequence_layout(
                     };
                     let side_pad = theme.font_size * 0.45;
                     let label_x = if section_idx == 0 {
+                        let required_width = label_box_w + theme.font_size * 2.0 + block.width;
+                        frame_width = frame_width.max(required_width);
                         let preferred =
                             frame_x + label_box_w + theme.font_size * 1.6 + block.width / 2.0;
                         let min_x = frame_x + block.width / 2.0 + theme.font_size * 0.4;
                         let max_x =
                             frame_x + frame_width - block.width / 2.0 - theme.font_size * 0.4;
-                        preferred.clamp(min_x, max_x)
+                        clamp_f32_with_degenerate_bounds(preferred, min_x, max_x)
                     } else {
+                        let required_width = block.width + side_pad * 2.0;
+                        frame_width = frame_width.max(required_width);
                         let preferred = frame_x + side_pad + block.width / 2.0;
                         let min_x = frame_x + block.width / 2.0 + side_pad;
                         let max_x = frame_x + frame_width - block.width / 2.0 - side_pad;
-                        preferred.clamp(min_x, max_x)
+                        clamp_f32_with_degenerate_bounds(preferred, min_x, max_x)
                     };
                     section_labels.push(SequenceLabel {
                         x: label_x,

@@ -72,3 +72,27 @@ fn render_all_fixtures() {
         assert_valid_svg(&svg, &rel);
     }
 }
+
+#[test]
+fn render_sequence_frame_with_long_section_label_and_note() {
+    let input = r#"sequenceDiagram
+  participant Alice
+  participant Bob
+  Alice->John: Hello John, how are you?
+  loop HealthCheck
+    John->>John: Fight against hypochondria
+  end
+  Note right of John: Rational thoughts <br/>prevail!
+  John-->>Alice: Great!
+  John->>Bob: How about you?
+  Bob-->>John: Jolly good!"#;
+    let parsed = parse_mermaid(input).expect("parse failed");
+    let theme = Theme::modern();
+    let layout_config = LayoutConfig::default();
+    let layout = mermaid_rs_renderer::compute_layout(&parsed.graph, &theme, &layout_config);
+    let svg = render_svg(&layout, &theme, &layout_config);
+
+    assert_valid_svg(&svg, "sequence_long_section_label");
+    assert!(svg.contains("HealthCheck"), "missing frame section label");
+    assert!(svg.contains("Rational thoughts"), "missing note label");
+}
