@@ -83,8 +83,39 @@ pub fn parse_mermaid(input: &str) -> Result<ParseOutput> {
     }
 }
 
+fn extract_frontmatter_config(frontmatter: &str) -> Option<serde_json::Value> {
+    let value = serde_yaml::from_str::<serde_json::Value>(frontmatter).ok()?;
+    value.get("config").cloned()
+}
+
+fn split_leading_frontmatter(input: &str) -> (Vec<&str>, Option<serde_json::Value>) {
+    let lines: Vec<&str> = input.lines().collect();
+    let mut first_content_idx = 0;
+    while first_content_idx < lines.len() && lines[first_content_idx].trim().is_empty() {
+        first_content_idx += 1;
+    }
+
+    if first_content_idx >= lines.len() || lines[first_content_idx].trim() != "---" {
+        return (lines, None);
+    }
+
+    let mut end_idx = first_content_idx + 1;
+    while end_idx < lines.len() {
+        let trimmed = lines[end_idx].trim();
+        if trimmed == "---" || trimmed == "..." {
+            let frontmatter = lines[first_content_idx + 1..end_idx].join("\n");
+            let config = extract_frontmatter_config(&frontmatter);
+            return (lines[end_idx + 1..].to_vec(), config);
+        }
+        end_idx += 1;
+    }
+
+    (lines, None)
+}
+
 fn detect_diagram_kind(input: &str) -> DiagramKind {
-    for raw_line in input.lines() {
+    let (lines, _) = split_leading_frontmatter(input);
+    for raw_line in lines {
         let trimmed_line = raw_line.trim();
         if trimmed_line.is_empty() {
             continue;
@@ -174,10 +205,11 @@ fn detect_diagram_kind(input: &str) -> DiagramKind {
 }
 
 fn preprocess_input(input: &str) -> Result<(Vec<String>, Option<serde_json::Value>)> {
-    let mut init_config: Option<serde_json::Value> = None;
+    let (source_lines, frontmatter_config) = split_leading_frontmatter(input);
+    let mut init_config: Option<serde_json::Value> = frontmatter_config;
     let mut lines = Vec::new();
 
-    for raw_line in input.lines() {
+    for raw_line in source_lines {
         let trimmed_line = raw_line.trim();
         if trimmed_line.is_empty() {
             continue;
@@ -206,10 +238,11 @@ fn preprocess_input(input: &str) -> Result<(Vec<String>, Option<serde_json::Valu
 }
 
 fn preprocess_input_keep_indent(input: &str) -> Result<(Vec<String>, Option<serde_json::Value>)> {
-    let mut init_config: Option<serde_json::Value> = None;
+    let (source_lines, frontmatter_config) = split_leading_frontmatter(input);
+    let mut init_config: Option<serde_json::Value> = frontmatter_config;
     let mut lines = Vec::new();
 
-    for raw_line in input.lines() {
+    for raw_line in source_lines {
         let trimmed_line = raw_line.trim();
         if trimmed_line.is_empty() {
             continue;
@@ -5917,6 +5950,17 @@ fn count_indent(line: &str) -> usize {
 mod tests {
     use super::*;
     use crate::ir::DiagramKind;
+    use std::path::Path;
+
+    fn read_fixture(rel: &str) -> String {
+        std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests")
+                .join("fixtures")
+                .join(rel),
+        )
+        .expect("fixture read failed")
+    }
 
     #[test]
     fn split_on_ampersand_plain() {
@@ -5937,8 +5981,7 @@ mod tests {
 
     #[test]
     fn parse_ampersand_in_node_label_not_split() {
-        let input = r#"flowchart LR
-A["reads artifacts & computes deps"] --> B"#;
+        let input = include_str!("../tests/fixtures/unit/parser_ampersand_label.mmd");
         let parsed = parse_mermaid(input).unwrap();
         assert_eq!(
             parsed.graph.nodes.len(),
@@ -5956,8 +5999,7 @@ A["reads artifacts & computes deps"] --> B"#;
 
     #[test]
     fn parse_parallel_ampersand_with_label_ampersand() {
-        let input = r#"flowchart LR
-A["foo & bar"] & B --> C"#;
+        let input = include_str!("../tests/fixtures/unit/parser_parallel_ampersand_label.mmd");
         let parsed = parse_mermaid(input).unwrap();
         assert_eq!(parsed.graph.edges.len(), 2, "two parallel edges expected");
         assert_eq!(parsed.graph.nodes.len(), 3);
@@ -6263,8 +6305,8 @@ A["foo & bar"] & B --> C"#;
 
     #[test]
     fn parse_pie_diagram_basic() {
-        let input = "pie showData\n  title Pets\n  \"Dogs\" : 10\n  Cats : 5";
-        let parsed = parse_mermaid(input).unwrap();
+        let input = read_fixture("pie/basic.mmd");
+        let parsed = parse_mermaid(&input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::Pie);
         assert!(parsed.graph.pie_show_data);
         assert_eq!(parsed.graph.pie_title.as_deref(), Some("Pets"));
@@ -6275,8 +6317,8 @@ A["foo & bar"] & B --> C"#;
 
     #[test]
     fn parse_mindmap_basic() {
-        let input = "mindmap\n  root((Root))\n    Child A\n    Child B\n      Grandchild";
-        let parsed = parse_mermaid(input).unwrap();
+        let input = read_fixture("mindmap/basic.mmd");
+        let parsed = parse_mermaid(&input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::Mindmap);
         assert!(parsed.graph.nodes.len() >= 4);
         assert_eq!(parsed.graph.edges.len(), 3);
@@ -6284,8 +6326,8 @@ A["foo & bar"] & B --> C"#;
 
     #[test]
     fn parse_journey_basic() {
-        let input = "journey\n  title My Journey\n  section Start\n    Step one: 5: Alice\n    Step two: 3: Alice, Bob";
-        let parsed = parse_mermaid(input).unwrap();
+        let input = read_fixture("journey/basic.mmd");
+        let parsed = parse_mermaid(&input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::Journey);
         assert_eq!(parsed.graph.journey_title.as_deref(), Some("My Journey"));
         assert_eq!(parsed.graph.subgraphs.len(), 1);
@@ -6300,8 +6342,8 @@ A["foo & bar"] & B --> C"#;
 
     #[test]
     fn parse_timeline_basic() {
-        let input = "timeline\n  title History\n  2020 : Launch\n  2021 : Growth";
-        let parsed = parse_mermaid(input).unwrap();
+        let input = read_fixture("timeline/basic.mmd");
+        let parsed = parse_mermaid(&input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::Timeline);
         assert_eq!(parsed.graph.timeline.events.len(), 2);
         assert_eq!(parsed.graph.timeline.title.as_deref(), Some("History"));
@@ -6311,8 +6353,8 @@ A["foo & bar"] & B --> C"#;
 
     #[test]
     fn parse_gantt_basic() {
-        let input = "gantt\n  title Plan\n  section Alpha\n  Task A : done, a1, 2020-01-01, 5d\n  Task B : after a1, 3d";
-        let parsed = parse_mermaid(input).unwrap();
+        let input = read_fixture("gantt/basic.mmd");
+        let parsed = parse_mermaid(&input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::Gantt);
         assert!(parsed.graph.nodes.len() >= 2);
         assert_eq!(parsed.graph.edges.len(), 1);
@@ -6320,8 +6362,8 @@ A["foo & bar"] & B --> C"#;
 
     #[test]
     fn parse_requirement_basic() {
-        let input = "requirementDiagram\n  requirement req1 {\n    id: 1\n    text: Login\n  }\n  requirement req2\n  req1 - satisfies -> req2";
-        let parsed = parse_mermaid(input).unwrap();
+        let input = read_fixture("requirement/basic.mmd");
+        let parsed = parse_mermaid(&input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::Requirement);
         assert_eq!(parsed.graph.nodes.len(), 2);
         assert_eq!(parsed.graph.edges.len(), 1);
@@ -6330,8 +6372,8 @@ A["foo & bar"] & B --> C"#;
 
     #[test]
     fn parse_gitgraph_basic() {
-        let input = "gitGraph\n  commit\n  branch feature\n  checkout feature\n  commit id:\"F1\"\n  checkout main\n  merge feature";
-        let parsed = parse_mermaid(input).unwrap();
+        let input = read_fixture("gitgraph/basic.mmd");
+        let parsed = parse_mermaid(&input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::GitGraph);
         assert!(parsed.graph.gitgraph.commits.len() >= 3);
         assert!(parsed.graph.gitgraph.branches.len() >= 2);
@@ -6339,8 +6381,8 @@ A["foo & bar"] & B --> C"#;
 
     #[test]
     fn parse_c4_basic() {
-        let input = "C4Context\n  Person(admin, \"Admin\")\n  System(sys, \"System\")\n  Rel(admin, sys, \"Uses\")\n  Boundary(b0, \"Boundary\") { SystemDb(db, \"DB\") }";
-        let parsed = parse_mermaid(input).unwrap();
+        let input = read_fixture("c4/basic.mmd");
+        let parsed = parse_mermaid(&input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::C4);
         assert!(parsed.graph.c4.shapes.len() >= 3);
         assert_eq!(parsed.graph.c4.rels.len(), 1);
@@ -6349,24 +6391,24 @@ A["foo & bar"] & B --> C"#;
 
     #[test]
     fn parse_sankey_basic() {
-        let input = "sankey\n  A, B, 10\n  B, C, 5";
-        let parsed = parse_mermaid(input).unwrap();
+        let input = read_fixture("sankey/basic.mmd");
+        let parsed = parse_mermaid(&input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::Sankey);
-        assert_eq!(parsed.graph.edges.len(), 2);
+        assert_eq!(parsed.graph.edges.len(), 3);
     }
 
     #[test]
     fn parse_quadrant_basic() {
-        let input = "quadrantChart\n  title Sample\n  A : [0.2, 0.8]\n  B : [0.7, 0.3]";
-        let parsed = parse_mermaid(input).unwrap();
+        let input = read_fixture("quadrant/basic.mmd");
+        let parsed = parse_mermaid(&input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::Quadrant);
         assert_eq!(parsed.graph.nodes.len(), 2);
     }
 
     #[test]
     fn parse_zenuml_basic() {
-        let input = "zenuml\n  Alice->Bob: Hello\n  Bob-->Alice: Reply";
-        let parsed = parse_mermaid(input).unwrap();
+        let input = read_fixture("zenuml/basic.mmd");
+        let parsed = parse_mermaid(&input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::ZenUML);
         assert_eq!(parsed.graph.sequence_participants.len(), 2);
         assert_eq!(parsed.graph.edges.len(), 2);
@@ -6374,10 +6416,10 @@ A["foo & bar"] & B --> C"#;
 
     #[test]
     fn parse_block_basic() {
-        let input = "block\n  A --> B";
-        let parsed = parse_mermaid(input).unwrap();
+        let input = read_fixture("block/basic.mmd");
+        let parsed = parse_mermaid(&input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::Block);
-        assert_eq!(parsed.graph.edges.len(), 1);
+        assert_eq!(parsed.graph.edges.len(), 4);
     }
 
     #[test]
@@ -6391,8 +6433,8 @@ A["foo & bar"] & B --> C"#;
 
     #[test]
     fn parse_kanban_basic() {
-        let input = "kanban\n  todo[To Do]\n    t1[Task 1]\n  done[Done]\n    t2[Task 2]";
-        let parsed = parse_mermaid(input).unwrap();
+        let input = read_fixture("kanban/basic.mmd");
+        let parsed = parse_mermaid(&input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::Kanban);
         assert_eq!(parsed.graph.subgraphs.len(), 2);
         assert_eq!(parsed.graph.nodes.len(), 2);
@@ -6400,8 +6442,8 @@ A["foo & bar"] & B --> C"#;
 
     #[test]
     fn parse_architecture_basic() {
-        let input = "architecture-beta\n  group api(icon)[API]\n  service web(icon)[Web] in api\n  service db(icon)[DB] in api\n  web:R --> L:db";
-        let parsed = parse_mermaid(input).unwrap();
+        let input = read_fixture("architecture/basic.mmd");
+        let parsed = parse_mermaid(&input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::Architecture);
         assert_eq!(parsed.graph.subgraphs.len(), 1);
         assert_eq!(parsed.graph.edges.len(), 1);
@@ -6409,16 +6451,16 @@ A["foo & bar"] & B --> C"#;
 
     #[test]
     fn parse_radar_basic() {
-        let input = "radar-beta\n  axis A, B, C\n  curve Alpha {1,2,3}";
-        let parsed = parse_mermaid(input).unwrap();
+        let input = read_fixture("radar/basic.mmd");
+        let parsed = parse_mermaid(&input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::Radar);
         assert_eq!(parsed.graph.nodes.len(), 1);
     }
 
     #[test]
     fn parse_treemap_basic() {
-        let input = "treemap-beta\n  Root: 100\n    Child: 40";
-        let parsed = parse_mermaid(input).unwrap();
+        let input = read_fixture("treemap/basic.mmd");
+        let parsed = parse_mermaid(&input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::Treemap);
         assert_eq!(parsed.graph.nodes.len(), 2);
         assert_eq!(parsed.graph.edges.len(), 1);
@@ -6426,8 +6468,8 @@ A["foo & bar"] & B --> C"#;
 
     #[test]
     fn parse_xy_chart_basic() {
-        let input = "xychart-beta\n  x-axis Q1, Q2\n  y-axis Units\n  bar [10, 20]";
-        let parsed = parse_mermaid(input).unwrap();
+        let input = read_fixture("xychart/basic.mmd");
+        let parsed = parse_mermaid(&input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::XYChart);
         let xychart = &parsed.graph.xychart;
         assert_eq!(xychart.x_axis_categories, vec!["Q1", "Q2"]);
@@ -6437,8 +6479,8 @@ A["foo & bar"] & B --> C"#;
 
     #[test]
     fn parse_state_diagram_basic() {
-        let input = "stateDiagram-v2\n[*] --> Idle\nIdle --> Active : start\nstate \"Waiting\" as Wait\nWait --> Active";
-        let parsed = parse_mermaid(input).unwrap();
+        let input = read_fixture("state/basic.mmd");
+        let parsed = parse_mermaid(&input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::State);
         assert!(parsed.graph.nodes.contains_key("Idle"));
         assert!(parsed.graph.nodes.contains_key("Active"));
@@ -6483,25 +6525,24 @@ A["foo & bar"] & B --> C"#;
 
     #[test]
     fn parse_state_note() {
-        let input = "stateDiagram-v2\nstate Idle\nnote right of Idle: waiting";
-        let parsed = parse_mermaid(input).unwrap();
+        let input = read_fixture("state/note.mmd");
+        let parsed = parse_mermaid(&input).unwrap();
         assert_eq!(parsed.graph.state_notes.len(), 1);
         let note = &parsed.graph.state_notes[0];
-        assert_eq!(note.target, "Idle");
-        assert_eq!(note.label, "waiting");
+        assert_eq!(note.target, "Active");
+        assert_eq!(note.label, "Running");
         assert_eq!(note.position, crate::ir::StateNotePosition::RightOf);
     }
 
     #[test]
     fn parse_sequence_diagram_basic() {
-        let input = "sequenceDiagram\nparticipant A as Alice\nparticipant Bob\nA->>Bob: Hello\nBob-->>A: Hi";
-        let parsed = parse_mermaid(input).unwrap();
+        let input = read_fixture("sequence/basic.mmd");
+        let parsed = parse_mermaid(&input).unwrap();
         assert_eq!(parsed.graph.kind, DiagramKind::Sequence);
         assert_eq!(parsed.graph.sequence_participants.len(), 2);
-        assert_eq!(parsed.graph.sequence_participants[0], "A");
+        assert_eq!(parsed.graph.sequence_participants[0], "Alice");
         assert_eq!(parsed.graph.sequence_participants[1], "Bob");
-        // Verify the display label is "Alice" (right side of "as")
-        let node = parsed.graph.nodes.get("A").unwrap();
+        let node = parsed.graph.nodes.get("Alice").unwrap();
         assert_eq!(node.label, "Alice");
         assert_eq!(parsed.graph.edges.len(), 2);
         assert_eq!(parsed.graph.edges[1].style, crate::ir::EdgeStyle::Dotted);
@@ -6619,6 +6660,25 @@ A["foo & bar"] & B --> C"#;
     }
 
     #[test]
+    fn parse_frontmatter_config_and_skip_frontmatter_body() {
+        let input = read_fixture("unit/parser_frontmatter_config.mmd");
+        let parsed = parse_mermaid(&input).unwrap();
+        assert_eq!(parsed.graph.kind, DiagramKind::Kanban);
+        assert_eq!(parsed.graph.subgraphs.len(), 1);
+        assert_eq!(parsed.graph.subgraphs[0].label, "Todo");
+        let ticket_base_url = parsed
+            .init_config
+            .as_ref()
+            .and_then(|cfg| cfg.get("kanban"))
+            .and_then(|kanban| kanban.get("ticketBaseUrl"))
+            .and_then(|value| value.as_str());
+        assert_eq!(
+            ticket_base_url,
+            Some("https://issues.example.test/browse/#TICKET#")
+        );
+    }
+
+    #[test]
     fn parses_click_directive() {
         let input = "flowchart LR\nA-->B\nclick A \"https://example.com\"";
         let parsed = parse_mermaid(input).unwrap();
@@ -6649,9 +6709,7 @@ A["foo & bar"] & B --> C"#;
     fn parse_emoji_in_node_label() {
         // Emoji characters are multi-byte UTF-8, this tests that mask_bracket_content
         // preserves byte positions correctly when masking content inside brackets
-        let input = r#"flowchart LR
-    YT -->|"Streams audio"| Speaker["🔊"]
-    A["🎵 Music"] --> B["🔈 Sound"]"#;
+        let input = include_str!("../tests/fixtures/unit/parser_emoji_label.mmd");
         let parsed = parse_mermaid(input).unwrap();
         assert!(parsed.graph.nodes.contains_key("Speaker"));
         assert!(parsed.graph.nodes.contains_key("A"));

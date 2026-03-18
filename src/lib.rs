@@ -388,47 +388,28 @@ mod tests {
 
     #[test]
     fn test_class_diagram() {
-        let svg = render(
-            r#"classDiagram
-            Animal <|-- Duck
-            Animal: +int age
-            Duck: +swim()"#,
-        )
-        .unwrap();
+        let svg = render(include_str!("../tests/fixtures/unit/lib_class_diagram.mmd")).unwrap();
         assert!(svg.contains("<svg"));
     }
 
     #[test]
     fn test_sequence_diagram() {
-        let svg = render(
-            r#"sequenceDiagram
-            Alice->>Bob: Hello
-            Bob-->>Alice: Hi"#,
-        )
+        let svg = render(include_str!(
+            "../tests/fixtures/unit/lib_sequence_diagram.mmd"
+        ))
         .unwrap();
         assert!(svg.contains("<svg"));
     }
 
     #[test]
     fn test_state_diagram() {
-        let svg = render(
-            r#"stateDiagram-v2
-            [*] --> Active
-            Active --> [*]"#,
-        )
-        .unwrap();
+        let svg = render(include_str!("../tests/fixtures/unit/lib_state_diagram.mmd")).unwrap();
         assert!(svg.contains("<svg"));
     }
 
     #[test]
     fn test_pie_diagram() {
-        let svg = render(
-            r#"pie showData
-            title Pets
-            "Dogs" : 10
-            Cats : 5"#,
-        )
-        .unwrap();
+        let svg = render(include_str!("../tests/fixtures/unit/lib_pie_diagram.mmd")).unwrap();
         assert!(svg.contains("<svg"));
         assert!(svg.contains("Dogs"));
         assert!(!svg.contains("Syntax error in text"));

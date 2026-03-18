@@ -8,6 +8,7 @@ mod journey;
 mod kanban;
 pub(crate) mod label_placement;
 mod mindmap;
+mod occupancy;
 mod pie;
 mod quadrant;
 mod radar;
@@ -29,6 +30,7 @@ use gitgraph::*;
 use journey::*;
 use kanban::*;
 use mindmap::*;
+use occupancy::*;
 use pie::*;
 use quadrant::*;
 use radar::*;
@@ -89,6 +91,55 @@ const STATE_PAD_X_SCALE: f32 = 0.9;
 const STATE_PAD_Y_SCALE: f32 = 0.65;
 const STATE_PAD_X_LABEL_RATIO: f32 = 0.12;
 const STATE_PAD_Y_LABEL_RATIO: f32 = 0.22;
+
+fn state_note_candidates(
+    target: &NodeLayout,
+    note_width: f32,
+    note_height: f32,
+    note_gap: f32,
+    position: crate::ir::StateNotePosition,
+    min_x: f32,
+) -> Vec<(f32, f32)> {
+    let target_center_y = target.y + target.height / 2.0;
+    let preferred_center_x = match position {
+        crate::ir::StateNotePosition::LeftOf => target.x - note_gap - note_width / 2.0,
+        crate::ir::StateNotePosition::RightOf => {
+            target.x + target.width + note_gap + note_width / 2.0
+        }
+    };
+    let horizontal_step = note_width * 0.3 + note_gap * 0.7;
+    let vertical_step = (note_height * 0.7).max(12.0);
+    let mut candidates = Vec::new();
+    for extra_x in [
+        0.0,
+        horizontal_step,
+        horizontal_step * 2.0,
+        horizontal_step * 3.0,
+    ] {
+        let center_x = match position {
+            crate::ir::StateNotePosition::LeftOf => preferred_center_x - extra_x,
+            crate::ir::StateNotePosition::RightOf => preferred_center_x + extra_x,
+        };
+        if center_x < min_x {
+            continue;
+        }
+        for offset_y in [
+            0.0,
+            -vertical_step,
+            vertical_step,
+            -vertical_step * 2.0,
+            vertical_step * 2.0,
+            -vertical_step * 3.0,
+            vertical_step * 3.0,
+        ] {
+            candidates.push((center_x, target_center_y + offset_y));
+        }
+    }
+    if candidates.is_empty() {
+        candidates.push((preferred_center_x.max(min_x), target_center_y));
+    }
+    candidates
+}
 
 // ── Subgraph padding ─────────────────────────────────────────────────
 const FLOWCHART_PAD_MAIN: f32 = 40.0;
@@ -1432,6 +1483,25 @@ fn compute_flowchart_layout(
         let note_pad_x = theme.font_size * STATE_NOTE_PAD_X_SCALE;
         let note_pad_y = theme.font_size * STATE_NOTE_PAD_Y_SCALE;
         let note_gap = (theme.font_size * STATE_NOTE_GAP_SCALE).max(STATE_NOTE_GAP_MIN);
+        let note_obstacle_pad_x = note_pad_x.max(theme.font_size * 0.25);
+        let note_obstacle_pad_y = note_pad_y.max(theme.font_size * 0.25);
+        let mut occupied: Vec<Rect> = nodes
+            .values()
+            .map(|node| {
+                inflate_rect(
+                    (node.x, node.y, node.width, node.height),
+                    note_obstacle_pad_x,
+                    note_obstacle_pad_y,
+                )
+            })
+            .collect();
+        occupied.extend(subgraphs.iter().map(|subgraph| {
+            inflate_rect(
+                (subgraph.x, subgraph.y, subgraph.width, subgraph.height),
+                note_obstacle_pad_x,
+                note_obstacle_pad_y,
+            )
+        }));
         for note in &graph.state_notes {
             let Some(target) = nodes.get(&note.target) else {
                 continue;
@@ -1439,11 +1509,33 @@ fn compute_flowchart_layout(
             let label = measure_label(&note.label, theme, config);
             let width = label.width + note_pad_x * 2.0;
             let height = label.height + note_pad_y * 2.0;
-            let y = target.y + target.height / 2.0 - height / 2.0;
-            let x = match note.position {
-                crate::ir::StateNotePosition::LeftOf => target.x - note_gap - width,
-                crate::ir::StateNotePosition::RightOf => target.x + target.width + note_gap,
+            let preferred_center_x = match note.position {
+                crate::ir::StateNotePosition::LeftOf => target.x - note_gap - width / 2.0,
+                crate::ir::StateNotePosition::RightOf => {
+                    target.x + target.width + note_gap + width / 2.0
+                }
             };
+            let preferred_center = (preferred_center_x, target.y + target.height / 2.0);
+            let candidates = state_note_candidates(
+                target,
+                width,
+                height,
+                note_gap,
+                note.position,
+                width / 2.0 + LAYOUT_BOUNDARY_PAD * 0.5,
+            );
+            let placement = place_anchored_rect(
+                width,
+                height,
+                &candidates,
+                &occupied,
+                None,
+                preferred_center,
+                0.25,
+                0.08,
+            );
+            let x = placement.rect.0;
+            let y = placement.rect.1;
             state_notes.push(StateNoteLayout {
                 x,
                 y,
@@ -1453,6 +1545,11 @@ fn compute_flowchart_layout(
                 position: note.position,
                 target: note.target.clone(),
             });
+            occupied.push(inflate_rect(
+                placement.rect,
+                note_obstacle_pad_x,
+                note_obstacle_pad_y,
+            ));
         }
     }
     let (mut max_x, mut max_y) = bounds_with_edges(&nodes, &subgraphs, &edges);
@@ -5406,7 +5503,8 @@ fn build_subgraph_layouts(
     config: &LayoutConfig,
 ) -> Vec<SubgraphLayout> {
     let mut subgraphs = Vec::new();
-    for sub in &graph.subgraphs {
+    let mut retained_indices = Vec::new();
+    for (sub_idx, sub) in graph.subgraphs.iter().enumerate() {
         let mut min_x = f32::MAX;
         let mut min_y = f32::MAX;
         let mut max_x = f32::MIN;
@@ -5424,6 +5522,8 @@ fn build_subgraph_layouts(
         if min_x == f32::MAX {
             continue;
         }
+
+        retained_indices.push(sub_idx);
 
         let style = resolve_subgraph_style(sub, graph);
         let mut label_block = measure_label(&sub.label, theme, config);
@@ -5459,6 +5559,11 @@ fn build_subgraph_layouts(
     }
 
     if subgraphs.len() > 1 {
+        let retained_map: HashMap<usize, usize> = retained_indices
+            .iter()
+            .enumerate()
+            .map(|(layout_idx, &graph_idx)| (graph_idx, layout_idx))
+            .collect();
         let tree = SubgraphTree::build(graph);
 
         // Collect all descendants for each subgraph via the tree so we only
@@ -5468,8 +5573,13 @@ fn build_subgraph_layouts(
         let mut all_descendants: Vec<Vec<usize>> = vec![Vec::new(); subgraphs.len()];
         // Post-order traversal: collect leaves first, then parents.
         let mut order: Vec<usize> = Vec::with_capacity(subgraphs.len());
-        let mut stack: Vec<(usize, bool)> =
-            tree.top_level.iter().rev().map(|&i| (i, false)).collect();
+        let mut stack: Vec<(usize, bool)> = tree
+            .top_level
+            .iter()
+            .rev()
+            .filter(|&&i| retained_map.contains_key(&i))
+            .map(|&i| (i, false))
+            .collect();
         while let Some((idx, visited)) = stack.pop() {
             if visited {
                 order.push(idx);
@@ -5477,24 +5587,36 @@ fn build_subgraph_layouts(
             }
             stack.push((idx, true));
             for &child in tree.children[idx].iter().rev() {
-                stack.push((child, false));
+                if retained_map.contains_key(&child) {
+                    stack.push((child, false));
+                }
             }
         }
 
         // Build transitive descendant lists bottom-up.
-        for &idx in &order {
+        for &graph_idx in &order {
+            let Some(&layout_idx) = retained_map.get(&graph_idx) else {
+                continue;
+            };
             let mut descs = Vec::new();
-            for &child in &tree.children[idx] {
-                descs.push(child);
-                descs.extend(all_descendants[child].iter().copied());
+            for &child_graph_idx in &tree.children[graph_idx] {
+                let Some(&child_layout_idx) = retained_map.get(&child_graph_idx) else {
+                    continue;
+                };
+                descs.push(child_layout_idx);
+                descs.extend(all_descendants[child_layout_idx].iter().copied());
             }
-            all_descendants[idx] = descs;
+            all_descendants[layout_idx] = descs;
         }
 
         // Expand each parent's bounds to contain all its descendants.
-        for &i in &order {
-            for &j in &all_descendants[i] {
-                if is_region_subgraph(&graph.subgraphs[j]) {
+        for &graph_idx in &order {
+            let Some(&layout_idx) = retained_map.get(&graph_idx) else {
+                continue;
+            };
+            for &child_layout_idx in &all_descendants[layout_idx] {
+                let child_graph_idx = retained_indices[child_layout_idx];
+                if is_region_subgraph(&graph.subgraphs[child_graph_idx]) {
                     continue;
                 }
                 let pad = if graph.kind == crate::ir::DiagramKind::State {
@@ -5503,10 +5625,10 @@ fn build_subgraph_layouts(
                     12.0
                 };
                 let (child_x, child_y, child_w, child_h) = {
-                    let child = &subgraphs[j];
+                    let child = &subgraphs[child_layout_idx];
                     (child.x, child.y, child.width, child.height)
                 };
-                let parent = &mut subgraphs[i];
+                let parent = &mut subgraphs[layout_idx];
                 let min_x = parent.x.min(child_x - pad);
                 let min_y = parent.y.min(child_y - pad);
                 let max_x = (parent.x + parent.width).max(child_x + child_w + pad);

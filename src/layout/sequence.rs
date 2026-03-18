@@ -22,6 +22,17 @@ enum SequenceLabelPlacementMode {
     Endpoint,
 }
 
+#[derive(Clone)]
+struct SequenceEdgeMetrics {
+    label: Option<TextBlock>,
+    start_label: Option<TextBlock>,
+    end_label: Option<TextBlock>,
+    row_height: f32,
+    line_y_offset: f32,
+    self_loop_span: f32,
+    self_loop_drop: f32,
+}
+
 fn clamp_f32_with_degenerate_bounds(value: f32, min: f32, max: f32) -> f32 {
     if !min.is_finite() || !max.is_finite() {
         return value;
@@ -30,6 +41,160 @@ fn clamp_f32_with_degenerate_bounds(value: f32, min: f32, max: f32) -> f32 {
         value.clamp(min, max)
     } else {
         (min + max) * 0.5
+    }
+}
+
+fn inflate_rect(rect: Rect, pad_x: f32, pad_y: f32) -> Rect {
+    (
+        rect.0 - pad_x,
+        rect.1 - pad_y,
+        rect.2 + pad_x * 2.0,
+        rect.3 + pad_y * 2.0,
+    )
+}
+
+fn sequence_frame_label_text(kind: crate::ir::SequenceFrameKind) -> &'static str {
+    match kind {
+        crate::ir::SequenceFrameKind::Alt => "alt",
+        crate::ir::SequenceFrameKind::Opt => "opt",
+        crate::ir::SequenceFrameKind::Loop => "loop",
+        crate::ir::SequenceFrameKind::Par => "par",
+        crate::ir::SequenceFrameKind::Rect => "rect",
+        crate::ir::SequenceFrameKind::Critical => "critical",
+        crate::ir::SequenceFrameKind::Break => "break",
+    }
+}
+
+fn update_sequence_frame_decorations(
+    frame: &mut SequenceFrameLayout,
+    spec: &crate::ir::SequenceFrame,
+    message_ys: &[f32],
+    theme: &Theme,
+    config: &LayoutConfig,
+) {
+    let label_block = measure_label(sequence_frame_label_text(frame.kind), theme, config);
+    let label_box_w = (label_block.width + theme.font_size * 2.0).max(theme.font_size * 3.0);
+    let label_box_h = theme.font_size * 1.25;
+    frame.label_box = (frame.x, frame.y, label_box_w, label_box_h);
+    frame.label = SequenceLabel {
+        x: frame.x + label_box_w / 2.0,
+        y: frame.y + label_box_h / 2.0,
+        text: label_block,
+    };
+
+    frame.dividers.clear();
+    let divider_offset = theme.font_size * 0.9;
+    let first_y = message_ys
+        .get(spec.start_idx)
+        .copied()
+        .unwrap_or(frame.y + label_box_h);
+    for window in spec.sections.windows(2) {
+        let prev_end = window[0].end_idx;
+        let base_y = message_ys
+            .get(prev_end.saturating_sub(1))
+            .copied()
+            .unwrap_or(first_y);
+        frame.dividers.push(base_y + divider_offset);
+    }
+
+    frame.section_labels.clear();
+    let side_pad = theme.font_size * 0.45;
+    let content_left = frame.x + label_box_w + theme.font_size * 0.8;
+    for (section_idx, section) in spec.sections.iter().enumerate() {
+        let Some(label) = &section.label else {
+            continue;
+        };
+        let display = format!("[{}]", label);
+        let block = measure_label(&display, theme, config);
+        let label_y = if section_idx == 0 {
+            frame.y + label_box_h + theme.font_size * 0.45
+        } else {
+            frame
+                .dividers
+                .get(section_idx - 1)
+                .copied()
+                .unwrap_or(frame.y + theme.font_size * 0.7)
+                - (theme.font_size * 0.35)
+        };
+        let (min_x, max_x) = if section_idx == 0 {
+            (
+                content_left + block.width / 2.0,
+                frame.x + frame.width - theme.font_size * 0.4 - block.width / 2.0,
+            )
+        } else {
+            (
+                frame.x + side_pad + block.width / 2.0,
+                frame.x + frame.width - side_pad - block.width / 2.0,
+            )
+        };
+        let preferred = (min_x + max_x) * 0.5;
+        frame.section_labels.push(SequenceLabel {
+            x: clamp_f32_with_degenerate_bounds(preferred, min_x, max_x),
+            y: label_y,
+            text: block,
+        });
+    }
+}
+
+fn expand_sequence_frames_for_nested_children(
+    frames: &mut [SequenceFrameLayout],
+    specs: &[crate::ir::SequenceFrame],
+    message_ys: &[f32],
+    theme: &Theme,
+    config: &LayoutConfig,
+) {
+    if frames.len() < 2 || frames.len() != specs.len() {
+        return;
+    }
+
+    let mut child_order: Vec<usize> = (0..frames.len()).collect();
+    child_order.sort_by_key(|&idx| specs[idx].end_idx.saturating_sub(specs[idx].start_idx));
+    let nested_pad_x = (theme.font_size * 0.95).max(10.0);
+    let nested_pad_y = (theme.font_size * 0.75).max(8.0);
+
+    for child_idx in child_order {
+        let child = &frames[child_idx];
+        let child_rect = inflate_rect(
+            (child.x, child.y, child.width, child.height),
+            nested_pad_x,
+            nested_pad_y,
+        );
+        for (parent_idx, parent_spec) in specs.iter().enumerate() {
+            if parent_idx == child_idx {
+                continue;
+            }
+            let child_spec = &specs[child_idx];
+            let contains_child = parent_spec.start_idx <= child_spec.start_idx
+                && child_spec.end_idx <= parent_spec.end_idx
+                && (parent_spec.start_idx < child_spec.start_idx
+                    || child_spec.end_idx < parent_spec.end_idx);
+            if !contains_child {
+                continue;
+            }
+            let parent = &mut frames[parent_idx];
+            let mut min_x = parent.x;
+            let mut min_y = parent.y;
+            let mut max_x = parent.x + parent.width;
+            let mut max_y = parent.y + parent.height;
+            extend_bounds(
+                &mut min_x,
+                &mut min_y,
+                &mut max_x,
+                &mut max_y,
+                child_rect.0,
+                child_rect.1,
+                child_rect.2,
+                child_rect.3,
+            );
+            parent.x = min_x;
+            parent.y = min_y;
+            parent.width = (max_x - min_x).max(1.0);
+            parent.height = (max_y - min_y).max(1.0);
+        }
+    }
+
+    for (frame, spec) in frames.iter_mut().zip(specs.iter()) {
+        update_sequence_frame_decorations(frame, spec, message_ys, theme, config);
     }
 }
 
@@ -116,23 +281,56 @@ pub(super) fn compute_sequence_layout(
     }
 
     let base_spacing = (theme.font_size * 2.1).max(18.0);
-    let message_row_spacing: Vec<f32> = graph
+    let self_loop_span = (config.node_spacing * 0.7).max(theme.font_size * 2.1);
+    let self_loop_drop = (theme.font_size * 1.6).max(base_spacing * 0.85);
+    let center_label_gap = (theme.font_size * 0.55).max(8.0);
+    let edge_metrics: Vec<SequenceEdgeMetrics> = graph
         .edges
         .iter()
         .map(|edge| {
+            let label = edge.label.as_ref().map(|l| measure_label(l, theme, config));
+            let start_label = edge
+                .start_label
+                .as_ref()
+                .map(|l| measure_label(l, theme, config));
+            let end_label = edge
+                .end_label
+                .as_ref()
+                .map(|l| measure_label(l, theme, config));
             let mut row_h = 0.0f32;
-            if let Some(label) = &edge.label {
-                row_h = row_h.max(measure_label(label, theme, config).height);
+            if let Some(label) = &label {
+                row_h = row_h.max(label.height);
             }
-            if let Some(label) = &edge.start_label {
-                row_h = row_h.max(measure_label(label, theme, config).height);
+            if let Some(label) = &start_label {
+                row_h = row_h.max(label.height);
             }
-            if let Some(label) = &edge.end_label {
-                row_h = row_h.max(measure_label(label, theme, config).height);
+            if let Some(label) = &end_label {
+                row_h = row_h.max(label.height);
             }
-            // Keep enough vertical clearance so message labels can stay close to
-            // their own edge without immediately colliding with neighboring rows.
-            base_spacing.max(row_h + theme.font_size * 0.9)
+            let self_loop = edge.from == edge.to;
+            let line_y_offset = if label.is_some() {
+                label
+                    .as_ref()
+                    .map(|block| block.height + center_label_gap)
+                    .unwrap_or(0.0)
+            } else {
+                0.0
+            };
+            let row_height = if self_loop {
+                line_y_offset + self_loop_drop + (theme.font_size * 0.35).max(6.0)
+            } else {
+                // Reserve a dedicated band above the message line for center labels.
+                line_y_offset + base_spacing.max(row_h + theme.font_size * 0.9)
+            };
+            SequenceEdgeMetrics {
+                label,
+                start_label,
+                end_label,
+                row_height,
+                line_y_offset,
+                self_loop_span,
+                self_loop_drop,
+            }
         })
         .collect();
     let note_gap_y = (theme.font_size * 0.55).max(5.0);
@@ -143,11 +341,32 @@ pub(super) fn compute_sequence_layout(
     let frame_end_pad = base_spacing * 0.25;
     for frame in &graph.sequence_frames {
         if frame.start_idx < extra_before.len() {
-            extra_before[frame.start_idx] += base_spacing;
+            let header_box_h = theme.font_size * 1.25;
+            let first_section_h = frame
+                .sections
+                .first()
+                .and_then(|section| section.label.as_ref())
+                .map(|label| {
+                    let display = format!("[{}]", label);
+                    measure_label(&display, theme, config).height
+                })
+                .unwrap_or(0.0);
+            let header_clearance =
+                (header_box_h + first_section_h + theme.font_size * 0.8).max(base_spacing);
+            extra_before[frame.start_idx] += header_clearance;
         }
         for section in frame.sections.iter().skip(1) {
             if section.start_idx < extra_before.len() {
-                extra_before[section.start_idx] += base_spacing;
+                let section_clearance = section
+                    .label
+                    .as_ref()
+                    .map(|label| {
+                        let display = format!("[{}]", label);
+                        measure_label(&display, theme, config).height + theme.font_size * 0.7
+                    })
+                    .unwrap_or(base_spacing)
+                    .max(base_spacing);
+                extra_before[section.start_idx] += section_clearance;
             }
         }
         if frame.end_idx < extra_before.len() {
@@ -163,6 +382,7 @@ pub(super) fn compute_sequence_layout(
 
     let mut message_cursor = margin + actor_height + theme.font_size * 2.2;
     let mut message_ys = Vec::new();
+    let mut row_tops = Vec::new();
     let mut sequence_notes = Vec::new();
     for idx in 0..=graph.edges.len() {
         if let Some(bucket) = notes_by_index.get(idx) {
@@ -213,33 +433,48 @@ pub(super) fn compute_sequence_layout(
         }
         if idx < graph.edges.len() {
             message_cursor += extra_before[idx];
-            message_ys.push(message_cursor);
-            message_cursor += message_row_spacing[idx];
+            row_tops.push(message_cursor);
+            let metrics = &edge_metrics[idx];
+            message_ys.push(message_cursor + metrics.line_y_offset);
+            message_cursor += metrics.row_height;
         }
     }
 
+    let mut fixed_center_label_rects = vec![None; graph.edges.len()];
     for (idx, edge) in graph.edges.iter().enumerate() {
         let from = nodes.get(&edge.from).expect("from node missing");
         let to = nodes.get(&edge.to).expect("to node missing");
         let y = message_ys.get(idx).copied().unwrap_or(message_cursor);
-        let label = edge.label.as_ref().map(|l| measure_label(l, theme, config));
-        let start_label = edge
-            .start_label
-            .as_ref()
-            .map(|l| measure_label(l, theme, config));
-        let end_label = edge
-            .end_label
-            .as_ref()
-            .map(|l| measure_label(l, theme, config));
+        let metrics = &edge_metrics[idx];
+        let label = metrics.label.clone();
+        let start_label = metrics.start_label.clone();
+        let end_label = metrics.end_label.clone();
 
         let points = if edge.from == edge.to {
-            let pad = config.node_spacing.max(20.0) * 0.6;
+            let pad = metrics.self_loop_span;
+            let drop = metrics.self_loop_drop;
             let x = from.x + from.width / 2.0;
-            vec![(x, y), (x + pad, y), (x + pad, y + pad), (x, y + pad)]
+            vec![(x, y), (x + pad, y), (x + pad, y + drop), (x, y + drop)]
         } else {
             let from_x = from.x + from.width / 2.0;
             let to_x = to.x + to.width / 2.0;
             vec![(from_x, y), (to_x, y)]
+        };
+        let fixed_center_anchor = if label.is_some() {
+            label.as_ref().map(|label| {
+                let row_top = row_tops
+                    .get(idx)
+                    .copied()
+                    .unwrap_or(y - metrics.line_y_offset);
+                let center_x = if edge.from == edge.to {
+                    points[0].0 + metrics.self_loop_span * 0.5
+                } else {
+                    (points[0].0 + points[points.len() - 1].0) * 0.5
+                };
+                (center_x, row_top + label.height / 2.0)
+            })
+        } else {
+            None
         };
 
         let mut override_style = resolve_edge_style(idx, graph);
@@ -266,9 +501,19 @@ pub(super) fn compute_sequence_layout(
             style: edge.style,
             override_style,
         });
+        if let (Some(anchor), Some(label)) = (fixed_center_anchor, edges[idx].label.clone()) {
+            edges[idx].label_anchor = Some(anchor);
+            fixed_center_label_rects[idx] = Some(label_rect(
+                anchor,
+                &label,
+                SEQUENCE_LABEL_PAD_X,
+                SEQUENCE_LABEL_PAD_Y,
+            ));
+        }
     }
 
     let mut sequence_frames = Vec::new();
+    let mut frame_specs_for_layout = Vec::new();
     if !graph.sequence_frames.is_empty() && !message_ys.is_empty() {
         let mut frames = graph.sequence_frames.clone();
         frames.sort_by(|a, b| {
@@ -308,7 +553,7 @@ pub(super) fn compute_sequence_layout(
             }
             let frame_pad_x = theme.font_size * 0.7;
             let frame_x = min_x - frame_pad_x;
-            let mut frame_width = (max_x - min_x) + frame_pad_x * 2.0;
+            let frame_width = (max_x - min_x) + frame_pad_x * 2.0;
 
             let first_y = message_ys
                 .get(frame.start_idx)
@@ -321,9 +566,29 @@ pub(super) fn compute_sequence_layout(
             let mut min_y = first_y;
             let mut max_y = last_y;
             for note in &sequence_notes {
-                if note.index >= frame.start_idx && note.index <= frame.end_idx {
+                if note.index >= frame.start_idx && note.index < frame.end_idx {
                     min_y = min_y.min(note.y);
                     max_y = max_y.max(note.y + note.height);
+                }
+            }
+            for idx in frame.start_idx..frame.end_idx.min(fixed_center_label_rects.len()) {
+                if let Some((x, y, w, h)) = fixed_center_label_rects[idx] {
+                    min_x = min_x.min(x);
+                    max_x = max_x.max(x + w);
+                    min_y = min_y.min(y);
+                    max_y = max_y.max(y + h);
+                }
+            }
+            for edge in edges
+                .iter()
+                .skip(frame.start_idx)
+                .take(frame.end_idx.saturating_sub(frame.start_idx))
+            {
+                for (px, py) in &edge.points {
+                    min_x = min_x.min(*px);
+                    max_x = max_x.max(*px);
+                    min_y = min_y.min(*py);
+                    max_y = max_y.max(*py);
                 }
             }
             let header_offset = theme.font_size * 0.6;
@@ -332,94 +597,30 @@ pub(super) fn compute_sequence_layout(
             let frame_y = min_y - top_offset;
             let frame_height = (max_y - min_y).max(0.0) + top_offset + bottom_offset;
 
-            let frame_label_text = match frame.kind {
-                crate::ir::SequenceFrameKind::Alt => "alt",
-                crate::ir::SequenceFrameKind::Opt => "opt",
-                crate::ir::SequenceFrameKind::Loop => "loop",
-                crate::ir::SequenceFrameKind::Par => "par",
-                crate::ir::SequenceFrameKind::Rect => "rect",
-                crate::ir::SequenceFrameKind::Critical => "critical",
-                crate::ir::SequenceFrameKind::Break => "break",
-            };
-            let label_block = measure_label(frame_label_text, theme, config);
-            let label_box_w =
-                (label_block.width + theme.font_size * 2.0).max(theme.font_size * 3.0);
-            let label_box_h = theme.font_size * 1.25;
-            let label_box_x = frame_x;
-            let label_box_y = frame_y;
-            let label = SequenceLabel {
-                x: label_box_x + label_box_w / 2.0,
-                y: label_box_y + label_box_h / 2.0,
-                text: label_block,
-            };
-
-            let mut dividers = Vec::new();
-            let divider_offset = theme.font_size * 0.9;
-            for window in frame.sections.windows(2) {
-                let prev_end = window[0].end_idx;
-                let base_y = message_ys
-                    .get(prev_end.saturating_sub(1))
-                    .copied()
-                    .unwrap_or(first_y);
-                dividers.push(base_y + divider_offset);
-            }
-
-            let mut section_labels = Vec::new();
-            let label_offset = theme.font_size * 0.7;
-            for (section_idx, section) in frame.sections.iter().enumerate() {
-                if let Some(label) = &section.label {
-                    let display = format!("[{}]", label);
-                    let block = measure_label(&display, theme, config);
-                    let label_y = if section_idx == 0 {
-                        // Keep the first section label close to the frame header
-                        // so it does not collide with the first message row.
-                        frame_y + label_box_h + theme.font_size * 0.45
-                    } else {
-                        // Keep else/and section labels on the divider's upper side
-                        // to reduce collisions with the following message row text.
-                        dividers
-                            .get(section_idx - 1)
-                            .copied()
-                            .unwrap_or(frame_y + label_offset)
-                            - (theme.font_size * 0.35)
-                    };
-                    let side_pad = theme.font_size * 0.45;
-                    let label_x = if section_idx == 0 {
-                        let required_width = label_box_w + theme.font_size * 2.0 + block.width;
-                        frame_width = frame_width.max(required_width);
-                        let preferred =
-                            frame_x + label_box_w + theme.font_size * 1.6 + block.width / 2.0;
-                        let min_x = frame_x + block.width / 2.0 + theme.font_size * 0.4;
-                        let max_x =
-                            frame_x + frame_width - block.width / 2.0 - theme.font_size * 0.4;
-                        clamp_f32_with_degenerate_bounds(preferred, min_x, max_x)
-                    } else {
-                        let required_width = block.width + side_pad * 2.0;
-                        frame_width = frame_width.max(required_width);
-                        let preferred = frame_x + side_pad + block.width / 2.0;
-                        let min_x = frame_x + block.width / 2.0 + side_pad;
-                        let max_x = frame_x + frame_width - block.width / 2.0 - side_pad;
-                        clamp_f32_with_degenerate_bounds(preferred, min_x, max_x)
-                    };
-                    section_labels.push(SequenceLabel {
-                        x: label_x,
-                        y: label_y,
-                        text: block,
-                    });
-                }
-            }
-
-            sequence_frames.push(SequenceFrameLayout {
+            let mut frame_layout = SequenceFrameLayout {
                 kind: frame.kind,
                 x: frame_x,
                 y: frame_y,
                 width: frame_width,
                 height: frame_height,
-                label_box: (label_box_x, label_box_y, label_box_w, label_box_h),
-                label,
-                section_labels,
-                dividers,
-            });
+                label_box: (0.0, 0.0, 0.0, 0.0),
+                label: SequenceLabel {
+                    x: 0.0,
+                    y: 0.0,
+                    text: measure_label(sequence_frame_label_text(frame.kind), theme, config),
+                },
+                section_labels: Vec::new(),
+                dividers: Vec::new(),
+            };
+            update_sequence_frame_decorations(
+                &mut frame_layout,
+                &frame,
+                &message_ys,
+                theme,
+                config,
+            );
+            sequence_frames.push(frame_layout);
+            frame_specs_for_layout.push(frame);
         }
     }
 
@@ -608,6 +809,78 @@ pub(super) fn compute_sequence_layout(
         &sequence_activations,
         &sequence_numbers,
         theme,
+    );
+    for (frame, spec) in sequence_frames
+        .iter_mut()
+        .zip(frame_specs_for_layout.iter())
+    {
+        let label_clearance_x = (theme.font_size * 0.45).max(5.0);
+        let label_clearance_y = (theme.font_size * 0.35).max(4.0);
+        let mut min_x = frame.x;
+        let mut min_y = frame.y;
+        let mut max_x = frame.x + frame.width;
+        let mut max_y = frame.y + frame.height;
+        for idx in spec.start_idx..spec.end_idx.min(edges.len()) {
+            if let (Some(label), Some(anchor)) = (&edges[idx].label, edges[idx].label_anchor) {
+                let rect = inflate_rect(
+                    label_rect(anchor, label, SEQUENCE_LABEL_PAD_X, SEQUENCE_LABEL_PAD_Y),
+                    label_clearance_x,
+                    label_clearance_y,
+                );
+                min_x = min_x.min(rect.0);
+                min_y = min_y.min(rect.1);
+                max_x = max_x.max(rect.0 + rect.2);
+                max_y = max_y.max(rect.1 + rect.3);
+            }
+            if let (Some(label), Some(anchor)) =
+                (&edges[idx].start_label, edges[idx].start_label_anchor)
+            {
+                let rect = inflate_rect(
+                    label_rect(
+                        anchor,
+                        label,
+                        SEQUENCE_ENDPOINT_LABEL_PAD_X,
+                        SEQUENCE_ENDPOINT_LABEL_PAD_Y,
+                    ),
+                    label_clearance_x,
+                    label_clearance_y,
+                );
+                min_x = min_x.min(rect.0);
+                min_y = min_y.min(rect.1);
+                max_x = max_x.max(rect.0 + rect.2);
+                max_y = max_y.max(rect.1 + rect.3);
+            }
+            if let (Some(label), Some(anchor)) =
+                (&edges[idx].end_label, edges[idx].end_label_anchor)
+            {
+                let rect = inflate_rect(
+                    label_rect(
+                        anchor,
+                        label,
+                        SEQUENCE_ENDPOINT_LABEL_PAD_X,
+                        SEQUENCE_ENDPOINT_LABEL_PAD_Y,
+                    ),
+                    label_clearance_x,
+                    label_clearance_y,
+                );
+                min_x = min_x.min(rect.0);
+                min_y = min_y.min(rect.1);
+                max_x = max_x.max(rect.0 + rect.2);
+                max_y = max_y.max(rect.1 + rect.3);
+            }
+        }
+        frame.x = min_x;
+        frame.y = min_y;
+        frame.width = (max_x - min_x).max(1.0);
+        frame.height = (max_y - min_y).max(1.0);
+        update_sequence_frame_decorations(frame, spec, &message_ys, theme, config);
+    }
+    expand_sequence_frames_for_nested_children(
+        &mut sequence_frames,
+        &frame_specs_for_layout,
+        &message_ys,
+        theme,
+        config,
     );
 
     let mut min_x = f32::INFINITY;
@@ -888,15 +1161,20 @@ fn place_sequence_label_anchors(
     let edge_paths: Vec<Vec<(f32, f32)>> = edges.iter().map(|edge| edge.points.clone()).collect();
     for idx in 0..edges.len() {
         if let Some(label) = edges[idx].label.clone() {
-            let anchor = choose_sequence_center_label_anchor(
-                &edge_paths[idx],
-                &label,
-                &occupied,
-                &edge_paths,
-                idx,
-                theme,
-            );
-            edges[idx].label_anchor = Some(anchor);
+            let anchor = if let Some(anchor) = edges[idx].label_anchor {
+                anchor
+            } else {
+                let anchor = choose_sequence_center_label_anchor(
+                    &edge_paths[idx],
+                    &label,
+                    &occupied,
+                    &edge_paths,
+                    idx,
+                    theme,
+                );
+                edges[idx].label_anchor = Some(anchor);
+                anchor
+            };
             occupied.push(label_rect(
                 anchor,
                 &label,

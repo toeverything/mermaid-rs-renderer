@@ -416,22 +416,7 @@ mod tests {
 
     #[test]
     fn extracts_mermaid_blocks() {
-        let input = r#"
-text
-``` mermaid
-flowchart LR
-  A --> B
-```
-more
-~~~mermaid
-flowchart TD
-  X --> Y
-~~~
-::: mermaid
-sequenceDiagram
-  A->>B: hi
-:::
-"#;
+        let input = include_str!("../tests/fixtures/unit/cli_extract_mermaid_blocks.md");
         let blocks = extract_mermaid_blocks(input);
         assert_eq!(blocks.len(), 3);
         assert!(blocks[0].contains("flowchart"));

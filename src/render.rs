@@ -3126,8 +3126,8 @@ fn render_quadrant(
             point.x, point.y, point.color, point.color
         ));
         svg.push_str(&text_block_svg(
-            point.x,
-            point.y + 15.0,
+            point.label_x,
+            point.label_y,
             &point.label,
             theme,
             config,

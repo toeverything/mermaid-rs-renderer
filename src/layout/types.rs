@@ -562,6 +562,8 @@ pub struct QuadrantPointLayout {
     pub label: TextBlock,
     pub x: f32,
     pub y: f32,
+    pub label_x: f32,
+    pub label_y: f32,
     pub color: String,
 }
 
