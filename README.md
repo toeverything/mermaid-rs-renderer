@@ -8,6 +8,8 @@
 
 </div>
 
+> **Note:** This library is under active early development. Visual output quality is improving rapidly but may not yet match mermaid-cli in all cases. Bug reports and PRs are welcome.
+
 ## Performance
 
 mmdr renders diagrams **100–1400x faster** than mermaid-cli by eliminating browser overhead.
@@ -115,6 +117,9 @@ mmdr parses Mermaid syntax natively in Rust and renders directly to SVG. No brow
 ## Installation
 
 ```bash
+# crates.io (recommended)
+cargo install mermaid-rs-renderer
+
 # From source
 cargo install --path .
 
@@ -362,7 +367,7 @@ Use mmdr as a Rust library in your project:
 
 ```toml
 [dependencies]
-mermaid-rs-renderer = { git = "https://github.com/1jehuang/mermaid-rs-renderer", tag = "v0.2.0" }
+mermaid-rs-renderer = "0.2.0"
 ```
 
 <details>
@@ -372,7 +377,7 @@ For tools like Zola that only need SVG rendering, disable default features to av
 
 ```toml
 [dependencies]
-mermaid-rs-renderer = { git = "https://github.com/1jehuang/mermaid-rs-renderer", tag = "v0.2.0", default-features = false }
+mermaid-rs-renderer = { version = "0.2.0", default-features = false }
 ```
 
 | Feature | Default | Description |
@@ -383,6 +388,13 @@ mermaid-rs-renderer = { git = "https://github.com/1jehuang/mermaid-rs-renderer",
 This reduces dependencies from ~180 to ~80 crates.
 
 </details>
+
+For unreleased commits only:
+
+```toml
+[dependencies]
+mermaid-rs-renderer = { git = "https://github.com/1jehuang/mermaid-rs-renderer", rev = "<commit-sha>" }
+```
 
 ```rust
 use mermaid_rs_renderer::{render, render_with_options, RenderOptions};
@@ -469,6 +481,8 @@ touch your normal remote working copy unless you set `MMDR_REMOTE_DIR` to that p
 cargo bench --bench renderer              # Microbenchmarks
 cargo build --release && python scripts/bench_compare.py  # vs mermaid-cli
 ```
+
+Release process: see `docs/release.md`.
 
 ## License
 
